@@ -173,9 +173,10 @@ pub(super) fn draw_tech(
             let lines = [a.name.clone(), "Maximum level".into()];
             let r = layout.tech_automated_cell(i - first);
             let selected = i == setup.auto_cell;
+            // Automated units are always at their maximum level.
             let look = Look {
                 selected,
-                dim: false,
+                dim: true,
             };
             cell(canvas, gfx, viewer, r, &a.image, &lines, look)?;
         }
