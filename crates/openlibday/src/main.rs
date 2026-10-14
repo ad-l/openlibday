@@ -980,12 +980,17 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     let mut walker = viewer.walker_depth().map(|(x, y)| (x + y, x));
     // Tile overlays drawn in depth order, after their tile's ground and
     // buildings but before its units, so objects in front cover them: the
-    // selection grid, path dots and the order cursor.
+    // selection grid, path dots and the move cursor. Target cursors go on
+    // top of everything, over the unit or building they aim at.
+    let (move_cursor, target_cursor) = match viewer.battle_cursor() {
+        Some(c) if c.1 == "CMOVE" => (Some(c), None),
+        c => (None, c),
+    };
     let mut overlays: Vec<(i64, i64, &str)> = hover_tiles
         .into_iter()
         .map(|(x, y)| (x, y, "CSELC"))
         .chain(moves::path_dots(viewer))
-        .chain(viewer.battle_cursor().map(|((x, y), name)| (x, y, name)))
+        .chain(move_cursor.map(|((x, y), name)| (x, y, name)))
         .collect();
     overlays.sort_by_key(|&(x, y, _)| (x + y, x));
     let mut overlays = overlays.into_iter().peekable();
@@ -1020,6 +1025,10 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
     }
     for (x, y, name) in overlays {
+        let (left, top) = sprite_origin(size, x, y);
+        cell(canvas, gfx, left, top, name)?;
+    }
+    if let Some(((x, y), name)) = target_cursor {
         let (left, top) = sprite_origin(size, x, y);
         cell(canvas, gfx, left, top, name)?;
     }
