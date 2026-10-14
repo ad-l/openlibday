@@ -21,6 +21,11 @@ pub const AI: i64 = 0;
 /// How long the AI's (empty) turn stays on screen.
 const AI_TURN: Duration = Duration::from_millis(1500);
 
+/// The overview's players in a skirmish: the human, then the AI.
+pub(crate) fn skirmish_players() -> Vec<i64> {
+    vec![PLAYER, AI]
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     /// Map viewer: every unit can be moved, no turns.
@@ -217,6 +222,8 @@ impl Viewer {
             scroll: 0,
             deployed: Vec::new(),
         });
+        self.players = skirmish_players();
+        self.player = 0;
         self.screen = Screen::Tech { read_only: false };
     }
 
@@ -485,7 +492,7 @@ impl Viewer {
     fn deployed_changed(&mut self) {
         self.rebuild();
         self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-        self.players = libday_view::minimap::players(&self.map.battle.scenario, &self.markers);
+        self.players = skirmish_players();
         self.selected = None;
     }
 

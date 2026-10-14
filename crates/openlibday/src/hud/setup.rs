@@ -5,9 +5,9 @@ use libday_data::defs::UnitType;
 use libday_data::scenario::difficulty_label;
 use libday_view::minimap;
 use libday_view::ui::{
-    self, AUTO_CELLS, Button, DEPLOY_ROWS, QUESTION_TEXT, Rect, SKIRMISH_ROWS, SKIRMISH_TEXT,
-    Screen, State, TECH_CELLS, TECH_COLUMNS, TECH_EMBLEM, TECH_NAME, TECH_POINTS, TECH_STAT_ROW,
-    TECH_STATS, frame,
+    self, AUTO_CELLS, Button, DEPLOY_ROWS, Field, QUESTION_TEXT, Rect, SKIRMISH_ROWS,
+    SKIRMISH_TEXT, Screen, State, TECH_CELLS, TECH_COLUMNS, TECH_EMBLEM, TECH_NAME, TECH_POINTS,
+    TECH_STAT_ROW, TECH_STATS, frame,
 };
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Canvas};
@@ -267,7 +267,7 @@ pub(super) fn draw_ai_sidebar(
     draw_sidebar(canvas, gfx, &layout, frame::AI_SIDEBAR)?;
     buttons(canvas, gfx, viewer, Screen::AiTurn)?;
     draw_credits(canvas, gfx, viewer)?;
-    draw_turns(canvas, gfx, viewer)?;
+    draw_turns(canvas, gfx, viewer, Field::Turn)?;
     for (row, owner) in [PLAYER, AI].into_iter().enumerate() {
         let r = layout.ai_row(row);
         gfx.frame(canvas, minimap::swatch_frame(owner), r.x, r.y, s)?;

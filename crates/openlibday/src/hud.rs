@@ -378,7 +378,12 @@ impl Viewer {
 
     /// Whether anything on screen animates (needs periodic redraws).
     pub(crate) fn animating(&self) -> bool {
-        self.screen == Screen::Overview && self.entry.is_some() || self.flow.ai_until.is_some()
+        self.overview_shown() && self.entry.is_some() || self.flow.ai_until.is_some()
+    }
+
+    /// Whether the full-screen map overview (MAP or the briefing) is shown.
+    fn overview_shown(&self) -> bool {
+        matches!(self.screen, Screen::Overview | Screen::Briefing)
     }
 }
 
@@ -397,7 +402,7 @@ fn draw_markers(
             } else {
                 minimap::owner_colour(m.owner)
             };
-            if viewer.screen == Screen::Overview && viewer.marker_blinks(m) && off {
+            if viewer.overview_shown() && viewer.marker_blinks(m) && off {
                 c = BLACK;
             }
             if detailed && !building {
@@ -542,7 +547,7 @@ fn draw_battle_sidebar(
         gfx.button(canvas, viewer, &layout, button, State::Normal, on)?;
     }
     draw_credits(canvas, gfx, viewer)?;
-    draw_turns(canvas, gfx, viewer)?;
+    draw_turns(canvas, gfx, viewer, Field::Turn)?;
     if let Some((name, image, ap, ar)) = unit {
         let r = layout.field(Field::Portrait);
         if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &image) {
@@ -577,14 +582,16 @@ fn draw_credits(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> 
     Ok(())
 }
 
-/// Turns left in the sidebar's bottom box.
-fn draw_turns(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+/// Turns left in the sidebar's bottom box `field`.
+fn draw_turns(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, field: Field) -> Result {
     let layout = viewer.layout();
     let (s, px) = (layout.scale, TEXT_PX * layout.scale as f32);
     let turns = viewer.map.battle.scenario.info.turns;
     if turns > 0 {
-        let left = (turns - viewer.map.battle.clock.turn + 1).max(0);
-        let r = layout.field(Field::Turn);
+        // Before the battle starts (turn 0) every turn is still to play.
+        let turn = viewer.map.battle.clock.turn.max(1);
+        let left = (turns - turn + 1).max(0);
+        let r = layout.field(field);
         let text = left.to_string();
         gfx.text_in(canvas, &viewer.fonts, &text, px, WHITE, r, 1.0, 4 * s)?;
     }
@@ -711,8 +718,7 @@ fn draw_overview(
         y: rect.y as f32,
         tile: cell as f32,
     };
-    let briefing = viewer.screen == Screen::Briefing;
-    if briefing {
+    if viewer.screen == Screen::Briefing {
         canvas.set_blend_mode(BlendMode::Blend);
         canvas.set_draw_color(Color::RGBA(255, 0, 0, 110));
         for d in &viewer.map.battle.scenario.deployments {
@@ -721,12 +727,12 @@ fn draw_overview(
             }
         }
         canvas.set_blend_mode(BlendMode::None);
-    } else {
-        draw_markers(canvas, viewer, square, true)?;
     }
-    draw_view_outline(canvas, viewer, square, rect)?;
+    draw_markers(canvas, viewer, square, true)?;
 
     draw_sidebar(canvas, gfx, &layout, frame::OVERVIEW_SIDEBAR)?;
+    draw_credits(canvas, gfx, viewer)?;
+    draw_turns(canvas, gfx, viewer, Field::OverviewBox)?;
     let entries = viewer.entries();
     for button in layout.buttons(viewer.screen, viewer.players.len()) {
         gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
