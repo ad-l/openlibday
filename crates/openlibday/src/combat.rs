@@ -9,6 +9,7 @@ use std::time::Duration;
 use libday_data::scenario::facing_toward;
 use libday_view::fire::{self, Checker, Fire, Target};
 use libday_view::movement::{self, WALK_POSITION_MS, affordable_steps};
+use libday_view::scatter;
 use libday_view::shot::{self, Anim};
 use libday_view::tile_center;
 
@@ -28,6 +29,8 @@ pub struct Shot {
     pub unit: usize,
     pub target: Target,
     pub aim: (i64, i64),
+    /// Where the shot lands: `aim`, or a neighbour on a miss.
+    pub lands: (i64, i64),
     pub started: Duration,
     /// Lengths of the raise (`S`), fire (`T`) and lower (`U`) animations.
     pub begin: usize,
@@ -225,10 +228,25 @@ impl Viewer {
         let projectile_len = len(Anim::Projectile, anim.projectile);
         let impact_len = len(Anim::Impact, anim.impact);
         let launch = begin + (anim.proj_begin.max(0) as usize).min(shoot.saturating_sub(1));
-        let path = if projectile_len > 0 && distance(at, aim) > 1 {
+        // The side whose turn it is: the shooter's, until reaction fire.
+        let evader = self
+            .unit_at(aim.0, aim.1)
+            .map(|v| &scenario.units[v])
+            .filter(|v| v.owner == u.owner)
+            .and_then(|v| self.defs.unit_tech(v.kind, v.tech));
+        let lands = scatter::land(
+            &mut self.rng,
+            kind,
+            &self.defs.ranges,
+            at,
+            aim,
+            evader,
+            size as i64,
+        );
+        let path = if projectile_len > 0 && distance(at, lands) > 1 {
             shot::projectile_path(
                 tile_center(size, at.0, at.1),
-                tile_center(size, aim.0, aim.1),
+                tile_center(size, lands.0, lands.1),
                 anim.pix_offset,
                 anim.pix_speed.max(1),
                 anim.curve,
@@ -247,6 +265,7 @@ impl Viewer {
             unit,
             target,
             aim,
+            lands,
             started: self.clock.now(),
             begin,
             shoot,
@@ -337,6 +356,7 @@ mod tests {
             unit: 0,
             target: Target::Unit(1),
             aim: (0, 0),
+            lands: (0, 0),
             started: Duration::ZERO,
             begin: 2,
             shoot: 5,

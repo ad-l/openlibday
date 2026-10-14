@@ -40,13 +40,19 @@ tile 35 19
 idle 2000
 button EndTurn
 idle 2000
+# Seed 5 rolls a miss: the grenade scatters to a neighbouring tile.
+seed 5
 tile 41 20
 tile 35 19
 expect preview.target.0 39
 tile 35 19
 wait 30
 expect shot.unit 27
-expect shot.path.0.0 1799
+expect shot.path.0.0 1805
+expect shot.aim.0 35
+expect shot.aim.1 19
+expect shot.lands.0 36
+expect shot.lands.1 18
 idle 2000
 expect units.-2.x 39
 expect units.-2.ap 4

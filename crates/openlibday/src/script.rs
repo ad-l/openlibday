@@ -29,6 +29,7 @@
 //!                       picks the array element with that id, `-1` the
 //!                       last) is VALUE
 //! echo TEXT             print TEXT
+//! seed N                reseed the game's rand() (scripts start at 1)
 //! quit                  end the program
 //! ```
 
@@ -71,6 +72,7 @@ pub enum Command {
     State(Option<PathBuf>),
     Expect(String, String),
     Echo(String),
+    Seed(u32),
     Quit,
 }
 
@@ -158,6 +160,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             Command::Expect(path.into(), value.trim().into())
         }
         "echo" => Command::Echo(rest.into()),
+        "seed" => Command::Seed(num(args.first())?),
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
@@ -311,6 +314,7 @@ impl Runner<'_, '_> {
                 }
             }
             Command::Echo(text) => println!("{text}"),
+            Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
             Command::Quit => return Ok(false),
         }
         Ok(!viewer.quit)
@@ -470,6 +474,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "unit": s.unit,
             "target": format!("{:?}", s.target),
             "aim": [s.aim.0, s.aim.1],
+            "lands": [s.lands.0, s.lands.1],
             "frame": s.frame(viewer.clock.now()),
             "begin": s.begin,
             "shoot": s.shoot,

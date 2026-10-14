@@ -28,7 +28,13 @@ a path to the cheapest tile the unit can shoot from when it cannot hit it
 from where it stands; a second click moves there, turns to the target and
 shoots with the original raise/fire/lower, projectile (arced, for units
 that have one and are not adjacent) and impact animations, charging the
-shot's AP. Hits, damage, scatter and craters are not implemented yet.
+shot's AP. Shots miss as in the original: beyond adjacent tiles the
+shooter's `HitShortRange`/`HitMediumRange`/`HitLongRange` chance (bands from
+the `Ranges` table, 3 and 6 tiles) is rolled with the game's `rand()`, and a
+miss lands on a random neighbouring tile on the map, whoever stands there.
+A unit of the side whose turn it is (the target of reaction fire) scales
+the chance by its `Jammer` percentage. Damage and craters are not
+implemented yet.
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -94,7 +100,8 @@ as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
 phase, turn, selection, hover cursor and fire check code, path preview,
 motion, target lock, shot timeline, deploy zone and every unit),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
-`units.-1.x`), `echo TEXT`, `quit`. A failed `expect` or command exits with
+`units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1), `echo TEXT`,
+`quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
 skirmish from selection to turn 2 and
 [scripts/combat.txt](scripts/combat.txt) two attacks; both are run by

@@ -9,6 +9,7 @@ pub mod compose;
 pub mod fire;
 pub mod minimap;
 pub mod movement;
+pub mod scatter;
 pub mod scene;
 pub mod shot;
 pub mod text;

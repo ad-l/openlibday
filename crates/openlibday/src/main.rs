@@ -28,6 +28,7 @@ use std::time::Duration;
 use libday_data::{Battle, Definitions, Dir, GameData};
 use libday_formats::Dbi;
 use libday_view::minimap::{self, Entry, Marker};
+use libday_view::scatter::Rand;
 use libday_view::text::Fonts;
 use libday_view::ui::{AUTO_CELLS, Button, LIST_ROWS, SKIRMISH_ROWS, Screen, TECH_CELLS};
 use libday_view::{Art, Layer, Options, Scene, Sheet, map_pixels, sprite_origin, tile_at};
@@ -181,6 +182,8 @@ struct Viewer {
     entry: Option<usize>,
     /// Drives animations and timers (virtual in scripted runs).
     clock: Clock,
+    /// The game's `rand()`: seeded from the time, or 1 in scripted runs.
+    rng: Rand,
     /// Clock time the turn (or map) started; the bottom bar's timer.
     started: Duration,
     /// Where F5/F9 save and load.
@@ -1303,6 +1306,13 @@ fn main() -> Result {
         } else {
             Clock::real()
         },
+        rng: Rand::new(if args.script.is_some() {
+            1
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(1, |d| d.as_secs() as u32)
+        }),
         started: Duration::ZERO,
         saves: options_path
             .as_deref()

@@ -480,7 +480,7 @@ pub fn draw_shot_effects(
     if let Some(frame) = s.impact(f) {
         let name = shot::animation_name(&kind.image, unit.owner, Anim::Impact, 0);
         let size = viewer.map.battle.scenario.size;
-        let at = tile_center(size, s.aim.0, s.aim.1);
+        let at = tile_center(size, s.lands.0, s.lands.1);
         draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
     }
     Ok(())

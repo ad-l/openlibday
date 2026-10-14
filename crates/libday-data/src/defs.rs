@@ -117,8 +117,13 @@ pub struct UnitType {
     pub mine_detection: i64,
     /// `weaponType` (1 = indirect fire).
     pub weapon_type: i64,
-    /// `Jammer`: 0 = stealth, below 100 = reduced signature.
+    /// `Jammer`: 0 = stealth, below 100 = reduced signature. Scales (as a
+    /// percentage) the chance of being hit by fire during its own side's
+    /// turn, i.e. reaction fire.
     pub jammer: i64,
+    /// `HitShortRange`, `HitMediumRange`, `HitLongRange`: chance (percent,
+    /// roughly) of a shot landing on the aimed tile in each range band.
+    pub hit: [i64; 3],
     pub shot: ShotAnimation,
 }
 
@@ -204,6 +209,38 @@ pub struct Definitions {
     pub tech_ratios: Vec<(i64, i64)>,
     /// `Automated Units`: support units called in from off the map.
     pub automated: BTreeMap<i64, AutomatedType>,
+    /// `Ranges`: distance bands for the hit chances.
+    pub ranges: RangeBands,
+}
+
+/// Distance bands for [`UnitType::hit`]: up to `short` tiles is short
+/// range, up to `medium` medium, farther long.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RangeBands {
+    pub short: i64,
+    pub medium: i64,
+}
+
+impl Default for RangeBands {
+    fn default() -> Self {
+        Self {
+            short: 3,
+            medium: 6,
+        }
+    }
+}
+
+impl RangeBands {
+    /// Band index (0 short, 1 medium, 2 long) for a distance in tiles.
+    pub fn band(&self, distance: i64) -> usize {
+        if distance <= self.short {
+            0
+        } else if distance <= self.medium {
+            1
+        } else {
+            2
+        }
+    }
 }
 
 /// An automated (off-map support) unit type.
@@ -314,6 +351,11 @@ impl Definitions {
                 mine_detection: t.int_or(r, "MineDetectionRange", 0)?,
                 weapon_type: t.int_or(r, "weaponType", 0)?,
                 jammer: t.int_or(r, "Jammer", 100)?,
+                hit: [
+                    t.int_or(r, "HitShortRange", 100)?,
+                    t.int_or(r, "HitMediumRange", 100)?,
+                    t.int_or(r, "HitLongRange", 100)?,
+                ],
                 shot: ShotAnimation {
                     begin: t.int_or(r, "ShootBeginAnimation_Begin", -1)? != -1,
                     shoot: t.int_or(r, "ShootShootAnimation_Begin", -1)? != -1,
@@ -379,6 +421,14 @@ impl Definitions {
             }
             defs.tech_ratios
                 .sort_by_key(|&(max, _)| if max < 0 { i64::MAX } else { max });
+        }
+        if let Ok(t) = Records::read(global, "Ranges")
+            && !t.is_empty()
+        {
+            defs.ranges = RangeBands {
+                short: t.int_or(0, "Short", 3)?,
+                medium: t.int_or(0, "Medium", 6)?,
+            };
         }
         if let Ok(t) = Records::read(global, "Automated Units") {
             for r in 0..t.len() {
