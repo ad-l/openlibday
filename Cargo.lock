@@ -408,7 +408,9 @@ dependencies = [
  "libday-data",
  "libday-formats",
  "libday-view",
+ "png",
  "sdl3",
+ "serde_json",
 ]
 
 [[package]]

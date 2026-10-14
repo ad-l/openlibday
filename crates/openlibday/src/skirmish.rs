@@ -1,7 +1,7 @@
 //! Skirmish mode: the selector, technology upgrades, deployment and the turn
 //! rotation between the player and the (still passive) AI.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use libday_data::Battle;
 use libday_data::battle::PlayerRecord;
@@ -72,8 +72,8 @@ pub struct Flow {
     pub setup: Option<Setup>,
     /// Last game message, shown in the bottom bar.
     pub message: Option<String>,
-    /// When the AI's turn ends.
-    pub ai_until: Option<Instant>,
+    /// Clock time the AI's turn ends.
+    pub ai_until: Option<Duration>,
 }
 
 impl Flow {
@@ -390,6 +390,14 @@ impl Viewer {
         Some((kind.id, tl, kind.cost))
     }
 
+    /// The deployment list row of the unit type named `name`.
+    pub(crate) fn deploy_row_named(&self, name: &str) -> Option<usize> {
+        self.deploy_list().iter().position(|&i| {
+            self.tech_unit(i)
+                .is_some_and(|(k, _)| k.name.eq_ignore_ascii_case(name))
+        })
+    }
+
     pub(crate) fn deploy_select(&mut self, row: usize) {
         let len = self.deploy_list().len();
         if let Some(setup) = &mut self.flow.setup
@@ -539,7 +547,7 @@ impl Viewer {
             .iter()
             .position(|u| u.owner == PLAYER && u.arrival == 0);
         self.preview = None;
-        self.started = Instant::now();
+        self.started = self.clock.now();
         self.centre_on_selected();
     }
 
@@ -556,18 +564,18 @@ impl Viewer {
         self.screen = Screen::AiTurn;
         self.selected = None;
         self.preview = None;
-        self.started = Instant::now();
+        self.started = self.clock.now();
         self.flow.message = Some(format!(
             "{}'s turn has begun",
             libday_view::minimap::player_name(AI)
         ));
-        self.flow.ai_until = Some(Instant::now() + AI_TURN);
+        self.flow.ai_until = Some(self.started + AI_TURN);
     }
 
     /// Ends the AI's turn once its time is up; returns whether it did.
     pub(crate) fn ai_tick(&mut self) -> bool {
         match self.flow.ai_until {
-            Some(until) if Instant::now() >= until => {}
+            Some(until) if self.clock.now() >= until => {}
             _ => return false,
         }
         self.flow.ai_until = None;

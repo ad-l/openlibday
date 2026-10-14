@@ -1,0 +1,34 @@
+# Smoke test: skirmish -> tech -> briefing -> deploy -> battle -> move -> end turn.
+# Run: openlibday --headless --script scripts/smoke.txt  (needs LIBDAY_ROOT)
+skirmish Opportunity Knocks
+expect screen Skirmishes
+key Return
+expect screen Tech
+key Return
+expect screen Briefing
+key Return
+expect screen Deploy
+deploy Trooper
+tile 44 18
+expect units.-1.x 44
+expect units.-1.y 18
+expect units.-1.facing 2
+screenshot out/deploy.png
+key Return
+key Y
+expect phase Player
+expect turn 1
+tile 44 18
+expect selected 27
+tile 44 21
+tile 44 21
+record out/walk 30
+idle
+expect units.-1.y 21
+expect units.-1.ap 50
+screenshot out/moved.png
+button EndTurn
+idle
+expect turn 2
+state out/state.json
+echo smoke test passed

@@ -7,17 +7,22 @@
 //! mines, buildings, units and starting zones in the original stacking
 //! order, with pan and zoom, inside the original sidebar and bottom bar.
 //!
-//! Usage: `openlibday [--root DIR] [--load SAVE] [SCENARIO]`, where `SCENARIO` is a
-//! scenario database name such as `s1-2-1` or `s1-2-1.mdb`
-//! and `SAVE` an openlibday save, an original savegame directory or slot number.
+//! Usage: `openlibday [--root DIR] [--load SAVE] [--script FILE [--headless]
+//! [--size WxH]] [SCENARIO]`, where `SCENARIO` is a
+//! scenario database name such as `s1-2-1` or `s1-2-1.mdb`,
+//! `SAVE` an openlibday save, an original savegame directory or slot number,
+//! and `FILE` a list of commands to run (see `script.rs`); `--headless` runs
+//! it without a window, at `--size` (default 1024x768).
 
+mod clock;
 mod hud;
 mod moves;
+mod script;
 mod settings;
 mod skirmish;
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use libday_data::{Battle, Definitions, Dir, GameData};
 use libday_formats::Dbi;
@@ -32,6 +37,7 @@ use sdl3::pixels::Color;
 use sdl3::render::{Canvas, FPoint, FRect, Texture};
 use sdl3::video::Window;
 
+use clock::Clock;
 use hud::{Gfx, Result};
 use skirmish::{Flow, Phase};
 
@@ -50,6 +56,15 @@ struct Args {
     scenario: Option<String>,
     options: Option<PathBuf>,
     load: Option<String>,
+    script: Option<PathBuf>,
+    headless: bool,
+    size: Option<(u32, u32)>,
+}
+
+fn parse_size(text: &str) -> Option<(u32, u32)> {
+    let (w, h) = text.split_once(['x', 'X'])?;
+    let (w, h) = (w.parse().ok()?, h.parse().ok()?);
+    (w >= 640 && h >= 480).then_some((w, h))
 }
 
 fn parse_args() -> Result<Args> {
@@ -58,6 +73,9 @@ fn parse_args() -> Result<Args> {
         scenario: None,
         options: None,
         load: None,
+        script: None,
+        headless: false,
+        size: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
@@ -65,13 +83,23 @@ fn parse_args() -> Result<Args> {
             "--root" => args.root = Some(iter.next().ok_or("--root needs a directory")?),
             "--options" => args.options = Some(iter.next().ok_or("--options needs a file")?.into()),
             "--load" => args.load = Some(iter.next().ok_or("--load needs a save")?),
+            "--script" => args.script = Some(iter.next().ok_or("--script needs a file")?.into()),
+            "--headless" => args.headless = true,
+            "--size" => {
+                let size = iter.next().ok_or("--size needs WIDTHxHEIGHT")?;
+                args.size =
+                    Some(parse_size(&size).ok_or("--size needs WIDTHxHEIGHT, at least 640x480")?);
+            }
             "-h" | "--help" => {
                 let file = settings::default_path()
                     .map_or_else(|| settings::FILE_NAME.into(), |p| p.display().to_string());
                 println!(
-                    "usage: openlibday [--root DIR] [--options FILE] [--load SAVE] [SCENARIO]\n\
+                    "usage: openlibday [--root DIR] [--options FILE] [--load SAVE]\n\
+                     \x20                 [--script FILE [--headless] [--size WxH]] [SCENARIO]\n\
                      SAVE: an openlibday save file, an original savegame directory, or\n\
                      \x20     the number of an original savegame slot (SAVEGAME\\savegame.NN)\n\
+                     --script: run the commands in FILE on a virtual clock (see script.rs);\n\
+                     \x20         --headless without a window, at --size (default 1024x768)\n\
                      options file: {file}\n{HELP}"
                 );
                 std::process::exit(0);
@@ -80,6 +108,9 @@ fn parse_args() -> Result<Args> {
             _ if std::path::Path::new(&arg).is_dir() => args.root = Some(arg),
             _ => args.scenario = Some(arg),
         }
+    }
+    if args.headless && args.script.is_none() {
+        return Err("--headless needs --script".into());
     }
     Ok(args)
 }
@@ -144,7 +175,10 @@ struct Viewer {
     player: usize,
     scroll: usize,
     entry: Option<usize>,
-    started: Instant,
+    /// Drives animations and timers (virtual in scripted runs).
+    clock: Clock,
+    /// Clock time the turn (or map) started; the bottom bar's timer.
+    started: Duration,
     /// Where F5/F9 save and load.
     saves: Option<PathBuf>,
     /// Last save/load result, shown in the title.
@@ -231,7 +265,7 @@ impl Viewer {
         self.motion = None;
         self.options.hidden_unit = None;
         self.hover = None;
-        self.started = Instant::now();
+        self.started = self.clock.now();
     }
 
     fn rebuild(&mut self) {
@@ -1038,19 +1072,28 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     Ok(())
 }
 
-fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+/// Draws a frame (without presenting it).
+fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     if !viewer.screen.is_dialog() && !matches!(viewer.screen, Screen::Overview | Screen::Briefing) {
         draw_map(canvas, gfx, viewer)?;
     }
     hud::draw(canvas, gfx, viewer)?;
-    canvas.present();
     Ok(())
 }
 
 fn main() -> Result {
     let args = parse_args()?;
+    let script = match &args.script {
+        Some(path) => {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let lines = script::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            Some((path.clone(), lines))
+        }
+        None => None,
+    };
     let game = match args.root {
         Some(root) => GameData::open(root)?,
         None => GameData::from_env()?,
@@ -1114,9 +1157,19 @@ fn main() -> Result {
     sdl3::hint::set("SDL_KEYCODE_OPTIONS", "hide_numpad,latin_letters");
     // The click that focuses the window also acts.
     sdl3::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
+    if args.headless {
+        // No window on screen; software rendering so frames can be read back.
+        sdl3::hint::set("SDL_VIDEO_DRIVER", "offscreen");
+        sdl3::hint::set("SDL_RENDER_DRIVER", "software");
+    }
     let sdl = sdl3::init()?;
     let video = sdl.video()?;
-    let options_path = args.options.or_else(settings::default_path);
+    // Headless runs ignore the user's options unless given, to be reproducible.
+    let options_path = if args.headless {
+        args.options
+    } else {
+        args.options.or_else(settings::default_path)
+    };
     let settings = options_path
         .as_deref()
         .map(settings::Settings::load)
@@ -1128,17 +1181,25 @@ fn main() -> Result {
         .map(|r| (r.width(), r.height()))
         .unwrap_or((1280, 800));
     let fit = |set: u32, screen: u32| if set > 0 { set } else { screen * 9 / 10 };
-    let mut builder = video.window(
-        "openlibday",
-        fit(settings.width, usable.0),
-        fit(settings.height, usable.1),
-    );
-    builder.position_centered().resizable().high_pixel_density();
-    if settings.fullscreen {
-        builder.fullscreen();
+    let (width, height) = match args.size {
+        Some(size) => size,
+        None if args.headless => (1024, 768),
+        None => (
+            fit(settings.width, usable.0),
+            fit(settings.height, usable.1),
+        ),
+    };
+    let mut builder = video.window("openlibday", width, height);
+    if !args.headless {
+        builder.position_centered().resizable().high_pixel_density();
+        if settings.fullscreen {
+            builder.fullscreen();
+        }
     }
     let mut window = builder.build()?;
-    window.set_minimum_size(640, 520)?;
+    if !args.headless {
+        window.set_minimum_size(640, 520)?;
+    }
     let density = window.pixel_density().max(1.0);
     let (pw, ph) = window.size_in_pixels();
     let mut canvas = window.into_canvas();
@@ -1188,7 +1249,12 @@ fn main() -> Result {
         player: 0,
         scroll: 0,
         entry: None,
-        started: Instant::now(),
+        clock: if args.script.is_some() {
+            Clock::manual()
+        } else {
+            Clock::real()
+        },
+        started: Duration::ZERO,
         saves: options_path
             .as_deref()
             .and_then(|p| p.parent())
@@ -1206,6 +1272,20 @@ fn main() -> Result {
     }
 
     let mut events = sdl.event_pump()?;
+    if let Some((path, lines)) = &script {
+        let mut runner = script::Runner {
+            canvas: &mut canvas,
+            gfx: &mut gfx,
+            events: &mut events,
+            visible: !args.headless,
+            frame: Duration::ZERO,
+        };
+        if !runner.run(&mut viewer, path, lines)? || args.headless {
+            return Ok(());
+        }
+        // A shown run stays playable once its script ends.
+        viewer.clock.go_live();
+    }
     let mut title = String::new();
     let mut dirty = true;
     let mut second = 0;
@@ -1231,7 +1311,7 @@ fn main() -> Result {
         if !running {
             break;
         }
-        let now = viewer.started.elapsed().as_secs();
+        let now = viewer.clock.since(viewer.started).as_secs();
         if now != second || viewer.animating() || moving {
             second = now;
             dirty = true;
@@ -1242,7 +1322,8 @@ fn main() -> Result {
             title = next;
         }
         if dirty {
-            draw(&mut canvas, &mut gfx, &viewer)?;
+            render(&mut canvas, &mut gfx, &viewer)?;
+            canvas.present();
             dirty = false;
         }
     }

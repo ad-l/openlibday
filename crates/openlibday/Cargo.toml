@@ -10,7 +10,9 @@ license.workspace = true
 libday-formats.workspace = true
 libday-data.workspace = true
 libday-view.workspace = true
-sdl3 = { version = "0.20", features = ["build-from-source-static"] }
+png.workspace = true
+serde_json.workspace = true
+sdl3 =  { version = "0.20", features = ["build-from-source-static"] }
 
 [lints]
 workspace = true

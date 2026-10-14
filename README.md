@@ -70,6 +70,29 @@ range, overwatch, owner and capability icons in the minimap well. Click the mini
 bar shows the hovered tile's terrain, building and unit. Set
 `OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
 
+### Scripted and headless runs
+
+`openlibday --script FILE` replays a script of input and checks on a virtual
+clock (time only advances per scripted frame, so runs are deterministic),
+then continues interactively; add `--headless` to render offscreen and exit
+at the end of the script, and `--size WxH` for its resolution (default
+1024x768). Commands, one per line (`#` comments): `fps N`, `wait FRAMES`,
+`idle [MAX]` (until movement and the AI turn finish), `key NAME`, `click X Y
+[right]`, `move X Y`, `tile X Y [right]` / `hover X Y` (map tiles; recentres
+as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
+`deploy UNIT`, `centre X Y`, `zoom F`, `screenshot FILE.png`, `record DIR N`
+(N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
+phase, turn, selection, path preview, motion, deploy zone and every unit),
+`expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
+`units.-1.x`), `echo TEXT`, `quit`. A failed `expect` or command exits with
+an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
+skirmish from selection to turn 2 and is run by `cargo test` when
+`LIBDAY_ROOT` is set:
+
+```powershell
+cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
+```
+
 Options (interface scale, default 2x; initial window size; fullscreen) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),

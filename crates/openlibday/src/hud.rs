@@ -365,7 +365,7 @@ impl Viewer {
 
     /// Whether the overview's selected entry is in its "off" blink phase.
     fn blink_off(&self) -> bool {
-        (self.started.elapsed().as_millis() / 300) % 2 == 1
+        (self.clock.since(self.started).as_millis() / 300) % 2 == 1
     }
 
     fn marker_blinks(&self, marker: &Marker) -> bool {
@@ -848,7 +848,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     for button in [Button::Chat, Button::Menu] {
         gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
     }
-    let secs = viewer.started.elapsed().as_secs();
+    let secs = viewer.clock.since(viewer.started).as_secs();
     let timer = format!("{:02}:{:02}", secs / 60 % 100, secs % 60);
     let r = layout.field(Field::Timer);
     gfx.text_in(canvas, fonts, &timer, TEXT_PX * s as f32, WHITE, r, 0.5, 0)?;

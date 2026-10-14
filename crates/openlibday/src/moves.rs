@@ -2,7 +2,7 @@
 //! second click on the same tile (or a double click), animated along the
 //! path with the unit's walk animation and charged in action points.
 
-use std::time::Instant;
+use std::time::Duration;
 
 use libday_view::movement::{
     self, ANIMATION_FPS, ANIMATION_OFFSET, Step, affordable_steps, executable_steps, move_budget,
@@ -42,8 +42,9 @@ pub struct Motion {
     pub done: usize,
     /// Tile the current step starts from.
     pub from: (i64, i64),
-    pub step_started: Instant,
-    pub started: Instant,
+    /// Clock times the current step and the walk started.
+    pub step_started: Duration,
+    pub started: Duration,
     /// Map pixels per second.
     pub speed: f64,
     pub final_ap: i64,
@@ -157,7 +158,7 @@ impl Viewer {
         if n == 0 {
             return;
         }
-        let now = Instant::now();
+        let now = self.clock.now();
         self.motion = Some(Motion {
             unit: p.unit,
             steps: p.steps[..n].to_vec(),
@@ -179,12 +180,12 @@ impl Viewer {
         let Some(m) = &mut self.motion else {
             return false;
         };
-        let now = Instant::now();
+        let now = self.clock.now();
         loop {
             let step = m.steps[m.done];
             let to = (i64::from(step.x), i64::from(step.y));
             let length = step_length(size, m.from, to);
-            let elapsed = now.saturating_duration_since(m.step_started).as_secs_f64();
+            let elapsed = now.saturating_sub(m.step_started).as_secs_f64();
             if elapsed * m.speed < length {
                 break;
             }
@@ -195,7 +196,7 @@ impl Viewer {
             } else if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
                 unit.action_points = Some(k.action_points - i64::from(step.cost));
             }
-            m.step_started += std::time::Duration::from_secs_f64(length / m.speed);
+            m.step_started += Duration::from_secs_f64(length / m.speed);
             m.from = to;
             m.done += 1;
             if m.done == m.steps.len() {
@@ -220,11 +221,12 @@ impl Viewer {
         let step = m.steps.get(m.done)?;
         let to = (i64::from(step.x), i64::from(step.y));
         let length = step_length(size, m.from, to);
-        let t = (m.step_started.elapsed().as_secs_f64() * m.speed / length).clamp(0.0, 1.0);
+        let elapsed = self.clock.since(m.step_started).as_secs_f64();
+        let t = (elapsed * m.speed / length).clamp(0.0, 1.0);
         let (ax, ay) = sprite_origin(size, m.from.0, m.from.1);
         let (bx, by) = sprite_origin(size, to.0, to.1);
         let lerp = |a: i32, b: i32| f64::from(a) + (f64::from(b) - f64::from(a)) * t;
-        let frame = (m.started.elapsed().as_secs_f64() * ANIMATION_FPS) as usize;
+        let frame = (self.clock.since(m.started).as_secs_f64() * ANIMATION_FPS) as usize;
         let depth = if (to.0 + to.1, to.0) > (m.from.0 + m.from.1, m.from.0) {
             to
         } else {
