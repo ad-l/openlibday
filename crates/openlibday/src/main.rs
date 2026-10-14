@@ -1338,9 +1338,13 @@ fn main() -> Result {
     let mut title = String::new();
     let mut dirty = true;
     let mut second = 0;
+    let mut was_moving = false;
     loop {
         let mut running = true;
         let moving = viewer.tick();
+        // The frame after a walk or shot ends shows the unit standing again.
+        dirty |= moving != was_moving;
+        was_moving = moving;
         dirty |= viewer.ai_tick();
         let wait = if moving {
             15
@@ -1371,6 +1375,9 @@ fn main() -> Result {
             title = next;
         }
         if dirty {
+            // Catch up with the time spent waiting for events, so the
+            // hidden unit and its animation agree with the drawn instant.
+            viewer.tick();
             render(&mut canvas, &mut gfx, &viewer)?;
             canvas.present();
             dirty = false;
