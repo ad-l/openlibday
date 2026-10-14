@@ -95,6 +95,15 @@ pub struct UnitType {
     /// Has a walk animation (`MoveAnimation_Begin` != -1).
     pub move_animation: bool,
     pub image: String,
+    /// Deployment cost (`Cost`).
+    pub cost: i64,
+    /// Technology points to reach the next level (`CostToNextTL`); 0 at the
+    /// maximum level.
+    pub cost_to_next: i64,
+    pub damage_base: i64,
+    pub damage_random: i64,
+    /// `weaponRange`.
+    pub range: i64,
 }
 
 impl UnitType {
@@ -147,6 +156,20 @@ pub struct Definitions {
     pub walls: BTreeMap<i64, SurfaceType>,
     pub ruins: BTreeMap<String, RuinType>,
     pub mines: BTreeMap<i64, MineType>,
+    /// `Tech Ratio`: `(max points, ratio)`, ascending; a negative maximum is
+    /// unbounded.
+    pub tech_ratios: Vec<(i64, i64)>,
+    /// `Automated Units`: support units called in from off the map.
+    pub automated: BTreeMap<i64, AutomatedType>,
+}
+
+/// An automated (off-map support) unit type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutomatedType {
+    pub id: i64,
+    pub name: String,
+    /// `LISTBOX.DBI` portrait prefix.
+    pub image: String,
 }
 
 fn invalid(table: &str, message: String) -> DataError {
@@ -236,6 +259,11 @@ impl Definitions {
                 move_pix_speed: t.int_or(r, "MoveAnimation_PixSpeed", 8)?,
                 move_animation: t.int_or(r, "MoveAnimation_Begin", -1)? != -1,
                 image: t.text(r, "facingsImageID")?.to_ascii_uppercase(),
+                cost: t.int_or(r, "Cost", 0)?,
+                cost_to_next: t.int_or(r, "CostToNextTL", 0)?,
+                damage_base: t.int_or(r, "damageBase", 0)?,
+                damage_random: t.int_or(r, "damageRandom", 0)?,
+                range: t.int_or(r, "weaponRange", 0)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));
@@ -280,6 +308,26 @@ impl Definitions {
             };
             insert_unique(&mut defs.mines, &t.table, item.id, item)?;
         }
+
+        // Optional; see `tech_points` for the default.
+        if let Ok(t) = Records::read(global, "Tech Ratio") {
+            for r in 0..t.len() {
+                defs.tech_ratios
+                    .push((t.int_or(r, "MaxRange", -1)?, t.int_or(r, "Ratio", 1)?));
+            }
+            defs.tech_ratios
+                .sort_by_key(|&(max, _)| if max < 0 { i64::MAX } else { max });
+        }
+        if let Ok(t) = Records::read(global, "Automated Units") {
+            for r in 0..t.len() {
+                let item = AutomatedType {
+                    id: t.int(r, "typeID")?,
+                    name: t.text_or(r, "NameEnglish")?,
+                    image: t.text_or(r, "facingsImageID")?.to_ascii_uppercase(),
+                };
+                insert_unique(&mut defs.automated, &t.table, item.id, item)?;
+            }
+        }
         Ok(defs)
     }
 
@@ -290,5 +338,32 @@ impl Definitions {
     /// Base (technology level 0) definition of a unit type.
     pub fn unit(&self, id: i64) -> Option<&UnitType> {
         self.units.get(&(id, 0))
+    }
+
+    /// Definition of a unit type at technology level `tech`, or at the
+    /// highest defined level below it.
+    pub fn unit_tech(&self, id: i64, tech: i64) -> Option<&UnitType> {
+        self.units
+            .range((id, 0)..=(id, tech.max(0)))
+            .next_back()
+            .map(|(_, u)| u)
+            .or_else(|| self.unit(id))
+    }
+
+    /// Technology points of a skirmish worth `points` deployment points:
+    /// `points` times the matching `Tech Ratio`.
+    pub fn tech_points(&self, points: i64) -> i64 {
+        const DEFAULT: [(i64, i64); 4] = [(300, 1), (700, 5), (1200, 8), (-1, 10)];
+        let ratios = if self.tech_ratios.is_empty() {
+            &DEFAULT[..]
+        } else {
+            &self.tech_ratios[..]
+        };
+        let ratio = ratios
+            .iter()
+            .find(|&&(max, _)| max < 0 || points <= max)
+            .or(ratios.last())
+            .map_or(1, |&(_, r)| r);
+        points * ratio
     }
 }

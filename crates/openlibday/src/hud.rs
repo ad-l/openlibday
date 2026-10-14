@@ -18,6 +18,8 @@ use sdl3::video::{Window, WindowContext};
 
 use crate::Viewer;
 
+mod setup;
+
 /// Interface text size and line spacing, in original pixels.
 const TEXT_PX: f32 = 11.5;
 const LINE: i32 = 12;
@@ -289,8 +291,8 @@ impl Viewer {
     /// Tile under output pixel `(x, y)` of the minimap or overview picture.
     pub(crate) fn picture_tile(&self, x: i32, y: i32) -> Option<(f64, f64)> {
         let (rect, square) = match self.screen {
-            Screen::Battle => self.minimap_square(),
-            Screen::Overview => {
+            Screen::Battle | Screen::Deploy | Screen::AiTurn => self.minimap_square(),
+            Screen::Overview | Screen::Briefing => {
                 let (rect, cell) = self.overview_square();
                 let tile = cell as f32;
                 (
@@ -302,7 +304,7 @@ impl Viewer {
                     },
                 )
             }
-            Screen::Goal => return None,
+            _ => return None,
         };
         let margin = 2 * self.scale;
         let grown = Rect::new(
@@ -353,7 +355,7 @@ impl Viewer {
 
     /// Whether anything on screen animates (needs periodic redraws).
     pub(crate) fn animating(&self) -> bool {
-        self.screen == Screen::Overview && self.entry.is_some()
+        self.screen == Screen::Overview && self.entry.is_some() || self.flow.ai_until.is_some()
     }
 }
 
@@ -516,33 +518,8 @@ fn draw_battle_sidebar(
         };
         gfx.button(canvas, viewer, &layout, button, State::Normal, on)?;
     }
-    let info = &viewer.map.battle.scenario.info;
-    if info.points > 0 {
-        let r = layout.field(Field::Credits);
-        gfx.text_in(
-            canvas,
-            fonts,
-            &info.points.to_string(),
-            px,
-            WHITE,
-            r,
-            0.5,
-            0,
-        )?;
-    }
-    if info.turns > 0 {
-        let r = layout.field(Field::Turn);
-        gfx.text_in(
-            canvas,
-            fonts,
-            &info.turns.to_string(),
-            px,
-            WHITE,
-            r,
-            1.0,
-            4 * s,
-        )?;
-    }
+    draw_credits(canvas, gfx, viewer)?;
+    draw_turns(canvas, gfx, viewer)?;
     if let Some((name, image, ap, ar)) = unit {
         let r = layout.field(Field::Portrait);
         if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &image) {
@@ -561,8 +538,45 @@ fn draw_battle_sidebar(
             )?;
         }
     }
+    draw_minimap(canvas, gfx, viewer, scene, art)
+}
 
-    // Minimap: box-filtered top-down picture, markers, camera outline.
+/// The player's credits in the sidebar's top box.
+fn draw_credits(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let layout = viewer.layout();
+    let px = TEXT_PX * layout.scale as f32;
+    let credits = viewer.credits();
+    if credits > 0 || !viewer.map.battle.players.is_empty() {
+        let r = layout.field(Field::Credits);
+        let text = credits.to_string();
+        gfx.text_in(canvas, &viewer.fonts, &text, px, WHITE, r, 0.5, 0)?;
+    }
+    Ok(())
+}
+
+/// Turns left in the sidebar's bottom box.
+fn draw_turns(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let layout = viewer.layout();
+    let (s, px) = (layout.scale, TEXT_PX * layout.scale as f32);
+    let turns = viewer.map.battle.scenario.info.turns;
+    if turns > 0 {
+        let left = (turns - viewer.map.battle.clock.turn + 1).max(0);
+        let r = layout.field(Field::Turn);
+        let text = left.to_string();
+        gfx.text_in(canvas, &viewer.fonts, &text, px, WHITE, r, 1.0, 4 * s)?;
+    }
+    Ok(())
+}
+
+/// Minimap: box-filtered top-down picture, markers, camera outline.
+fn draw_minimap(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    scene: &Scene,
+    art: &Art,
+) -> Result {
+    let layout = viewer.layout();
     let (rect, square) = viewer.minimap_square();
     let key = (viewer.generation, rect.w);
     if gfx.minimap.as_ref().is_none_or(|(k, _)| *k != key) {
@@ -612,12 +626,24 @@ fn draw_overview(
         y: rect.y as f32,
         tile: cell as f32,
     };
-    draw_markers(canvas, viewer, square, true)?;
+    let briefing = viewer.screen == Screen::Briefing;
+    if briefing {
+        canvas.set_blend_mode(BlendMode::Blend);
+        canvas.set_draw_color(Color::RGBA(255, 0, 0, 110));
+        for d in &viewer.map.battle.scenario.deployments {
+            if viewer.zone(d.x, d.y) {
+                canvas.fill_rect(square.tile_rect(d.x, d.y, 1, 1))?;
+            }
+        }
+        canvas.set_blend_mode(BlendMode::None);
+    } else {
+        draw_markers(canvas, viewer, square, true)?;
+    }
     draw_view_outline(canvas, viewer, square, rect)?;
 
     draw_sidebar(canvas, gfx, &layout, frame::OVERVIEW_SIDEBAR)?;
     let entries = viewer.entries();
-    for button in layout.buttons(Screen::Overview, viewer.players.len()) {
+    for button in layout.buttons(viewer.screen, viewer.players.len()) {
         gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
     }
     let owner = viewer.players.get(viewer.player).copied().unwrap_or(0);
@@ -712,10 +738,18 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     let (s, fonts) = (layout.scale, &viewer.fonts);
     let (scene, art) = (&viewer.map.scene, &viewer.art);
     match viewer.screen {
-        Screen::Overview => draw_overview(canvas, gfx, viewer, scene, art)?,
+        Screen::Skirmishes => return setup::draw_selector(canvas, gfx, viewer),
+        Screen::Tech { read_only } => return setup::draw_tech(canvas, gfx, viewer, read_only),
+        Screen::Overview | Screen::Briefing => draw_overview(canvas, gfx, viewer, scene, art)?,
         Screen::Battle => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
+        Screen::Deploy | Screen::Confirm => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
+        Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
         Screen::Goal => {
-            draw_battle_sidebar(canvas, gfx, viewer, scene, art)?;
+            match viewer.home() {
+                Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
+                Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
+                _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
+            }
             draw_goal(canvas, gfx, viewer)?;
         }
     }
@@ -727,5 +761,13 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     let timer = format!("{:02}:{:02}", secs / 60 % 100, secs % 60);
     let r = layout.field(Field::Timer);
     gfx.text_in(canvas, fonts, &timer, TEXT_PX * s as f32, WHITE, r, 0.5, 0)?;
+    if let Some(message) = &viewer.flow.message {
+        let bar = layout.bottom_bar();
+        let r = Rect::new(bar.x + 62 * s, r.y, r.x - bar.x - 70 * s, r.h);
+        gfx.text_in(canvas, fonts, message, TEXT_PX * s as f32, WHITE, r, 0.0, 0)?;
+    }
+    if viewer.screen == Screen::Confirm {
+        setup::draw_confirm(canvas, gfx, viewer)?;
+    }
     Ok(())
 }

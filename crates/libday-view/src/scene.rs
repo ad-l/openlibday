@@ -273,6 +273,12 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
         .collect();
     keys.sort_by_key(|&(x, y)| (x + y, x));
 
+    let mut zones: BTreeMap<Key, String> = if options.deployment && !options.terrain_only {
+        deployment_sprites(scenario).into_iter().collect()
+    } else {
+        BTreeMap::new()
+    };
+
     let mut items = Vec::new();
     let mut push = |layer, sheet, sprite: String, (x, y): Key, missing: &mut Vec<String>| {
         if !art.contains(sheet, &sprite) {
@@ -304,17 +310,15 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
         for (layer, sheet, sprite) in overlays.remove(&key).unwrap_or_default() {
             push(layer, sheet, sprite, key, &mut missing);
         }
+        // Starting zones tint the ground but leave buildings and units on top.
+        if let Some(sprite) = zones.remove(&key) {
+            push(Layer::Deployment, Sheet::Symbols, sprite, key, &mut missing);
+        }
         for sprite in parts.remove(&key).unwrap_or_default() {
             push(Layer::Building, Sheet::Ub, sprite, key, &mut missing);
         }
         for sprite in unit_parts.remove(&key).unwrap_or_default() {
             push(Layer::Unit, Sheet::Ub, sprite, key, &mut missing);
-        }
-    }
-
-    if options.deployment && !options.terrain_only {
-        for (key, sprite) in deployment_sprites(scenario) {
-            push(Layer::Deployment, Sheet::Symbols, sprite, key, &mut missing);
         }
     }
 

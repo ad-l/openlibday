@@ -135,5 +135,32 @@ fn definitions_and_skirmishes_load() {
             "{} has no deployment zone",
             entry.file_name
         );
+        assert!(
+            !scenario.info.available_units.is_empty(),
+            "{} has no units to buy",
+            entry.file_name
+        );
+        for &kind in &scenario.info.available_units {
+            assert!(defs.unit(kind).is_some(), "{} buys {kind}", entry.file_name);
+        }
     }
+}
+
+#[test]
+fn skirmish_technology_data() {
+    let Some(game) = game() else { return };
+    let defs = game.definitions().unwrap();
+    assert_eq!(defs.tech_points(150), 150);
+    assert_eq!(defs.tech_points(301), 1505);
+    assert_eq!(defs.tech_points(1000), 8000);
+    assert_eq!(defs.tech_points(2000), 20000);
+    let trooper = |tl| defs.unit_tech(2, tl).unwrap();
+    assert_eq!((trooper(0).action_points, trooper(0).cost_to_next), (80, 5));
+    assert_eq!(trooper(0).cost, 5);
+    assert_eq!(trooper(5).cost_to_next, 0);
+    assert_eq!(trooper(99).tech, trooper(5).tech);
+    let s = game.load_scenario("s1-3-1.mdb").unwrap();
+    assert_eq!(s.info.available_units, [2, 56, 8, 4, 3, 10]);
+    assert_eq!(s.info.available_automated, [0, 7]);
+    assert!(s.info.reinf_res >= 0);
 }

@@ -31,6 +31,14 @@ pub const BOTTOM_W: i32 = 840;
 
 /// Frame numbers of the elements.
 pub mod frame {
+    /// Deployment sidebar.
+    pub const DEPLOY_SIDEBAR: u16 = 0;
+    pub const DEPLOY_MAP: u16 = 5;
+    pub const DEPLOY_GOAL: u16 = 9;
+    pub const DEPLOY_UP: u16 = 13;
+    pub const DEPLOY_DOWN: u16 = 17;
+    pub const DEPLOY_CONTINUE: u16 = 21;
+    pub const ARMY: u16 = 29;
     /// Map overview sidebar.
     pub const OVERVIEW_SIDEBAR: u16 = 41;
     /// First colour swatch (six frames per colour: red, blue, yellow, magenta, green).
@@ -38,6 +46,15 @@ pub mod frame {
     pub const UP: u16 = 76;
     pub const DOWN: u16 = 80;
     pub const BACK: u16 = 84;
+    /// Technology dialog and its elements.
+    pub const TECH_DIALOG: u16 = 157;
+    pub const TECH_CONTINUE: u16 = 158;
+    pub const TECH_UPGRADE: u16 = 162;
+    pub const TECH_BACK: u16 = 168;
+    pub const TECH_RIGHT: u16 = 176;
+    pub const TECH_LEFT: u16 = 180;
+    pub const TECH_DOWN: u16 = 184;
+    pub const TECH_UP: u16 = 188;
     /// Battle sidebar (already includes the OVERWATCH / AUTO FIRE labels).
     pub const SIDEBAR: u16 = 226;
     pub const MAP: u16 = 231;
@@ -54,19 +71,41 @@ pub mod frame {
     pub const AUTOMATED: u16 = 286;
     pub const END_TURN: u16 = 290;
     pub const CENTER: u16 = 298;
+    /// Sidebar during the other players' turns.
+    pub const AI_SIDEBAR: u16 = 310;
+    /// YES / NO question dialog and its buttons.
+    pub const QUESTION: u16 = 477;
+    pub const YES: u16 = 478;
+    pub const NO: u16 = 482;
     pub const BOTTOM_BAR: u16 = 498;
     pub const CHAT: u16 = 499;
     pub const GOAL_DIALOG: u16 = 633;
     pub const CONTINUE: u16 = 634;
     pub const OBJECTIVES: u16 = 638;
     pub const MENU: u16 = 693;
+    /// Small CONTINUE of the overview shown before deployment.
+    pub const OVERVIEW_CONTINUE: u16 = 700;
+    /// Skirmish selector dialog and its buttons.
+    pub const SKIRMISH_DIALOG: u16 = 841;
+    pub const SKIRMISH_CONTINUE: u16 = 842;
+    pub const SKIRMISH_BACK: u16 = 846;
+    pub const SKIRMISH_UP: u16 = 850;
+    pub const SKIRMISH_DOWN: u16 = 854;
 }
 
 /// `(first frame, last frame, width, height)` of every element used.
 const CROPS: &[(u16, u16, i32, i32)] = &[
+    (0, 0, SIDEBAR_W, SIDEBAR_H),
+    (5, 20, 53, 17),
+    (21, 24, 110, 17),
+    (29, 32, 110, 17),
     (41, 41, SIDEBAR_W, SIDEBAR_H),
     (46, 75, 19, 19),
     (76, 87, 53, 17),
+    (157, 157, 588, 451),
+    (158, 171, 110, 17),
+    (172, 172, 60, 55),
+    (176, 191, 19, 17),
     (226, 226, SIDEBAR_W, SIDEBAR_H),
     (231, 238, 53, 17),
     (241, 244, 53, 17),
@@ -79,12 +118,19 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (282, 289, 110, 17),
     (290, 293, 53, 17),
     (298, 301, 53, 17),
+    (310, 310, SIDEBAR_W, SIDEBAR_H),
+    (477, 477, 254, 144),
+    (478, 489, 53, 17),
     (498, 498, BOTTOM_W, BOTTOM_H),
     (499, 502, 53, 17),
     (633, 633, 449, 268),
     (634, 637, 110, 17),
     (638, 643, 19, 19),
     (693, 696, 53, 17),
+    (700, 703, 53, 17),
+    (841, 841, 364, 416),
+    (842, 849, 100, 24),
+    (850, 857, 53, 17),
 ];
 
 fn crop_of(frame: u16) -> Option<(i32, i32)> {
@@ -108,6 +154,25 @@ fn hide_emblem(image: &mut Image) {
     for row in 0..H {
         let (src, dst) = (((FROM + row) * w + X) * 4, ((Y + row) * w + X) * 4);
         image.rgba.copy_within(src..src + (w - X) * 4, dst);
+    }
+}
+
+/// Covers the skirmish dialog's "SET TIME" label (the multiplayer turn timer,
+/// which a single player skirmish does not offer) with camouflage copied from
+/// further right in the same band.
+fn hide_set_time(image: &mut Image) {
+    const AT: (usize, usize) = (14, 346);
+    const FROM_X: usize = 200;
+    const SIZE: (usize, usize) = (84, 20);
+    let w = image.width;
+    if w < FROM_X + SIZE.0 || image.height < AT.1 + SIZE.1 {
+        return;
+    }
+    for row in AT.1..AT.1 + SIZE.1 {
+        let src = (row * w + FROM_X) * 4;
+        image
+            .rgba
+            .copy_within(src..src + SIZE.0 * 4, (row * w + AT.0) * 4);
     }
 }
 
@@ -144,8 +209,17 @@ impl UiArt {
                     }
                 }
             }
-            if matches!(index, frame::SIDEBAR | frame::OVERVIEW_SIDEBAR) {
+            if matches!(
+                index,
+                frame::SIDEBAR
+                    | frame::OVERVIEW_SIDEBAR
+                    | frame::DEPLOY_SIDEBAR
+                    | frame::AI_SIDEBAR
+            ) {
                 hide_emblem(&mut image);
+            }
+            if index == frame::SKIRMISH_DIALOG {
+                hide_set_time(&mut image);
             }
             frames.insert(index, image);
         }
@@ -226,6 +300,31 @@ pub enum Button {
     // Goal dialog.
     Continue,
     Objectives,
+    // Deployment sidebar.
+    DeployMap,
+    DeployGoal,
+    DeployUp,
+    DeployDown,
+    Army,
+    DeployContinue,
+    /// Overview before deployment (in place of BACK).
+    OverviewContinue,
+    // Technology dialog.
+    TechLeft,
+    TechUp,
+    TechDown,
+    TechRight,
+    TechUpgrade,
+    TechContinue,
+    TechBack,
+    // Question dialog.
+    Yes,
+    No,
+    // Skirmish selector.
+    SkirmishUp,
+    SkirmishDown,
+    SkirmishBack,
+    SkirmishContinue,
 }
 
 /// Which panel set is on screen.
@@ -234,8 +333,29 @@ pub enum Screen {
     Battle,
     /// The MAP overview: whole map with unit positions and per-player lists.
     Overview,
-    /// The GOAL dialog over the battle screen.
+    /// The GOAL dialog over the battle (or deployment) screen.
     Goal,
+    /// The skirmish selector dialog.
+    Skirmishes,
+    /// Technology upgrades; read-only when opened from deployment (ARMY).
+    Tech {
+        read_only: bool,
+    },
+    /// Overview of the starting zones before deployment.
+    Briefing,
+    /// Placing units in the starting zones.
+    Deploy,
+    /// "Continue anyway?" over the deployment screen.
+    Confirm,
+    /// Another player's (the AI's) turn.
+    AiTurn,
+}
+
+impl Screen {
+    /// Full-window dialogs drawn without the map and the bottom bar.
+    pub fn is_dialog(self) -> bool {
+        matches!(self, Screen::Skirmishes | Screen::Tech { .. })
+    }
 }
 
 const BATTLE_BUTTONS: [Button; 14] = [
@@ -285,6 +405,26 @@ impl Button {
             Button::Back => BACK,
             Button::Continue => CONTINUE,
             Button::Objectives => OBJECTIVES,
+            Button::DeployMap => DEPLOY_MAP,
+            Button::DeployGoal => DEPLOY_GOAL,
+            Button::DeployUp => DEPLOY_UP,
+            Button::DeployDown => DEPLOY_DOWN,
+            Button::Army => ARMY,
+            Button::DeployContinue => DEPLOY_CONTINUE,
+            Button::OverviewContinue => OVERVIEW_CONTINUE,
+            Button::TechLeft => TECH_LEFT,
+            Button::TechUp => TECH_UP,
+            Button::TechDown => TECH_DOWN,
+            Button::TechRight => TECH_RIGHT,
+            Button::TechUpgrade => TECH_UPGRADE,
+            Button::TechContinue => TECH_CONTINUE,
+            Button::TechBack => TECH_BACK,
+            Button::Yes => YES,
+            Button::No => NO,
+            Button::SkirmishUp => SKIRMISH_UP,
+            Button::SkirmishDown => SKIRMISH_DOWN,
+            Button::SkirmishBack => SKIRMISH_BACK,
+            Button::SkirmishContinue => SKIRMISH_CONTINUE,
         }
     }
 
@@ -339,6 +479,28 @@ impl Button {
             Button::Back => (10, 458),
             Button::Continue => (308, 205),
             Button::Objectives => (298, 230),
+            Button::DeployMap => (9, 172),
+            Button::DeployGoal => (68, 172),
+            Button::DeployUp => (9, 401),
+            Button::DeployDown => (73, 401),
+            Button::Army => (9, 430),
+            Button::DeployContinue => (9, 456),
+            Button::OverviewContinue => (10, 458),
+            // Relative to the technology dialog.
+            Button::TechLeft => (247, 280),
+            Button::TechUp => (269, 280),
+            Button::TechDown => (291, 280),
+            Button::TechRight => (313, 280),
+            Button::TechUpgrade => (471, 401),
+            Button::TechContinue | Button::TechBack => (471, 428),
+            // Relative to the question dialog.
+            Button::Yes => (20, 119),
+            Button::No => (181, 119),
+            // Relative to the skirmish dialog.
+            Button::SkirmishUp => (44, 189),
+            Button::SkirmishDown => (267, 189),
+            Button::SkirmishBack => (12, 373),
+            Button::SkirmishContinue => (252, 373),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -389,6 +551,38 @@ pub const LIST_ROW: i32 = 15;
 pub const LIST_ROWS: usize = (331 / LIST_ROW) as usize;
 /// Goal dialog position over the map viewport.
 pub const GOAL_AT: (i32, i32) = (40, 40);
+/// Question dialog position over the map viewport.
+pub const QUESTION_AT: (i32, i32) = (50, 70);
+/// Question dialog text area, relative to the dialog.
+pub const QUESTION_TEXT: Rect = Rect::new(8, 8, 238, 104);
+/// Skirmish list `(x, y, w, h)`, relative to the dialog.
+pub const SKIRMISH_LIST: (i32, i32, i32, i32) = (12, 47, 340, 140);
+/// Skirmish description box, relative to the dialog.
+pub const SKIRMISH_TEXT: Rect = Rect::new(16, 216, 332, 122);
+pub const SKIRMISH_ROW: i32 = 17;
+pub const SKIRMISH_ROWS: usize = 8;
+/// Technology unit grid.
+pub const TECH_CELL: (i32, i32) = (135, 43);
+pub const TECH_COLUMNS: usize = 4;
+pub const TECH_CELLS: usize = 24;
+/// Technology dialog: selected unit name, stats and remaining points.
+pub const TECH_NAME: (i32, i32) = (299, 316);
+pub const TECH_STATS: (i32, i32, i32) = (299, 419, 358);
+pub const TECH_STAT_ROW: i32 = 14;
+pub const TECH_POINTS: Rect = Rect::new(470, 372, 92, 17);
+pub const TECH_EMBLEM: (u16, i32, i32) = (172, 496, 309);
+/// Deployment list: rows of `DEPLOY_ROW`, `DEPLOY_ROWS` visible.
+pub const DEPLOY_ROW: i32 = 39;
+pub const DEPLOY_ROWS: usize = 5;
+
+const DEPLOY_BUTTONS: [Button; 6] = [
+    Button::DeployMap,
+    Button::DeployGoal,
+    Button::DeployUp,
+    Button::DeployDown,
+    Button::Army,
+    Button::DeployContinue,
+];
 
 /// Bottom bar slices: the left end, a tileable middle, and the right end.
 pub const BOTTOM_LEFT: i32 = 100;
@@ -480,8 +674,103 @@ impl Layout {
                 self.s(native).offset(bar.right(), bar.y)
             }
             Button::Continue | Button::Objectives => self.s(native).offset_by(self.goal_dialog()),
+            Button::TechLeft
+            | Button::TechUp
+            | Button::TechDown
+            | Button::TechRight
+            | Button::TechUpgrade
+            | Button::TechContinue
+            | Button::TechBack => self.s(native).offset_by(self.tech_dialog()),
+            Button::Yes | Button::No => self.s(native).offset_by(self.question_dialog()),
+            Button::SkirmishUp
+            | Button::SkirmishDown
+            | Button::SkirmishBack
+            | Button::SkirmishContinue => self.s(native).offset_by(self.skirmish_dialog()),
             _ => self.in_sidebar(native),
         }
+    }
+
+    /// A dialog of `frame`'s size centred in the window.
+    fn centred(&self, frame: u16) -> Rect {
+        let (w, h) = crop_of(frame).unwrap_or((0, 0));
+        let r = self.s(Rect::new(0, 0, w, h));
+        Rect::new((self.width - r.w) / 2, (self.height - r.h) / 2, r.w, r.h)
+    }
+
+    pub fn skirmish_dialog(&self) -> Rect {
+        self.centred(frame::SKIRMISH_DIALOG)
+    }
+
+    pub fn tech_dialog(&self) -> Rect {
+        self.centred(frame::TECH_DIALOG)
+    }
+
+    pub fn question_dialog(&self) -> Rect {
+        let (w, h) = crop_of(frame::QUESTION).unwrap_or((0, 0));
+        self.s(Rect::new(QUESTION_AT.0, QUESTION_AT.1, w, h))
+    }
+
+    /// A rectangle in skirmish dialog coordinates.
+    pub fn in_skirmish(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.skirmish_dialog())
+    }
+
+    /// A rectangle in technology dialog coordinates.
+    pub fn in_tech(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.tech_dialog())
+    }
+
+    /// A rectangle in question dialog coordinates.
+    pub fn in_question(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.question_dialog())
+    }
+
+    /// A rectangle in sidebar coordinates.
+    pub fn in_side(&self, r: Rect) -> Rect {
+        self.in_sidebar(r)
+    }
+
+    /// Row `i` (on screen) of the skirmish list.
+    pub fn skirmish_row(&self, i: usize) -> Rect {
+        let (x, y, w, _) = SKIRMISH_LIST;
+        self.in_skirmish(Rect::new(
+            x + 1,
+            y + 1 + i as i32 * SKIRMISH_ROW,
+            w - 2,
+            SKIRMISH_ROW,
+        ))
+    }
+
+    /// Cell `i` of the technology unit grid.
+    pub fn tech_cell(&self, i: usize) -> Rect {
+        let (c, r) = ((i % TECH_COLUMNS) as i32, (i / TECH_COLUMNS) as i32);
+        self.in_tech(Rect::new(
+            8 + TECH_CELL.0 * c,
+            10 + TECH_CELL.1 * r,
+            TECH_CELL.0,
+            TECH_CELL.1,
+        ))
+    }
+
+    /// Cell `i` of the technology dialog's automated units.
+    pub fn tech_automated_cell(&self, i: usize) -> Rect {
+        self.in_tech(Rect::new(
+            8 + TECH_CELL.0 * i as i32,
+            316,
+            TECH_CELL.0,
+            TECH_CELL.1,
+        ))
+    }
+
+    /// Row `i` (on screen) of the deployment list.
+    pub fn deploy_row(&self, i: usize) -> Rect {
+        self.in_sidebar(Rect::new(9, 204 + i as i32 * DEPLOY_ROW, 120, DEPLOY_ROW))
+    }
+
+    /// Player row `i` of the sidebar shown during the AI's turn.
+    pub fn ai_row(&self, i: usize) -> Rect {
+        let y = [204, 233, 261, 289, 317][i.min(4)];
+        self.in_sidebar(Rect::new(8, y, 122, 19))
     }
 
     /// Row `i` (on screen) of the overview list.
@@ -499,15 +788,49 @@ impl Layout {
     /// Buttons of a screen; `swatches` is the overview's player count.
     pub fn buttons(&self, screen: Screen, swatches: usize) -> Vec<Button> {
         let mut buttons = Vec::new();
+        let overview = |buttons: &mut Vec<Button>| {
+            buttons.extend((0..swatches.min(MAX_SWATCHES)).map(Button::Swatch));
+            buttons.extend([Button::Up, Button::Down]);
+        };
         match screen {
             Screen::Battle => buttons.extend(BATTLE_BUTTONS),
             Screen::Overview => {
-                buttons.extend((0..swatches.min(MAX_SWATCHES)).map(Button::Swatch));
-                buttons.extend([Button::Up, Button::Down, Button::Back]);
+                overview(&mut buttons);
+                buttons.push(Button::Back);
+            }
+            Screen::Briefing => {
+                overview(&mut buttons);
+                buttons.push(Button::OverviewContinue);
             }
             Screen::Goal => buttons.extend([Button::Continue, Button::Objectives]),
+            Screen::Skirmishes => buttons.extend([
+                Button::SkirmishUp,
+                Button::SkirmishDown,
+                Button::SkirmishBack,
+                Button::SkirmishContinue,
+            ]),
+            Screen::Tech { read_only } => {
+                buttons.extend([
+                    Button::TechLeft,
+                    Button::TechUp,
+                    Button::TechDown,
+                    Button::TechRight,
+                    Button::TechUpgrade,
+                ]);
+                buttons.push(if read_only {
+                    Button::TechBack
+                } else {
+                    Button::TechContinue
+                });
+            }
+            Screen::Deploy => buttons.extend(DEPLOY_BUTTONS),
+            Screen::Confirm => buttons.extend([Button::Yes, Button::No]),
+            Screen::AiTurn => buttons.extend([Button::Map, Button::Goal]),
         }
-        if screen != Screen::Goal {
+        if !matches!(
+            screen,
+            Screen::Goal | Screen::Skirmishes | Screen::Tech { .. } | Screen::Confirm
+        ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }
         buttons
@@ -608,6 +931,36 @@ mod tests {
         assert_eq!(Layout::fitted(1249, 960, 2).scale, 1);
         assert_eq!(Layout::fitted(3840, 2160, 4).scale, 4);
         assert_eq!(Layout::fitted(100, 100, 3).scale, 1);
+    }
+
+    #[test]
+    fn skirmish_setup_dialogs() {
+        let layout = Layout::new(1024, 768, 1);
+        let dialog = layout.skirmish_dialog();
+        assert_eq!(dialog, Rect::new(330, 176, 364, 416));
+        assert_eq!(
+            layout.hit(Screen::Skirmishes, 0, 330 + 260, 176 + 380),
+            Some(Button::SkirmishContinue)
+        );
+        assert_eq!(layout.skirmish_row(2).y, 176 + 48 + 34);
+        let tech = layout.tech_dialog();
+        assert_eq!(tech, Rect::new(218, 158, 588, 451));
+        assert_eq!(layout.tech_cell(5), Rect::new(218 + 143, 158 + 53, 135, 43));
+        let read_only = layout.buttons(Screen::Tech { read_only: true }, 0);
+        assert!(read_only.contains(&Button::TechBack));
+        assert!(!read_only.contains(&Button::TechContinue));
+        assert!(!read_only.contains(&Button::Menu));
+        let big = Layout::new(2048, 1536, 2);
+        assert_eq!(big.question_dialog(), Rect::new(100, 140, 508, 288));
+        assert_eq!(
+            big.hit(Screen::Confirm, 0, 100 + 40 + 2, 140 + 238 + 2),
+            Some(Button::Yes)
+        );
+        assert_eq!(
+            big.hit(Screen::Deploy, 0, 2048 - 272 + 18 + 2, 860 + 2),
+            Some(Button::Army)
+        );
+        assert_eq!(big.deploy_row(1).y, (204 + 39) * 2);
     }
 
     #[test]

@@ -24,6 +24,10 @@ walk animations; overwatch keeps a shot's AP in reserve.
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
+Skirmish mode is playable end to end at a basic level: skirmish selector,
+technology point allocation, briefing, deployment in the starting zones
+(budget, place/recall units), then alternating turns where the player moves
+units and the AI passes its turn.
 DBI sprites, Jet 3 databases, ZIP archives and PE string tables decode natively. The first goal is playable
 stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 
@@ -40,8 +44,8 @@ Windows); SDL3 is built from source and linked statically.
 ```powershell
 $env:LIBDAY_ROOT = 'F:\libday'      # your Liberation Day install directory
 cargo test --workspace              # data-gated tests skip without LIBDAY_ROOT
-cargo run -p openlibday             # map viewer (first skirmish)
-cargo run -p openlibday -- s3-4-1   # a specific skirmish (file name, with or without .mdb)
+cargo run -p openlibday             # skirmish mode: selector, tech, deployment, turns
+cargo run -p openlibday -- s3-4-1   # map viewer on a specific map (file name, with or without .mdb)
 cargo run -p openlibday -- --load 1          # original save SAVEGAME\savegame.01 (or a .json/dir path)
 cargo run -p libday-tools -- skirmishes
 cargo run -p libday-tools -- save-list       # original savegame slots (battle or campaign-only)

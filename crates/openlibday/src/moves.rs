@@ -60,7 +60,7 @@ impl Viewer {
     /// Current and maximum action points of unit `i`.
     pub(crate) fn action_points(&self, i: usize) -> Option<(i64, i64)> {
         let unit = self.map.battle.scenario.units.get(i)?;
-        let kind = self.defs.unit(unit.kind)?;
+        let kind = self.kind_of(i)?;
         Some((
             unit.action_points.unwrap_or(kind.action_points),
             kind.action_points,
@@ -73,18 +73,14 @@ impl Viewer {
     }
 
     pub(crate) fn overwatch(&self, i: usize) -> bool {
-        let can = self
-            .map
-            .battle
-            .scenario
-            .units
-            .get(i)
-            .and_then(|u| self.defs.unit(u.kind))
-            .is_some_and(|k| k.can_overwatch);
+        let can = self.kind_of(i).is_some_and(|k| k.can_overwatch);
         can && self.map.battle.scenario.units[i].overwatch
     }
 
     pub(crate) fn toggle_overwatch(&mut self) {
+        if !self.selected.is_some_and(|i| self.controllable(i)) {
+            return;
+        }
         if let Some(unit) = self
             .selected
             .and_then(|i| self.map.battle.scenario.units.get_mut(i))
@@ -96,8 +92,7 @@ impl Viewer {
 
     /// AP of one shot reserved by overwatch, if on.
     fn reserve(&self, i: usize) -> Option<u32> {
-        let unit = self.map.battle.scenario.units.get(i)?;
-        let kind = self.defs.unit(unit.kind)?;
+        let kind = self.kind_of(i)?;
         self.overwatch(i)
             .then_some(kind.shoot_action_points.max(0) as u32)
     }
@@ -136,10 +131,12 @@ impl Viewer {
                 }
                 self.selected = Some(u);
             }
-            (Some(sel), None) if self.options.arrival == Some(0) => match &self.preview {
-                Some(p) if p.unit == sel && p.target == (x, y) => self.start_move(),
-                _ => self.preview = self.plan(sel, (x, y)),
-            },
+            (Some(sel), None) if self.options.arrival == Some(0) && self.controllable(sel) => {
+                match &self.preview {
+                    Some(p) if p.unit == sel && p.target == (x, y) => self.start_move(),
+                    _ => self.preview = self.plan(sel, (x, y)),
+                }
+            }
             _ => {}
         }
     }
@@ -154,7 +151,7 @@ impl Viewer {
         let budget = move_budget(ap.max(0) as u32, self.reserve(p.unit));
         let (n, spent) = executable_steps(&p.steps, budget);
         let unit = &self.map.battle.scenario.units[p.unit];
-        let Some(kind) = self.defs.unit(unit.kind) else {
+        let Some(kind) = self.defs.unit_tech(unit.kind, unit.tech) else {
             return;
         };
         if n == 0 {
@@ -195,7 +192,7 @@ impl Viewer {
             (unit.x, unit.y) = to;
             if let Some(ap) = &mut unit.action_points {
                 *ap -= i64::from(step.cost);
-            } else if let Some(k) = self.defs.unit(unit.kind) {
+            } else if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
                 unit.action_points = Some(k.action_points - i64::from(step.cost));
             }
             m.step_started += std::time::Duration::from_secs_f64(length / m.speed);

@@ -161,6 +161,14 @@ pub struct ScenarioInfo {
     /// them in savegames; see [`Scenario::next_unit_id`].
     pub next_unit_id: i64,
     pub next_building_id: i64,
+    /// `ReinfRes`: credits a player receives each turn.
+    pub reinf_res: i64,
+    /// Unit types a skirmish player may buy and upgrade (`One Off Units
+    /// Available`, in table order).
+    pub available_units: Vec<i64>,
+    /// Automated (building) types shown on the technology screen (`One Off
+    /// Automated Available`).
+    pub available_automated: Vec<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -384,6 +392,9 @@ impl Scenario {
                 points: t.int_or(0, "One Off Deployment", 0)?,
                 next_unit_id: t.int_or(0, "NextID_Units", 0)?,
                 next_building_id: t.int_or(0, "NextID_Buildings", 0)?,
+                reinf_res: t.int_or(0, "ReinfRes", 0)?,
+                available_units: available(db, "One Off Units Available"),
+                available_automated: available(db, "One Off Automated Available"),
             }
         };
 
@@ -419,6 +430,20 @@ impl Scenario {
     }
 }
 
+/// `Enum` of the `Available` rows of a `One Off * Available` table, in
+/// `Counter` order; empty when the table is missing or malformed.
+fn available(db: &Database, table: &str) -> Vec<i64> {
+    let Ok(t) = Records::read(db, table) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(i64, i64)> = (0..t.len())
+        .filter(|&r| t.flag_or(r, "Available", false).unwrap_or(false))
+        .filter_map(|r| Some((t.int(r, "Counter").ok()?, t.int(r, "Enum").ok()?)))
+        .collect();
+    rows.sort_unstable();
+    rows.into_iter().map(|(_, e)| e).collect()
+}
+
 /// An entry of the skirmish selector catalog (`SCENS\SKIRMISH.MDB`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkirmishEntry {
@@ -446,4 +471,14 @@ pub fn skirmish_catalog(db: &Database) -> Result<Vec<SkirmishEntry>, DataError> 
     }
     out.sort_by_key(|e| e.counter);
     Ok(out)
+}
+
+/// Difficulty shown in the skirmish selector for `points` deployment points.
+pub fn difficulty_label(points: i64) -> &'static str {
+    match points {
+        ..=300 => "Easy",
+        301..=500 => "Average",
+        501..=1000 => "Hard",
+        _ => "Very hard",
+    }
 }

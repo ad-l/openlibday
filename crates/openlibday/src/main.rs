@@ -1,18 +1,20 @@
 //! openlibday application entry point.
 //!
-//! A map viewer with the battle interface: loads any skirmish (or other
-//! scenario) map and draws terrain, roads, walls, mines, buildings, units and
-//! starting zones in the original stacking order, with pan and zoom, inside
-//! the original sidebar and bottom bar. The minimap, the MAP overview and the
-//! GOAL dialog work; the other buttons are not wired to game logic yet.
+//! Without a scenario or save argument it starts a skirmish: the selector,
+//! technology upgrades, deployment in the starting zones, then turns between
+//! the player and the AI (which does nothing yet). With one it is a map
+//! viewer where every unit can be moved. Maps draw terrain, roads, walls,
+//! mines, buildings, units and starting zones in the original stacking
+//! order, with pan and zoom, inside the original sidebar and bottom bar.
 //!
 //! Usage: `openlibday [--root DIR] [--load SAVE] [SCENARIO]`, where `SCENARIO` is a
-//! scenario database name such as `s1-2-1` or `s1-2-1.mdb` (default: the first skirmish)
+//! scenario database name such as `s1-2-1` or `s1-2-1.mdb`
 //! and `SAVE` an openlibday save, an original savegame directory or slot number.
 
 mod hud;
 mod moves;
 mod settings;
+mod skirmish;
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -21,7 +23,7 @@ use libday_data::{Battle, Definitions, Dir, GameData};
 use libday_formats::Dbi;
 use libday_view::minimap::{self, Entry, Marker};
 use libday_view::text::Fonts;
-use libday_view::ui::{Button, LIST_ROWS, Screen};
+use libday_view::ui::{Button, LIST_ROWS, SKIRMISH_ROWS, Screen, TECH_CELLS};
 use libday_view::{Art, Options, Scene, Sheet, map_pixels, sprite_origin, tile_at};
 use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::Keycode;
@@ -31,12 +33,13 @@ use sdl3::render::{Canvas, FPoint, FRect, Texture};
 use sdl3::video::Window;
 
 use hud::{Gfx, Result};
+use skirmish::{Flow, Phase};
 
 const ZOOMS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
 const HELP: &str = "PgUp/PgDn map  wheel/+/- zoom  drag/arrows pan  Home recentre  \
                     G grid  D zones  U units  T terrain  [ ] reinforcements  \
                     M map overview  O goal  I interface scale  F5 quick save  F9 quick load  \
-                    Esc close/quit";
+                    Enter end turn  Esc close/quit";
 /// Quick save file in the saves directory.
 const QUICK_SAVE: &str = "quick.json";
 /// Window-coordinate movement below which a press counts as a click.
@@ -147,6 +150,10 @@ struct Viewer {
     error: Option<String>,
     /// Log events to stderr (`OPENLIBDAY_TRACE_EVENTS`).
     trace: bool,
+    /// Skirmish phase and setup.
+    flow: Flow,
+    /// Set by a button that closes the program.
+    quit: bool,
 }
 
 impl Viewer {
@@ -293,12 +300,9 @@ impl Viewer {
 
     /// Name, portrait image and the AP/AR lines of the selected unit.
     fn selected_unit(&self) -> Option<(String, String, String, String)> {
-        let unit = self.map.battle.scenario.units.get(self.selected?)?;
-        let kind = self
-            .defs
-            .units
-            .get(&(unit.kind, unit.tech))
-            .or_else(|| self.defs.unit(unit.kind))?;
+        let i = self.selected?;
+        let unit = self.map.battle.scenario.units.get(i)?;
+        let kind = self.kind_of(i)?;
         Some((
             kind.name.clone(),
             kind.image.clone(),
@@ -331,25 +335,36 @@ impl Viewer {
 
     /// Whether a button reacts to clicks (otherwise drawn greyed out).
     fn enabled(&self, button: Button) -> bool {
+        let deploy_ready = self.flow.setup.is_some();
         match button {
             Button::Chat => false,
             Button::Overwatch => self.selected.is_some_and(|i| {
-                let unit = &self.map.battle.scenario.units[i];
-                self.defs.unit(unit.kind).is_some_and(|k| k.can_overwatch)
+                self.controllable(i) && self.kind_of(i).is_some_and(|k| k.can_overwatch)
             }),
             Button::AutoFire => self.selected.is_some(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
             Button::Menu => self.screen != Screen::Goal,
+            Button::EndTurn => self.flow.phase == Phase::Free || self.can_end_turn(),
+            Button::SkirmishUp => self.flow.pick > 0,
+            Button::SkirmishDown => self.flow.pick + 1 < self.flow.catalog.len(),
+            Button::TechLeft => self.tech_step_ok(-1),
+            Button::TechRight => self.tech_step_ok(1),
+            Button::TechUp => self.tech_step_ok(-Self::TECH_ROW),
+            Button::TechDown => self.tech_step_ok(Self::TECH_ROW),
+            Button::TechUpgrade => self.can_upgrade(),
+            Button::DeployUp => self.deploy_scroll_ok(-1),
+            Button::DeployDown => self.deploy_scroll_ok(1),
+            Button::Army | Button::DeployContinue => deploy_ready,
             _ => true,
         }
     }
 
     fn activate(&mut self, button: Button) {
         match button {
-            Button::Map => self.screen = Screen::Overview,
-            Button::Goal => self.screen = Screen::Goal,
-            Button::Back | Button::Continue => self.screen = Screen::Battle,
+            Button::Map | Button::DeployMap => self.screen = Screen::Overview,
+            Button::Goal | Button::DeployGoal => self.screen = Screen::Goal,
+            Button::Back | Button::Continue => self.screen = self.home(),
             Button::Center => self.centre_on_selected(),
             Button::Overwatch => self.toggle_overwatch(),
             Button::AutoFire => self.map.battle.auto_fire ^= true,
@@ -361,6 +376,25 @@ impl Viewer {
             }
             Button::Up => self.scroll = self.scroll.saturating_sub(1),
             Button::Down => self.scroll += 1,
+            Button::EndTurn => self.end_turn(),
+            Button::SkirmishUp => self.pick_step(-1),
+            Button::SkirmishDown => self.pick_step(1),
+            Button::SkirmishBack => self.quit = true,
+            Button::SkirmishContinue => self.choose_skirmish(),
+            Button::TechLeft => self.tech_step(-1),
+            Button::TechRight => self.tech_step(1),
+            Button::TechUp => self.tech_step(-Self::TECH_ROW),
+            Button::TechDown => self.tech_step(Self::TECH_ROW),
+            Button::TechUpgrade => self.upgrade(),
+            Button::TechContinue => self.begin_briefing(),
+            Button::TechBack => self.screen = Screen::Deploy,
+            Button::OverviewContinue => self.begin_deploy(),
+            Button::DeployUp => self.deploy_scroll(-1),
+            Button::DeployDown => self.deploy_scroll(1),
+            Button::Army => self.screen = Screen::Tech { read_only: true },
+            Button::DeployContinue => self.finish_deploy(),
+            Button::Yes => self.start_battle(),
+            Button::No => self.screen = Screen::Deploy,
             _ => {}
         }
     }
@@ -441,14 +475,61 @@ impl Viewer {
         title
     }
 
+    /// Keys of the full-window dialogs; `None` when not on one.
+    fn dialog_key(&mut self, key: Keycode) -> Option<bool> {
+        match (self.screen, key) {
+            (Screen::Skirmishes, Keycode::Escape) => return Some(false),
+            (Screen::Skirmishes, Keycode::Up) => self.pick_step(-1),
+            (Screen::Skirmishes, Keycode::Down) => self.pick_step(1),
+            (Screen::Skirmishes, Keycode::PageUp) => self.pick_step(-(SKIRMISH_ROWS as isize)),
+            (Screen::Skirmishes, Keycode::PageDown) => self.pick_step(SKIRMISH_ROWS as isize),
+            (Screen::Skirmishes, Keycode::Return | Keycode::KpEnter) => self.choose_skirmish(),
+            (Screen::Tech { read_only }, _) => match key {
+                Keycode::Left => self.tech_step(-1),
+                Keycode::Right => self.tech_step(1),
+                Keycode::Up => self.tech_step(-Self::TECH_ROW),
+                Keycode::Down => self.tech_step(Self::TECH_ROW),
+                Keycode::Space | Keycode::U => self.upgrade(),
+                Keycode::Return | Keycode::KpEnter if !read_only => self.begin_briefing(),
+                Keycode::Return | Keycode::KpEnter | Keycode::Escape if read_only => {
+                    self.screen = Screen::Deploy
+                }
+                Keycode::Escape => {
+                    self.screen = Screen::Skirmishes;
+                    self.flow.setup = None;
+                }
+                _ => {}
+            },
+            (Screen::Briefing, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {
+                self.begin_deploy()
+            }
+            (Screen::Confirm, Keycode::Return | Keycode::KpEnter | Keycode::Y) => {
+                self.start_battle()
+            }
+            (Screen::Confirm, Keycode::Escape | Keycode::N) => self.screen = Screen::Deploy,
+            (Screen::Skirmishes | Screen::Briefing | Screen::Confirm, _) => {}
+            _ => return None,
+        }
+        Some(true)
+    }
+
     fn key(&mut self, key: Keycode) -> bool {
+        if let Some(running) = self.dialog_key(key) {
+            return running;
+        }
         let pan = 64.0 / self.zoom * self.density;
         let v = self.layout().viewport();
         let centre = (v.w as f32 / 2.0, v.h as f32 / 2.0);
         let count = self.maps.len();
+        let free = self.flow.phase == Phase::Free;
+        let home = self.home();
         match key {
-            Keycode::Escape if self.screen != Screen::Battle => self.screen = Screen::Battle,
+            Keycode::Escape if self.screen != home => self.screen = home,
             Keycode::Escape => return false,
+            Keycode::Return | Keycode::KpEnter if self.screen == Screen::Battle => self.end_turn(),
+            Keycode::Return | Keycode::KpEnter if self.screen == Screen::Deploy => {
+                self.finish_deploy()
+            }
             Keycode::Left => self.camera.0 -= pan,
             Keycode::Right => self.camera.0 += pan,
             Keycode::Up => self.camera.1 -= pan,
@@ -456,20 +537,34 @@ impl Viewer {
             Keycode::Home => self.recentre(),
             Keycode::Equals | Keycode::Plus | Keycode::KpPlus => self.zoom_step(1, centre),
             Keycode::Minus | Keycode::KpMinus => self.zoom_step(-1, centre),
-            Keycode::PageDown => self.load((self.index + 1) % count),
-            Keycode::PageUp => self.load((self.index + count - 1) % count),
-            Keycode::F5 => self.quick_save(),
-            Keycode::F9 => self.quick_load(),
+            Keycode::PageDown | Keycode::PageUp => {
+                // Browsing maps leaves the skirmish for the free viewer.
+                self.flow = Flow::new();
+                self.screen = Screen::Battle;
+                self.options.deployment = false;
+                let next = if key == Keycode::PageDown {
+                    (self.index + 1) % count
+                } else {
+                    (self.index + count - 1) % count
+                };
+                self.load(next);
+            }
+            Keycode::F5 if matches!(self.flow.phase, Phase::Free | Phase::Player) => {
+                self.quick_save()
+            }
+            Keycode::F9 if matches!(self.flow.phase, Phase::Free | Phase::Player) => {
+                self.quick_load()
+            }
             Keycode::G => self.grid = !self.grid,
             Keycode::M => {
                 self.screen = match self.screen {
-                    Screen::Overview => Screen::Battle,
+                    Screen::Overview => home,
                     _ => Screen::Overview,
                 }
             }
             Keycode::O => {
                 self.screen = match self.screen {
-                    Screen::Goal => Screen::Battle,
+                    Screen::Goal => home,
                     _ => Screen::Goal,
                 }
             }
@@ -478,7 +573,7 @@ impl Viewer {
                 // Start from the scale in use, which may have been fitted down.
                 self.set_scale(self.layout().scale % max + 1)
             }
-            Keycode::D => {
+            Keycode::D if free => {
                 self.options.deployment = !self.options.deployment;
                 self.rebuild();
             }
@@ -486,14 +581,14 @@ impl Viewer {
                 self.options.terrain_only = !self.options.terrain_only;
                 self.rebuild();
             }
-            Keycode::U => {
+            Keycode::U if free => {
                 self.show_units = !self.show_units;
                 self.options.arrival = self.show_units.then_some(0);
                 self.selected = None;
                 self.preview = None;
                 self.rebuild();
             }
-            Keycode::LeftBracket | Keycode::RightBracket => {
+            Keycode::LeftBracket | Keycode::RightBracket if free => {
                 let step = if key == Keycode::RightBracket { 1 } else { -1 };
                 let turn = (self.options.arrival.unwrap_or(0) + step).clamp(0, self.max_arrival());
                 self.show_units = true;
@@ -524,22 +619,53 @@ impl Viewer {
             return;
         }
         match self.screen {
-            Screen::Goal => {}
-            Screen::Overview if left => {
+            Screen::Goal | Screen::Confirm => {}
+            Screen::Skirmishes if left => {
+                let layout = self.layout();
+                if let Some(row) =
+                    (0..SKIRMISH_ROWS).find(|&i| layout.skirmish_row(i).contains(ox, oy))
+                {
+                    let pick = self.flow.scroll + row;
+                    if pick < self.flow.catalog.len() {
+                        self.flow.pick = pick;
+                    }
+                }
+            }
+            Screen::Tech { .. } if left => {
+                if let Some(cell) = (0..TECH_CELLS).find(|&i| layout.tech_cell(i).contains(ox, oy))
+                    && let Some(setup) = &mut self.flow.setup
+                    && cell < setup.units.len()
+                {
+                    setup.cell = cell;
+                }
+            }
+            Screen::Skirmishes | Screen::Tech { .. } => {}
+            Screen::Overview | Screen::Briefing if left => {
                 let entries = self.entries().len();
                 if let Some(row) = (0..LIST_ROWS).find(|&i| layout.list_row(i).contains(ox, oy)) {
                     let index = self.scroll + row;
                     if index < entries {
                         self.entry = (self.entry != Some(index)).then_some(index);
                     }
-                } else if let Some((tx, ty)) = self.picture_tile(ox, oy) {
+                } else if self.screen == Screen::Overview
+                    && let Some((tx, ty)) = self.picture_tile(ox, oy)
+                {
                     self.centre_on_tile(tx, ty);
-                    self.screen = Screen::Battle;
+                    self.screen = self.home();
                 }
             }
-            Screen::Overview => {}
-            Screen::Battle => {
-                if left && let Some((tx, ty)) = self.picture_tile(ox, oy) {
+            Screen::Overview | Screen::Briefing => {}
+            Screen::Battle | Screen::Deploy | Screen::AiTurn => {
+                let row = (self.screen == Screen::Deploy)
+                    .then(|| {
+                        (0..libday_view::ui::DEPLOY_ROWS)
+                            .find(|&i| layout.deploy_row(i).contains(ox, oy))
+                    })
+                    .flatten();
+                if left && let Some(row) = row {
+                    let scroll = self.flow.setup.as_ref().map_or(0, |s| s.scroll);
+                    self.deploy_select(scroll + row);
+                } else if left && let Some((tx, ty)) = self.picture_tile(ox, oy) {
                     self.minimap_drag = true;
                     self.centre_on_tile(tx, ty);
                 } else if !layout.on_panel(ox, oy) {
@@ -563,8 +689,9 @@ impl Viewer {
         {
             let (mx, my) = self.to_map(ox as f32, oy as f32);
             match tile_at(self.map.battle.scenario.size, mx as f64, my as f64) {
-                Some((tx, ty)) => self.click_tile(tx, ty),
-                None => self.preview = None,
+                Some((tx, ty)) if self.screen == Screen::Deploy => self.deploy_click(tx, ty),
+                Some((tx, ty)) if self.screen == Screen::Battle => self.click_tile(tx, ty),
+                _ => self.preview = None,
             }
         }
         self.drag = None;
@@ -589,7 +716,10 @@ impl Viewer {
         {
             self.press = None;
         }
-        let on_map = self.screen != Screen::Overview && !self.layout().on_panel(ox, oy);
+        let on_map = matches!(
+            self.screen,
+            Screen::Battle | Screen::Deploy | Screen::AiTurn
+        ) && !self.layout().on_panel(ox, oy);
         self.hover = on_map
             .then(|| {
                 let (mx, my) = self.to_map(ox as f32, oy as f32);
@@ -631,10 +761,21 @@ impl Viewer {
                 let (ox, oy) = self.output_point(mouse_x, mouse_y);
                 let step = if y > 0.0 { 1 } else { -1 };
                 match self.screen {
-                    Screen::Battle if !self.layout().on_panel(ox, oy) => {
+                    Screen::Battle | Screen::Deploy | Screen::AiTurn
+                        if !self.layout().on_panel(ox, oy) =>
+                    {
                         self.zoom_step(step, (ox as f32, oy as f32));
                     }
-                    Screen::Overview => {
+                    Screen::Deploy => self.deploy_scroll(-step as isize),
+                    Screen::Skirmishes => {
+                        let last = self.flow.catalog.len().saturating_sub(SKIRMISH_ROWS);
+                        self.flow.scroll = self
+                            .flow
+                            .scroll
+                            .saturating_add_signed(-step as isize)
+                            .min(last);
+                    }
+                    Screen::Overview | Screen::Briefing => {
                         let last = self.entries().len().saturating_sub(LIST_ROWS);
                         self.scroll = if step > 0 {
                             self.scroll.saturating_sub(1)
@@ -655,7 +796,7 @@ impl Viewer {
             Event::MouseMotion { x, y, .. } => self.mouse_motion(x, y),
             _ => {}
         }
-        true
+        !self.quit
     }
 }
 
@@ -766,7 +907,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
 fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
-    if viewer.screen != Screen::Overview {
+    if !viewer.screen.is_dialog() && !matches!(viewer.screen, Screen::Overview | Screen::Briefing) {
         draw_map(canvas, gfx, viewer)?;
     }
     hud::draw(canvas, gfx, viewer)?;
@@ -919,9 +1060,14 @@ fn main() -> Result {
         notice: None,
         error: None,
         trace: std::env::var_os("OPENLIBDAY_TRACE_EVENTS").is_some(),
+        flow: Flow::new(),
+        quit: false,
     };
     viewer.options.arrival = Some(0);
     viewer.reset();
+    if args.scenario.is_none() && args.load.is_none() {
+        viewer.open_selector()?;
+    }
 
     let mut events = sdl.event_pump()?;
     let mut title = String::new();
@@ -930,6 +1076,7 @@ fn main() -> Result {
     loop {
         let mut running = true;
         let moving = viewer.tick();
+        dirty |= viewer.ai_tick();
         let wait = if moving {
             15
         } else if viewer.animating() {
