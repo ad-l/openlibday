@@ -998,6 +998,11 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         if let Some(depth) = walker
             && (item.x + item.y, item.x) > depth
         {
+            // Path dots up to the walker's tile go underneath it.
+            while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| (x + y, x) <= depth) {
+                let (left, top) = sprite_origin(size, x, y);
+                cell(canvas, gfx, left, top, name)?;
+            }
             moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
             walker = None;
         }
@@ -1021,7 +1026,11 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
         }
     }
-    if walker.is_some() {
+    if let Some(depth) = walker {
+        while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| (x + y, x) <= depth) {
+            let (left, top) = sprite_origin(size, x, y);
+            cell(canvas, gfx, left, top, name)?;
+        }
         moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
     }
     for (x, y, name) in overlays {
