@@ -25,7 +25,7 @@ fn interface_elements_decode() {
     let Some(game) = game() else { return };
     let ui = libday_view::load_ui(&game).unwrap();
     let sidebar = ui.get(frame::SIDEBAR).unwrap();
-    assert_eq!((sidebar.width, sidebar.height), (184, 768));
+    assert_eq!((sidebar.width, sidebar.height), (136, 768));
     // The minimap well is black and opaque.
     assert_eq!(pixel(sidebar, 60, 100), [0, 0, 0, 255]);
     let goal = ui.get(Button::Goal.frame()).unwrap();

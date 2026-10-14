@@ -10,7 +10,9 @@
 //! scenario database name such as `s1-2-1` or `s1-2-1.mdb` (default: the first skirmish).
 
 mod hud;
+mod settings;
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use libday_data::{Definitions, Dir, GameData, Scenario};
@@ -32,27 +34,33 @@ const ZOOMS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
 const HELP: &str = "PgUp/PgDn map  wheel/+/- zoom  drag/arrows pan  Home recentre  \
                     G grid  D zones  U units  T terrain  [ ] reinforcements  \
                     M map overview  O goal  I interface scale  Esc close/quit";
-/// Largest interface scale the `I` key cycles through.
-const MAX_SCALE: i32 = 3;
 /// Window-coordinate movement below which a press counts as a click.
 const CLICK_SLOP: f32 = 4.0;
 
 struct Args {
     root: Option<String>,
     scenario: Option<String>,
+    options: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args> {
     let mut args = Args {
         root: None,
         scenario: None,
+        options: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--root" => args.root = Some(iter.next().ok_or("--root needs a directory")?),
+            "--options" => args.options = Some(iter.next().ok_or("--options needs a file")?.into()),
             "-h" | "--help" => {
-                println!("usage: openlibday [--root DIR] [SCENARIO]\n{HELP}");
+                let file = settings::default_path()
+                    .map_or_else(|| settings::FILE_NAME.into(), |p| p.display().to_string());
+                println!(
+                    "usage: openlibday [--root DIR] [--options FILE] [SCENARIO]\n\
+                     options file: {file}\n{HELP}"
+                );
                 std::process::exit(0);
             }
             // M0 compatibility: a bare directory is the install root.
@@ -384,7 +392,11 @@ impl Viewer {
                     _ => Screen::Goal,
                 }
             }
-            Keycode::I => self.set_scale(self.scale % MAX_SCALE + 1),
+            Keycode::I => {
+                let max = (settings::MAX_SCALE as f32 * self.density).round() as i32;
+                // Start from the scale in use, which may have been fitted down.
+                self.set_scale(self.layout().scale % max + 1)
+            }
             Keycode::D => {
                 self.options.deployment = !self.options.deployment;
                 self.rebuild();
@@ -703,12 +715,28 @@ fn main() -> Result {
     sdl3::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
     let sdl = sdl3::init()?;
     let video = sdl.video()?;
-    let mut window = video
-        .window("openlibday", 1280, 800)
-        .position_centered()
-        .resizable()
-        .high_pixel_density()
-        .build()?;
+    let options_path = args.options.or_else(settings::default_path);
+    let settings = options_path
+        .as_deref()
+        .map(settings::Settings::load)
+        .unwrap_or_default();
+    // Fit to 90% of the screen unless a size is configured.
+    let usable = video
+        .get_primary_display()
+        .and_then(|d| d.get_usable_bounds())
+        .map(|r| (r.width(), r.height()))
+        .unwrap_or((1280, 800));
+    let fit = |set: u32, screen: u32| if set > 0 { set } else { screen * 9 / 10 };
+    let mut builder = video.window(
+        "openlibday",
+        fit(settings.width, usable.0),
+        fit(settings.height, usable.1),
+    );
+    builder.position_centered().resizable().high_pixel_density();
+    if settings.fullscreen {
+        builder.fullscreen();
+    }
+    let mut window = builder.build()?;
     window.set_minimum_size(640, 520)?;
     let density = window.pixel_density().max(1.0);
     let (pw, ph) = window.size_in_pixels();
@@ -738,7 +766,7 @@ fn main() -> Result {
         camera: (0.0, 0.0),
         output: (pw as f32, ph as f32),
         density,
-        scale: (density.round() as i32).clamp(1, MAX_SCALE),
+        scale: ((settings.scale as f32 * density).round() as i32).max(1),
         screen: Screen::Battle,
         mouse: (0, 0),
         pressed: None,

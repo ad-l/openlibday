@@ -18,8 +18,11 @@ use crate::Image;
 /// File name in the `INTERF` directory.
 pub const FILE: &str = "1024X768.SMK";
 
-/// Sidebar width and the bottom bar height, in original pixels.
-pub const SIDEBAR_W: i32 = 184;
+/// Sidebar width and the bottom bar height, in original pixels. The art is
+/// 184 wide, but its last 48 columns are decoration (pipe, vent) that only
+/// filled the fixed 1024-wide screen; with a resizable window they are cut
+/// and the map gets the space.
+pub const SIDEBAR_W: i32 = 136;
 pub const SIDEBAR_H: i32 = 768;
 pub const BOTTOM_H: i32 = 40;
 pub const BOTTOM_W: i32 = 840;
@@ -89,6 +92,23 @@ fn crop_of(frame: u16) -> Option<(i32, i32)> {
         .map(|&(_, _, w, h)| (w, h))
 }
 
+/// Covers the part of the bottom-right emblem left by the [`SIDEBAR_W`] cut
+/// with the plain wall texture above it.
+fn hide_emblem(image: &mut Image) {
+    const X: usize = 116;
+    const Y: usize = 667;
+    const H: usize = 56;
+    const FROM: usize = 590;
+    let w = image.width;
+    if w <= X || image.height < Y + H {
+        return;
+    }
+    for row in 0..H {
+        let (src, dst) = (((FROM + row) * w + X) * 4, ((Y + row) * w + X) * 4);
+        image.rgba.copy_within(src..src + (w - X) * 4, dst);
+    }
+}
+
 /// The decoded interface elements.
 #[derive(Clone, Debug, Default)]
 pub struct UiArt {
@@ -121,6 +141,9 @@ impl UiArt {
                         image.rgba[at..at + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
                     }
                 }
+            }
+            if matches!(index, frame::SIDEBAR | frame::OVERVIEW_SIDEBAR) {
+                hide_emblem(&mut image);
             }
             frames.insert(index, image);
         }
@@ -371,6 +394,9 @@ pub const BOTTOM_TILE: (i32, i32) = (100, 160);
 pub const BOTTOM_RIGHT: i32 = 671;
 /// Sidebar rows tiled to fill windows taller than 768 original pixels.
 pub const SIDEBAR_TILE: (i32, i32) = (610, 650);
+/// Smallest window, in original pixels, that shows the whole interface: the
+/// sidebar down to END TURN, and the goal dialog left of the sidebar.
+pub const MIN_SIZE: (i32, i32) = (GOAL_AT.0 + 449 + SIDEBAR_W, 480);
 
 /// Window-size-dependent placement of everything.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -389,6 +415,15 @@ impl Layout {
             height,
             scale: scale.max(1),
         }
+    }
+
+    /// Like [`Layout::new`], lowering `scale` until the sidebar buttons and
+    /// the goal dialog fit in the window.
+    pub fn fitted(width: i32, height: i32, scale: i32) -> Self {
+        let (min_w, min_h) = MIN_SIZE;
+        let fits = |s: i32| min_w * s <= width && min_h * s <= height;
+        let scale = (1..=scale.max(1)).rev().find(|&s| fits(s)).unwrap_or(1);
+        Self::new(width, height, scale)
     }
 
     fn s(&self, r: Rect) -> Rect {
@@ -532,35 +567,45 @@ mod tests {
     #[test]
     fn layout_anchors_sidebar_and_bottom_bar() {
         let layout = Layout::new(1024, 768, 1);
-        assert_eq!(layout.viewport(), Rect::new(0, 0, 840, 728));
-        assert_eq!(layout.button(Button::Map), Rect::new(850, 169, 53, 17));
-        assert_eq!(layout.button(Button::Menu), Rect::new(780, 736, 53, 17));
+        assert_eq!(layout.viewport(), Rect::new(0, 0, 888, 728));
+        assert_eq!(layout.button(Button::Map), Rect::new(898, 169, 53, 17));
+        assert_eq!(layout.button(Button::Menu), Rect::new(828, 736, 53, 17));
         assert_eq!(layout.field(Field::Timer), Rect::new(5, 735, 45, 19));
 
         let big = Layout::new(2560, 1600, 2);
-        assert_eq!(big.viewport(), Rect::new(0, 0, 2192, 1520));
+        assert_eq!(big.viewport(), Rect::new(0, 0, 2288, 1520));
         assert_eq!(
             big.button(Button::Goal),
-            Rect::new(2192 + 142, 338, 106, 34)
+            Rect::new(2288 + 142, 338, 106, 34)
         );
-        assert_eq!(big.button(Button::Chat).right(), 2192 - 240 + 106);
+        assert_eq!(big.button(Button::Chat).right(), 2288 - 240 + 106);
         assert_eq!(
-            big.hit(Screen::Battle, 0, 2192 + 150, 340),
+            big.hit(Screen::Battle, 0, 2288 + 150, 340),
             Some(Button::Goal)
         );
-        assert_eq!(big.hit(Screen::Goal, 0, 2192 + 150, 340), None);
-        assert!(big.on_panel(2200, 10) && !big.on_panel(10, 10));
+        assert_eq!(big.hit(Screen::Goal, 0, 2288 + 150, 340), None);
+        assert!(big.on_panel(2300, 10) && !big.on_panel(10, 10));
     }
 
     #[test]
     fn overview_hits_swatches_and_rows() {
         let layout = Layout::new(1024, 768, 1);
         assert_eq!(
-            layout.hit(Screen::Overview, 2, 850 + 30, 75),
+            layout.hit(Screen::Overview, 2, 898 + 30, 75),
             Some(Button::Swatch(1))
         );
-        assert_eq!(layout.hit(Screen::Overview, 1, 850 + 30, 75), None);
-        assert_eq!(layout.list_row(1), Rect::new(849, 111, 120, 15));
+        assert_eq!(layout.hit(Screen::Overview, 1, 898 + 30, 75), None);
+        assert_eq!(layout.list_row(1), Rect::new(897, 111, 120, 15));
+    }
+
+    #[test]
+    fn fitted_scale_keeps_the_interface_on_screen() {
+        assert_eq!(Layout::fitted(2048, 1536, 2).scale, 2);
+        assert_eq!(Layout::fitted(1280, 800, 2).scale, 1);
+        assert_eq!(Layout::fitted(1250, 960, 2).scale, 2);
+        assert_eq!(Layout::fitted(1249, 960, 2).scale, 1);
+        assert_eq!(Layout::fitted(3840, 2160, 4).scale, 4);
+        assert_eq!(Layout::fitted(100, 100, 3).scale, 1);
     }
 
     #[test]

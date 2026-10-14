@@ -233,7 +233,7 @@ impl Square {
 
 impl Viewer {
     pub(crate) fn layout(&self) -> Layout {
-        Layout::new(self.output.0 as i32, self.output.1 as i32, self.scale)
+        Layout::fitted(self.output.0 as i32, self.output.1 as i32, self.scale)
     }
 
     /// State a button is drawn in, given its default.
@@ -413,7 +413,7 @@ fn draw_view_outline(
     Ok(())
 }
 
-/// Draws the 184-wide sidebar frame, tiling plain rows below 768.
+/// Draws the sidebar frame, tiling plain rows below 768.
 fn draw_sidebar(canvas: &mut Canvas<Window>, gfx: &Gfx, layout: &Layout, f: u16) -> Result {
     let (s, x) = (layout.scale, layout.sidebar_x());
     if layout.height <= SIDEBAR_H * s {

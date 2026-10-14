@@ -52,6 +52,13 @@ Click a unit to select it; click the minimap to move the view. The title
 bar shows the hovered tile's terrain, building and unit. Set
 `OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
 
+Options (interface scale, default 2x; initial window size; fullscreen) are
+read from `openlibday.ini` in the user preferences directory
+(`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
+or the file given with `--options FILE`. A commented default is created on
+first run; `openlibday --help` prints its location. The interface scale is
+lowered automatically when the window is too small for it.
+
 | Crate | Purpose |
 |---|---|
 | `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video; DBI/FF/Smacker encoders for modding |
