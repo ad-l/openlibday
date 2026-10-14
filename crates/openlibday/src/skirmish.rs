@@ -183,13 +183,15 @@ impl Viewer {
         let Some(entry) = self.flow.catalog.get(self.flow.pick).cloned() else {
             return;
         };
-        let battle = match Battle::start(&self.game, &entry.file_name) {
+        let mut battle = match Battle::start(&self.game, &entry.file_name) {
             Ok(battle) => battle,
             Err(err) => {
                 self.error = Some(format!("{}: {err}", entry.file_name));
                 return;
             }
         };
+        let humans = skirmish_players().iter().filter(|&&p| p != AI).count();
+        battle.scenario.merge_deployments(humans);
         if let Some(i) = self
             .maps
             .iter()

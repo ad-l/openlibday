@@ -168,6 +168,17 @@ impl Deployment {
     pub fn is_start_zone(&self) -> bool {
         (1..=4).contains(&self.player) && self.turn == 0
     }
+
+    /// The player owning an authored zone slot once merged for `humans`
+    /// human players, as the original does on load (0x44049C): one human
+    /// gets slots 1–4, two humans get 1+3 and 2+4, more keep their own.
+    pub fn merged_player(&self, humans: usize) -> i64 {
+        match (humans, self.player) {
+            (1, 1..=4) => 1,
+            (2, 3 | 4) => self.player - 2,
+            _ => self.player,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -219,6 +230,16 @@ fn invalid(table: &str, message: impl Into<String>) -> DataError {
 }
 
 impl Scenario {
+    /// Reassigns the authored deployment slots to `humans` human players
+    /// (see [`Deployment::merged_player`]), dropping duplicate tiles.
+    pub fn merge_deployments(&mut self, humans: usize) {
+        let mut seen = std::collections::HashSet::new();
+        self.deployments.retain_mut(|d| {
+            d.player = d.merged_player(humans);
+            seen.insert((d.player, d.turn, d.x, d.y))
+        });
+    }
+
     pub fn load(db: &Database) -> Result<Self, DataError> {
         let t = Records::read(db, "Map")?;
         let size = t.len().isqrt();
@@ -508,6 +529,26 @@ pub fn difficulty_label(points: i64) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deployment_slots_merge_by_human_count() {
+        let d = |player| Deployment {
+            counter: 0,
+            player,
+            x: 0,
+            y: 0,
+            turn: 0,
+        };
+        let owners = |humans| {
+            (0..=4)
+                .map(|p| d(p).merged_player(humans))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(owners(1), [0, 1, 1, 1, 1]);
+        assert_eq!(owners(2), [0, 1, 2, 1, 2]);
+        assert_eq!(owners(3), [0, 1, 2, 3, 4]);
+        assert_eq!(owners(4), [0, 1, 2, 3, 4]);
+    }
 
     fn unit(ap: i64) -> Unit {
         Unit {
