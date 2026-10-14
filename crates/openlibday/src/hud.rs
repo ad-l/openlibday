@@ -52,6 +52,8 @@ fn colour([r, g, b]: [u8; 3]) -> Color {
 pub struct Gfx<'r> {
     creator: &'r TextureCreator<WindowContext>,
     pub sprites: HashMap<(Sheet, String), Option<Texture<'r>>>,
+    /// Walk animation frames by `ANMSUNIT.FF` member.
+    pub anims: HashMap<String, Option<Vec<Texture<'r>>>>,
     ui: HashMap<u16, Texture<'r>>,
     text: HashMap<(String, u32, [u8; 3]), Option<Texture<'r>>>,
     portraits: HashMap<String, Option<Texture<'r>>>,
@@ -68,6 +70,7 @@ impl<'r> Gfx<'r> {
         Self {
             creator,
             sprites: HashMap::new(),
+            anims: HashMap::new(),
             ui,
             text: HashMap::new(),
             portraits: HashMap::new(),
@@ -507,7 +510,7 @@ fn draw_battle_sidebar(
     let unit = viewer.selected_unit();
     for button in layout.buttons(Screen::Battle, 0) {
         let on = match button {
-            Button::Overwatch => viewer.overwatch,
+            Button::Overwatch => viewer.overwatch_on(),
             Button::AutoFire => viewer.auto_fire,
             _ => false,
         };

@@ -358,6 +358,7 @@ dependencies = [
  "fontdue",
  "libday-data",
  "libday-formats",
+ "libday-sim",
 ]
 
 [[package]]

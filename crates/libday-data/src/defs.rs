@@ -12,10 +12,13 @@ use crate::records::Records;
 
 /// `Terrain Types.type`.
 pub mod terrain_kind {
+    pub const SHALLOW_WATER: u8 = 0;
     pub const DEEP_WATER: u8 = 1;
     pub const RIVERBANK: u8 = 2;
     pub const PLAIN: u8 = 3;
+    pub const MOUNTAIN: u8 = 4;
     pub const TREE: u8 = 5;
+    pub const CRACK: u8 = 6;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,6 +87,13 @@ pub struct UnitType {
     pub movement: i64,
     pub armor: i64,
     pub action_points: i64,
+    /// AP of one shot (`actionPointsShoot`), reserved by overwatch.
+    pub shoot_action_points: i64,
+    pub can_overwatch: bool,
+    /// Screen pixels advanced per animation frame while moving.
+    pub move_pix_speed: i64,
+    /// Has a walk animation (`MoveAnimation_Begin` != -1).
+    pub move_animation: bool,
     pub image: String,
 }
 
@@ -221,6 +231,10 @@ impl Definitions {
                 movement: t.int(r, "Movement")?,
                 armor: t.int(r, "Armor")?,
                 action_points: t.int(r, "actionPoints")?,
+                shoot_action_points: t.int_or(r, "actionPointsShoot", 0)?,
+                can_overwatch: t.flag_or(r, "canOverwatch", false)?,
+                move_pix_speed: t.int_or(r, "MoveAnimation_PixSpeed", 8)?,
+                move_animation: t.int_or(r, "MoveAnimation_Begin", -1)? != -1,
                 image: t.text(r, "facingsImageID")?.to_ascii_uppercase(),
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {

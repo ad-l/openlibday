@@ -56,6 +56,9 @@ pub struct Options {
     pub terrain_only: bool,
     /// Ground drawn under trees/scenery without a plain counterpart.
     pub ground: String,
+    /// Index into `scenario.units` left out of the scene (a unit being
+    /// animated separately).
+    pub hidden_unit: Option<usize>,
 }
 
 impl Default for Options {
@@ -65,6 +68,7 @@ impl Default for Options {
             deployment: false,
             terrain_only: false,
             ground: "BORE000".to_owned(),
+            hidden_unit: None,
         }
     }
 }
@@ -181,7 +185,12 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
 
     if !options.terrain_only {
         if let Some(arrival) = options.arrival {
-            for unit in scenario.units.iter().filter(|u| u.arrival == arrival) {
+            let shown = scenario
+                .units
+                .iter()
+                .enumerate()
+                .filter(|&(i, u)| u.arrival == arrival && options.hidden_unit != Some(i));
+            for (_, unit) in shown {
                 let (Some(kind), Some(&frame)) =
                     (defs.unit(unit.kind), art.unit_frames.get(&unit.kind))
                 else {

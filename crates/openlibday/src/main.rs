@@ -10,8 +10,10 @@
 //! scenario database name such as `s1-2-1` or `s1-2-1.mdb` (default: the first skirmish).
 
 mod hud;
+mod moves;
 mod settings;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -116,7 +118,12 @@ struct Viewer {
     hover: Option<(i64, i64)>,
     /// Index into `map.scenario.units`.
     selected: Option<usize>,
-    overwatch: bool,
+    /// Units whose overwatch was switched off (on by default).
+    overwatch_off: HashSet<usize>,
+    preview: Option<moves::Preview>,
+    motion: Option<moves::Motion>,
+    /// `ANMSUNIT.FF` (walk animations).
+    anims: Option<Vec<u8>>,
     auto_fire: bool,
     objectives: bool,
     /// Units and buildings on the minimap; owners with an overview list.
@@ -161,6 +168,10 @@ impl Viewer {
         self.scroll = 0;
         self.entry = None;
         self.selected = None;
+        self.overwatch_off.clear();
+        self.preview = None;
+        self.motion = None;
+        self.options.hidden_unit = None;
         self.hover = None;
         self.started = Instant::now();
     }
@@ -267,7 +278,11 @@ impl Viewer {
     fn enabled(&self, button: Button) -> bool {
         match button {
             Button::Chat => false,
-            Button::Overwatch | Button::AutoFire => self.selected.is_some(),
+            Button::Overwatch => self.selected.is_some_and(|i| {
+                let unit = &self.map.scenario.units[i];
+                self.defs.unit(unit.kind).is_some_and(|k| k.can_overwatch)
+            }),
+            Button::AutoFire => self.selected.is_some(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
             Button::Menu => self.screen != Screen::Goal,
@@ -281,7 +296,7 @@ impl Viewer {
             Button::Goal => self.screen = Screen::Goal,
             Button::Back | Button::Continue => self.screen = Screen::Battle,
             Button::Center => self.centre_on_selected(),
-            Button::Overwatch => self.overwatch = !self.overwatch,
+            Button::Overwatch => self.toggle_overwatch(),
             Button::AutoFire => self.auto_fire = !self.auto_fire,
             Button::Objectives => self.objectives = !self.objectives,
             Button::Swatch(slot) => {
@@ -356,6 +371,10 @@ impl Viewer {
                 }
             }
         }
+        if let Some(p) = &self.preview {
+            let cost: u32 = p.steps.iter().map(|s| s.cost).sum();
+            title += &format!("  path {} steps, {cost} AP", p.steps.len());
+        }
         if let Some(err) = &self.error {
             title += &format!("  ERROR: {err}");
         }
@@ -409,6 +428,7 @@ impl Viewer {
                 self.show_units = !self.show_units;
                 self.options.arrival = self.show_units.then_some(0);
                 self.selected = None;
+                self.preview = None;
                 self.rebuild();
             }
             Keycode::LeftBracket | Keycode::RightBracket => {
@@ -417,6 +437,8 @@ impl Viewer {
                 self.show_units = true;
                 self.options.arrival = Some(turn);
                 self.selected = None;
+                self.preview = None;
+                self.preview = None;
                 self.rebuild();
             }
             _ => {}
@@ -478,8 +500,10 @@ impl Viewer {
             && (y - py).abs() < CLICK_SLOP
         {
             let (mx, my) = self.to_map(ox as f32, oy as f32);
-            self.selected = tile_at(self.map.scenario.size, mx as f64, my as f64)
-                .and_then(|(tx, ty)| self.unit_at(tx, ty));
+            match tile_at(self.map.scenario.size, mx as f64, my as f64) {
+                Some((tx, ty)) => self.click_tile(tx, ty),
+                None => self.preview = None,
+            }
         }
         self.drag = None;
         self.minimap_drag = false;
@@ -606,7 +630,15 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         FPoint::new(x, y)
     };
     let outside = |p: &FPoint| p.x < 0.0 || p.y < 0.0 || p.x > ow || p.y > oh;
+    let screen_f = |mx: f64, my: f64| ((mx as f32 - cx) * zoom, (my as f32 - cy) * zoom);
+    let mut walker = viewer.walker_depth().map(|(x, y)| (x + y, x));
     for item in &viewer.map.scene.items {
+        if let Some(depth) = walker
+            && (item.x + item.y, item.x) > depth
+        {
+            moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
+            walker = None;
+        }
         let (left, top) = sprite_origin(size, item.x, item.y);
         let (x0, y0) = screen(left, top);
         let (x1, y1) = screen(left + 54, top + 56);
@@ -616,6 +648,17 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         if let Some(texture) = gfx.sprite(&viewer.art, item.sheet, &item.sprite) {
             // Whole output pixels, so neighbouring tiles never leave seams.
             let (x0, y0, x1, y1) = (x0.floor(), y0.floor(), x1.floor(), y1.floor());
+            canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
+        }
+    }
+    if walker.is_some() {
+        moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
+    }
+    for (x, y, dot) in moves::path_dots(viewer) {
+        let (left, top) = sprite_origin(size, x, y);
+        let (x0, y0) = screen(left, top);
+        let (x1, y1) = screen(left + 54, top + 56);
+        if let Some(texture) = gfx.sprite(&viewer.art, Sheet::Symbols, dot) {
             canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
         }
     }
@@ -745,6 +788,7 @@ fn main() -> Result {
     let mut gfx = Gfx::new(&creator, &ui);
     drop(ui);
 
+    let anims = game.read(Dir::AnmsUnit, "ANMSUNIT.FF").ok();
     let mut viewer = Viewer {
         game,
         defs,
@@ -775,7 +819,10 @@ fn main() -> Result {
         minimap_drag: false,
         hover: None,
         selected: None,
-        overwatch: true,
+        overwatch_off: HashSet::new(),
+        preview: None,
+        motion: None,
+        anims,
         auto_fire: true,
         objectives: true,
         markers: Vec::new(),
@@ -796,7 +843,14 @@ fn main() -> Result {
     let mut second = 0;
     loop {
         let mut running = true;
-        let wait = if viewer.animating() { 100 } else { 250 };
+        let moving = viewer.tick();
+        let wait = if moving {
+            15
+        } else if viewer.animating() {
+            100
+        } else {
+            250
+        };
         if let Some(event) = events.wait_event_timeout(Duration::from_millis(wait)) {
             running &= viewer.handle(event);
             dirty = true;
@@ -809,7 +863,7 @@ fn main() -> Result {
             break;
         }
         let now = viewer.started.elapsed().as_secs();
-        if now != second || viewer.animating() {
+        if now != second || viewer.animating() || moving {
             second = now;
             dirty = true;
         }

@@ -1996,6 +1996,50 @@ Artifact paths are a retrieval aid, not a promise of permanent availability.
 The core findings are written here so loss of a conversation or session
 artifact does not lose the format/behavior discoveries.
 
+### Movement, action points and pathfinding
+
+Recovered from LIBDAY.EXE (terrain/movement cost table at `0x4f35a0`) and
+checked against gameplay video; implemented in `libday-sim::path`.
+
+`UNITTYPES.movement` ids: 0 none_ground, 1 ground, 2 trooper, 3 grav,
+4 boat, 5 underwater, 6 air, 7 teleport, 8 grav_fly, 9 none_water. Per
+terrain kind, a type can *stop* (end a move there, cost 10 unless noted),
+only *pass* over it, or not enter:
+
+| Terrain | Stop | Pass only |
+|---|---|---|
+| Shallow water (0), riverbank | grav, teleport, grav_fly | air |
+| Deep water | grav, boat, underwater, teleport, grav_fly | air |
+| Plain | ground, trooper, grav, air, teleport, grav_fly | - |
+| Forest | trooper (cost 13) | air, grav_fly |
+| Mountain (4), crack (6) | nobody | air, grav_fly |
+
+none_ground/none_water never move. Roads apply to ground and trooper
+units only: road 7, paved road 4. A bridge (road on water) is a stop tile at
+road cost for ground/trooper, a stop tile at 10 for grav/air/grav_fly/teleport,
+blocked for boats and pass-only (underneath) for underwater units. Other
+units, buildings, walls and blocking ruins are pass-only for flyers and
+blocking for everyone else; grav mines block everyone, normal mines block
+everyone but grav/air/grav_fly/teleport (mines hidden from the mover's side
+are ignored by the planner).
+
+Search is Dijkstra over 8 neighbours in direction order SW, W, NW, N, NE,
+E, SE, S (facing indices 0-7, the `M<facing>` suffix of walk animations);
+a diagonal adds 1 to the search cost only, not to the AP charged. The path
+must end on a stop tile. With overwatch on, the preview budget is AP minus
+`actionPointsShoot`; when executing, the reserve applies only if the unit
+still has at least that much AP. The unit stops at the last affordable stop
+tile (flyers may overspend to reach the next stop tile; AP clamps to 0).
+
+Path dots are `SYMBOLS.DBI` `PATH0000`-`PATH0005`: blue (stop tile), dark
+blue (pass-only), red (destination), each with a crossed variant for steps
+beyond the budget. Walk animations are `ANMSUNIT\ANMSUNIT.FF` members
+`IMG\P<owner>\IMG<owner>M<facing>.SMK` (216x224 frames, 15 fps, assumed
+centred on the 54x56 sprite cell); the unit advances
+`MoveAnimation_PixSpeed` x 15 map pixels per second. Start/stop (`L`/`N`)
+animations, movement sounds and troopers hidden in forest are not yet
+reproduced.
+
 ### What remains unknown for a replacement engine
 
 The current work establishes data import, substantial static rendering,
@@ -2003,7 +2047,7 @@ fresh-skirmish loading observations and selected lifecycle rules. It does
 **not** reconstruct a complete simulation. Open areas include:
 
 - Combat damage/accuracy, range/LOS, armor interaction, overwatch/autofire,
-  action-point spending, movement costs and pathfinding.
+  turn-level action-point rules beyond movement.
 - AI order interpretation, Probability/EnemyUnitType semantics, convoy
   behavior, objective-kind rules and exact turn scheduling beyond the
   reinforcement paths already traced.

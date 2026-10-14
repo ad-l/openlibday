@@ -7,6 +7,7 @@
 
 pub mod compose;
 pub mod minimap;
+pub mod movement;
 pub mod scene;
 pub mod text;
 pub mod ui;
