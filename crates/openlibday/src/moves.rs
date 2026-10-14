@@ -286,7 +286,7 @@ pub fn draw_walker(
         return Ok(());
     }
     // No animation: slide the standing sprite.
-    let still = viewer.art.unit_frames.get(&unit.kind).copied().unwrap_or(0);
+    let still = viewer.art.unit_frame(unit.kind, unit.owner).unwrap_or(0);
     let sprite = kind.sprite(0, 0, i64::from(facing), still);
     if let Some(texture) = gfx.sprite(&viewer.art, Sheet::Ub, &sprite) {
         let (x0, y0) = screen(x, y);

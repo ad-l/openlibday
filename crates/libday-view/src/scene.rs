@@ -191,12 +191,22 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 .enumerate()
                 .filter(|&(i, u)| u.arrival == arrival && options.hidden_unit != Some(i));
             for (_, unit) in shown {
-                let (Some(kind), Some(&frame)) =
-                    (defs.unit(unit.kind), art.unit_frames.get(&unit.kind))
+                let (Some(kind), Some(frame)) =
+                    (defs.unit(unit.kind), art.unit_frame(unit.kind, unit.owner))
                 else {
                     missing.push(format!("unit type {}", unit.kind));
                     continue;
                 };
+                let in_forest = kind.width == 1
+                    && kind.height == 1
+                    && kind_at(scenario, defs, unit.x, unit.y) == Some(terrain_kind::TREE);
+                if let Some(topper) = in_forest
+                    .then(|| art.forest_topper(kind, unit.facing, frame))
+                    .flatten()
+                {
+                    unit_parts.entry((unit.x, unit.y)).or_default().push(topper);
+                    continue;
+                }
                 for (dx, dy) in footprint(kind.width, kind.height) {
                     unit_parts
                         .entry((unit.x + dx, unit.y + dy))

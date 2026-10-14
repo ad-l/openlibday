@@ -14,6 +14,7 @@ pub mod ui;
 
 use std::collections::BTreeMap;
 
+use libday_data::defs::UnitType;
 use libday_data::{DataError, Definitions, Dir, GameData};
 use libday_formats::{Dbi, Sprite};
 
@@ -77,6 +78,9 @@ pub struct Art {
     sheets: BTreeMap<Sheet, Dbi<'static>>,
     /// Animation frame shown for a standing unit of each type.
     pub unit_frames: BTreeMap<i64, u8>,
+    /// Complete owner-colour frames of each unit type (0 = alien/neutral,
+    /// 1-4 = players 1-4).
+    pub owner_frames: BTreeMap<i64, Vec<u8>>,
     /// Construction level shown for each building type.
     pub building_levels: BTreeMap<i64, u8>,
 }
@@ -99,24 +103,31 @@ impl Art {
         let mut art = Self {
             sheets,
             unit_frames: BTreeMap::new(),
+            owner_frames: BTreeMap::new(),
             building_levels: BTreeMap::new(),
         };
         let has = |art: &Art, name: &str| art.contains(Sheet::Ub, name);
         let mut frames = BTreeMap::new();
+        let mut owner_frames = BTreeMap::new();
         for ((id, tech), kind) in &defs.units {
             if *tech != 0 {
                 continue;
             }
-            let frame = (0..10u8).find(|&frame| {
+            let complete = |frame: u8| {
                 (0..kind.facing_count()).all(|facing| {
                     footprint(kind.width, kind.height)
                         .all(|(dx, dy)| has(&art, &kind.sprite(dx, dy, facing, frame)))
                 })
-            });
-            if let Some(frame) = frame {
+            };
+            if let Some(frame) = (0..10u8).find(|&frame| complete(frame)) {
                 frames.insert(*id, frame);
             }
+            let owners: Vec<u8> = (0..5u8).filter(|&frame| complete(frame)).collect();
+            if !owners.is_empty() {
+                owner_frames.insert(*id, owners);
+            }
         }
+        art.owner_frames = owner_frames;
         let mut levels = BTreeMap::new();
         for (id, kind) in &defs.buildings {
             let complete = |level: u8| {
@@ -141,6 +152,27 @@ impl Art {
         art.unit_frames = frames;
         art.building_levels = levels;
         art
+    }
+
+    /// Frame drawn for a unit of type `kind` owned by `owner`: the owner's
+    /// colour when the artwork has it, else the type's default frame.
+    pub fn unit_frame(&self, kind: i64, owner: i64) -> Option<u8> {
+        let owned = u8::try_from(owner).ok().filter(|&frame| {
+            self.owner_frames
+                .get(&kind)
+                .is_some_and(|frames| frames.contains(&frame))
+        });
+        owned.or_else(|| self.unit_frames.get(&kind).copied())
+    }
+
+    /// Sprite of a foot unit hidden in a forest (`{image}{frame}{A-H}00`: an
+    /// owner-coloured cone topped by the unit), if the artwork has one.
+    pub fn forest_topper(&self, kind: &UnitType, facing: i64, frame: u8) -> Option<String> {
+        let letter = char::from(b'A' + u8::try_from(facing.rem_euclid(8)).ok()?);
+        [frame, 1, 0]
+            .into_iter()
+            .map(|frame| format!("{}{frame}{letter}00", kind.image))
+            .find(|name| self.contains(Sheet::Ub, name))
     }
 
     pub fn sheet(&self, sheet: Sheet) -> Option<&Dbi<'static>> {

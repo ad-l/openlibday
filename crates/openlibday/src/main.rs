@@ -973,6 +973,16 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     if walker.is_some() {
         moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
     }
+    // Deployment cursor: a square, with a red box when the tile is taken.
+    if matches!(viewer.screen, Screen::Deploy)
+        && let Some((x, y)) = viewer.hover
+    {
+        let (left, top) = sprite_origin(size, x, y);
+        cell(canvas, gfx, left, top, "CDEPL")?;
+        if viewer.unit_at(x, y).is_some() {
+            cell(canvas, gfx, left, top, "CINVA")?;
+        }
+    }
     for (x, y, dot) in moves::path_dots(viewer) {
         let (left, top) = sprite_origin(size, x, y);
         let (x0, y0) = screen(left, top);
