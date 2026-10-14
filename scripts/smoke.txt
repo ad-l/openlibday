@@ -20,6 +20,10 @@ expect phase Player
 expect turn 1
 tile 44 18
 expect selected 27
+expect units.-1.facing 2
+tile 44 18
+expect units.-1.facing 3
+expect units.-1.ap 80
 hover 42 20
 expect cursor CMOVE
 hover 35 19

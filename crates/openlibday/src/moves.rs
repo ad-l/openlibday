@@ -127,6 +127,7 @@ impl Viewer {
         }
         let unit = self.unit_at(x, y);
         match (self.selected, unit) {
+            (Some(sel), Some(u)) if sel == u => self.turn_clockwise(u),
             (_, Some(u)) => {
                 if self.selected != Some(u) {
                     self.preview = None;
@@ -141,6 +142,22 @@ impl Viewer {
             }
             _ => {}
         }
+    }
+
+    /// Clicking the selected unit turns it one facing clockwise (facings
+    /// run SW, W, NW, N, ... on screen), for free.
+    fn turn_clockwise(&mut self, u: usize) {
+        if self.options.arrival != Some(0) || !self.controllable(u) {
+            return;
+        }
+        let unit = &self.map.battle.scenario.units[u];
+        if unit.arrival != 0 || !self.defs.unit(unit.kind).is_some_and(|k| k.facings) {
+            return;
+        }
+        self.preview = None;
+        let unit = &mut self.map.battle.scenario.units[u];
+        unit.facing = (unit.facing + 1).rem_euclid(8);
+        self.rebuild();
     }
 
     fn start_move(&mut self) {

@@ -65,7 +65,7 @@ previous/next skirmish, `G` grid, `D` deployment zones, `U` units, `T` terrain
 only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
 `O` GOAL dialog, `I` cycle interface scale, `F5` quick save, `F9` quick
 load, `Esc` back to battle or quit.
-Click a unit to select it; with a unit selected, click a tile to preview
+Click a unit to select it (click it again to turn it clockwise); with a unit selected, click a tile to preview
 its path and click it again (or double click) to move. The OVERWATCH box
 toggles the reserve. Hold the right button on a unit to show its AR, AP,
 range, overwatch, owner and capability icons in the minimap well. Click the minimap to move the view. The title
