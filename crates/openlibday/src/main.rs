@@ -24,7 +24,7 @@ use libday_formats::Dbi;
 use libday_view::minimap::{self, Entry, Marker};
 use libday_view::text::Fonts;
 use libday_view::ui::{AUTO_CELLS, Button, LIST_ROWS, SKIRMISH_ROWS, Screen, TECH_CELLS};
-use libday_view::{Art, Options, Scene, Sheet, map_pixels, sprite_origin, tile_at};
+use libday_view::{Art, Layer, Options, Scene, Sheet, map_pixels, sprite_origin, tile_at};
 use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
@@ -343,6 +343,41 @@ impl Viewer {
         self.centre_on_tile(tx, ty);
     }
 
+    /// Units the next/previous buttons cycle through, in deployment order.
+    fn cycle_units(&self) -> Vec<usize> {
+        let Some(arrival) = self.options.arrival else {
+            return Vec::new();
+        };
+        (0..self.map.battle.scenario.units.len())
+            .filter(|&i| {
+                self.map.battle.scenario.units[i].arrival == arrival && self.controllable(i)
+            })
+            .collect()
+    }
+
+    /// Selects the next (`step` 1) or previous (`step` -1) unit and centres on it.
+    fn cycle_selected(&mut self, step: isize) {
+        let units = self.cycle_units();
+        if units.is_empty() || self.motion.is_some() {
+            return;
+        }
+        let n = units.len() as isize;
+        let next = match self
+            .selected
+            .and_then(|s| units.iter().position(|&u| u == s))
+        {
+            Some(at) => (at as isize + step).rem_euclid(n),
+            None if step > 0 => 0,
+            None => n - 1,
+        };
+        let unit = units[next as usize];
+        if self.selected != Some(unit) {
+            self.preview = None;
+        }
+        self.selected = Some(unit);
+        self.centre_on_selected();
+    }
+
     /// Whether a button reacts to clicks (otherwise drawn greyed out).
     fn enabled(&self, button: Button) -> bool {
         let deploy_ready = self.flow.setup.is_some();
@@ -352,6 +387,7 @@ impl Viewer {
                 self.controllable(i) && self.kind_of(i).is_some_and(|k| k.can_overwatch)
             }),
             Button::AutoFire => self.selected.is_some(),
+            Button::Left | Button::Right => self.motion.is_none() && !self.cycle_units().is_empty(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
             Button::Menu => self.screen != Screen::Goal,
@@ -380,6 +416,8 @@ impl Viewer {
             Button::Goal | Button::DeployGoal => self.screen = Screen::Goal,
             Button::Back | Button::Continue => self.screen = self.home(),
             Button::Center => self.centre_on_selected(),
+            Button::Left => self.cycle_selected(-1),
+            Button::Right => self.cycle_selected(1),
             Button::Overwatch => self.toggle_overwatch(),
             Button::AutoFire => self.map.battle.auto_fire ^= true,
             Button::Objectives => self.objectives = !self.objectives,
@@ -869,6 +907,42 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     };
     let outside = |p: &FPoint| p.x < 0.0 || p.y < 0.0 || p.x > ow || p.y > oh;
     let screen_f = |mx: f64, my: f64| ((mx as f32 - cx) * zoom, (my as f32 - cy) * zoom);
+    let footprint = |i: usize| -> Vec<(i64, i64)> {
+        let Some(unit) = viewer.map.battle.scenario.units.get(i) else {
+            return Vec::new();
+        };
+        let (w, h) = viewer
+            .defs
+            .unit(unit.kind)
+            .map_or((1, 1), |k| (k.width, k.height));
+        (0..h)
+            .flat_map(|dy| (0..w).map(move |dx| (unit.x + dx, unit.y + dy)))
+            .collect()
+    };
+    // Red grid under a selectable unit the mouse is over, drawn beneath it.
+    let mut hover_tiles = if viewer.motion.is_none() && matches!(viewer.screen, Screen::Battle) {
+        viewer
+            .hover
+            .and_then(|(x, y)| viewer.unit_at(x, y))
+            .filter(|&i| viewer.controllable(i))
+            .map(footprint)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let cell =
+        |canvas: &mut Canvas<Window>, gfx: &mut Gfx, left: i32, top: i32, name: &str| -> Result {
+            let (x0, y0) = screen(left, top);
+            let (x1, y1) = screen(left + 54, top + 56);
+            if x1 < 0.0 || y1 < 0.0 || x0 > ow || y0 > oh {
+                return Ok(());
+            }
+            if let Some(texture) = gfx.sprite(&viewer.art, Sheet::Symbols, name) {
+                let (x0, y0, x1, y1) = (x0.floor(), y0.floor(), x1.floor(), y1.floor());
+                canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
+            }
+            Ok(())
+        };
     let mut walker = viewer.walker_depth().map(|(x, y)| (x + y, x));
     for item in &viewer.map.scene.items {
         if let Some(depth) = walker
@@ -876,6 +950,13 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         {
             moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
             walker = None;
+        }
+        if item.layer == Layer::Unit
+            && let Some(at) = hover_tiles.iter().position(|&t| t == (item.x, item.y))
+        {
+            hover_tiles.swap_remove(at);
+            let (left, top) = sprite_origin(size, item.x, item.y);
+            cell(canvas, gfx, left, top, "CSELC")?;
         }
         let (left, top) = sprite_origin(size, item.x, item.y);
         let (x0, y0) = screen(left, top);
@@ -920,20 +1001,24 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             }
         }
     }
-    if let Some(unit) = viewer
-        .selected
-        .and_then(|i| viewer.map.battle.scenario.units.get(i))
+    if viewer.motion.is_none()
+        && let Some(i) = viewer.selected
+        && let Some(unit) = viewer.map.battle.scenario.units.get(i)
     {
-        let (w, h) = viewer
-            .defs
-            .unit(unit.kind)
-            .map_or((1, 1), |k| (k.width, k.height));
-        canvas.set_draw_color(Color::RGB(255, 255, 0));
-        for dy in 0..h {
-            for dx in 0..w {
-                diamond(canvas, unit.x + dx, unit.y + dy)?;
-            }
-        }
+        // Arrow in the owner's colour above the centre of the unit's footprint.
+        let tiles = footprint(i);
+        let (a, b) = (tiles[0], tiles[tiles.len() - 1]);
+        let (ax, ay) = libday_view::tile_center(size, a.0, a.1);
+        let (bx, by) = libday_view::tile_center(size, b.0, b.1);
+        let (mx, my) = ((ax + bx) / 2, (ay + by) / 2);
+        let name = format!("SU{:03}", unit.owner.clamp(0, 4));
+        cell(
+            canvas,
+            gfx,
+            mx - 27,
+            my - libday_view::SPRITE_ANCHOR_Y,
+            &name,
+        )?;
     }
     canvas.set_clip_rect(None);
     Ok(())
