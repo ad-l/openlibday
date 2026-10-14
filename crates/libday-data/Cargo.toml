@@ -1,0 +1,17 @@
+[package]
+name = "libday-data"
+description = "Locating and loading an original Liberation Day installation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+libday-formats.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+
+[lints]
+workspace = true

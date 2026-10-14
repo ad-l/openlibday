@@ -121,7 +121,7 @@ Each milestone ends with something runnable and with automated tests.
 
 | # | Milestone | Content | Main risk |
 | --- | --- | --- | --- |
-| M0 | Repository and tooling | Build, CI on Windows and Linux, data-path configuration, test fixtures that skip without game data | Low |
+| M0 | Repository and tooling | Build, CI on Windows and Linux, data-path configuration, test fixtures that skip without game data | Low — **done**: workspace, CI, `LIBDAY_ROOT`, DBI decoder bit-exact with the Python editor on all 8 DBIs (incl. `LISTBOX.DBI`: encoding 0, no palette), SDL3 tile demo |
 | M1 | Asset layer | Jet 3 reader (validated against MDB Tools/editor exports), ZIP, DBI, INI, PE strings; command-line asset dump tool | Jet password-protected `GLOBAL.MDB`, encoding details |
 | M2 | Map viewer | Render any skirmish map: terrain, buildings, roads/bridges, walls, decors, units, deployment zones; pan/zoom; matches the existing Python editor output | Low; the editor is a reference implementation |
 | M3 | Animation and interface assets | FF container and Smacker decoding; unit idle/move/attack animations; UI art from interface Smacker files; palette cycling; WAV playback | FF index layout, UI art layout is undocumented |

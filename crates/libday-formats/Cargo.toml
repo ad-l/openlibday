@@ -1,0 +1,13 @@
+[package]
+name = "libday-formats"
+description = "Read-only decoders for Liberation Day file formats"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

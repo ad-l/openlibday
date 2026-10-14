@@ -1,0 +1,15 @@
+[package]
+name = "openlibday"
+description = "Open-source reimplementation of the Liberation Day engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+libday-formats.workspace = true
+libday-data.workspace = true
+sdl3 = { version = "0.20", features = ["build-from-source-static"] }
+
+[lints]
+workspace = true

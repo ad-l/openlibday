@@ -10,11 +10,32 @@ animation, video and sound files at runtime.
 
 ## Status
 
-Planning. The first milestone is playable stand-alone skirmishes.
-Campaign (story mode) and multiplayer will follow.
+Milestone M0 (workspace, tooling, first decoder). The first goal is playable
+stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 
 See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 Implementation: Rust + SDL3. License: MIT (code only; no game data included).
+
+## Building and running
+
+Requires stable Rust (1.88+), CMake and a C compiler (MSVC Build Tools on
+Windows); SDL3 is built from source and linked statically.
+
+```powershell
+$env:LIBDAY_ROOT = 'F:\libday'      # your Liberation Day install directory
+cargo test --workspace              # data-gated tests skip without LIBDAY_ROOT
+cargo run -p openlibday             # M0 demo: terrain tile mosaic (drag/arrows to pan)
+cargo run -p libday-tools -- dbi-list TERRAINS.DBI
+cargo run -p libday-tools -- dbi-export UB.DBI out\ub
+```
+
+| Crate | Purpose |
+|---|---|
+| `libday-formats` | Pure decoders (DBI sprites, INI; Jet3, ZIP, Smacker to come) |
+| `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup |
+| `libday-sim` | Deterministic headless simulation (placeholder) |
+| `libday-tools` | `libday` CLI for inspecting/exporting data |
+| `openlibday` | SDL3 application |
 
 ## Knowledge base
 

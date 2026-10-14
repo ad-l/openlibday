@@ -1,0 +1,20 @@
+[package]
+name = "libday-tools"
+description = "Command-line tools for inspecting Liberation Day data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "libday"
+path = "src/main.rs"
+
+[dependencies]
+libday-formats.workspace = true
+libday-data.workspace = true
+clap.workspace = true
+png.workspace = true
+
+[lints]
+workspace = true
