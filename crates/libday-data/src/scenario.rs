@@ -99,6 +99,8 @@ impl Deployment {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScenarioInfo {
     pub title: String,
+    /// Region name shown under the title in the goal dialog.
+    pub province: String,
     pub description: String,
     pub turns: i64,
     /// `One Off Deployment`: technology/deployment points of a skirmish.
@@ -283,6 +285,7 @@ impl Scenario {
         } else {
             ScenarioInfo {
                 title: t.text_or(0, "TitleEnglish")?,
+                province: t.text_or(0, "provincenameEnglish")?,
                 description: t.text_or(0, "descriptionEnglish")?,
                 turns: t.int_or(0, "turn_qty", 0)?,
                 points: t.int_or(0, "One Off Deployment", 0)?,

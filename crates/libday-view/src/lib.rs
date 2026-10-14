@@ -6,7 +6,10 @@
 //! (`tools/modding/map_editor.py` `render_map`), which is the reference.
 
 pub mod compose;
+pub mod minimap;
 pub mod scene;
+pub mod text;
+pub mod ui;
 
 use std::collections::BTreeMap;
 
@@ -184,14 +187,39 @@ pub fn sprite_origin(size: usize, x: i64, y: i64) -> (i32, i32) {
     (cx - SPRITE_W / 2, cy - SPRITE_ANCHOR_Y)
 }
 
-/// Tile whose diamond contains whole-map pixel `(px, py)`.
-pub fn tile_at(size: usize, px: f64, py: f64) -> Option<(i64, i64)> {
+/// Continuous tile coordinates of whole-map pixel `(px, py)`: tile `(x, y)`
+/// covers `[x, x + 1) x [y, y + 1)`. Not limited to the map.
+pub fn tile_coords(size: usize, px: f64, py: f64) -> (f64, f64) {
     let (ox, oy) = tile_center(size, 0, 0);
     let dx = (px - ox as f64) / (TILE_W as f64 / 2.0);
     let dy = (py - oy as f64) / (TILE_H as f64 / 2.0);
-    let x = ((dx + dy) / 2.0 + 0.5).floor() as i64;
-    let y = ((dy - dx) / 2.0 + 0.5).floor() as i64;
+    ((dx + dy) / 2.0 + 0.5, (dy - dx) / 2.0 + 0.5)
+}
+
+/// Whole-map pixel of continuous tile coordinates (inverse of [`tile_coords`]).
+pub fn map_point(size: usize, tx: f64, ty: f64) -> (f64, f64) {
+    let (ox, oy) = tile_center(size, 0, 0);
+    let (u, v) = (tx - 0.5, ty - 0.5);
+    (
+        ox as f64 + (u - v) * TILE_W as f64 / 2.0,
+        oy as f64 + (u + v) * TILE_H as f64 / 2.0,
+    )
+}
+
+/// Tile whose diamond contains whole-map pixel `(px, py)`.
+pub fn tile_at(size: usize, px: f64, py: f64) -> Option<(i64, i64)> {
+    let (u, v) = tile_coords(size, px, py);
+    let (x, y) = (u.floor() as i64, v.floor() as i64);
     ((0..size as i64).contains(&x) && (0..size as i64).contains(&y)).then_some((x, y))
+}
+
+/// Loads the battle interface artwork from the installation.
+pub fn load_ui(game: &GameData) -> Result<ui::UiArt, DataError> {
+    let bytes = game.read(Dir::Interf, ui::FILE)?;
+    ui::UiArt::from_smacker(&bytes).map_err(|e| DataError::Invalid {
+        table: ui::FILE.to_owned(),
+        message: e.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -211,5 +239,8 @@ mod tests {
             }
         }
         assert_eq!(tile_at(size, 0.0, 0.0), None);
+        let (px, py) = map_point(size, 3.25, 7.5);
+        let (u, v) = tile_coords(size, px, py);
+        assert!((u - 3.25).abs() < 1e-9 && (v - 7.5).abs() < 1e-9);
     }
 }

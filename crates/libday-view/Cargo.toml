@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 libday-formats.workspace = true
 libday-data.workspace = true
+fontdue = "0.9"
 
 [lints]
 workspace = true

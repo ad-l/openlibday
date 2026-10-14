@@ -41,7 +41,7 @@ counterattacks, multiplayer, savegame compatibility with the original game.
 | Skirmish catalog | `SCENS\SKIRMISH.MDB` | Jet 3 | Documented |
 | Sprites | `IMGS\*.DBI` | Custom: 32-byte header, BGRA palette, RLE 54x56 frames | Fully decoded for static frames |
 | Unit animations | `ANMSUNIT\ANMSUNIT.FF` | `FF` container of Smacker files | **Done**: container and Smacker decoder/encoder (lossless round trip of all 5146 members); member naming and action letters documented |
-| Interface | `INTERF\640X480.SMK`, `1024X768.SMK`, `PAL.BMP`, `PALCYCLE.PAL` | Smacker frames used as UI art; palette cycling | Unexplored |
+| Interface | `INTERF\640X480.SMK`, `1024X768.SMK`, `PAL.BMP`, `PALCYCLE.PAL` | Smacker frames used as UI art; palette cycling | Battle HUD frames of `1024X768.SMK` mapped (`libday-view::ui`); rest unexplored |
 | Video | `VIDEO\*.SMK`, `COLANMS`, `ENCYCL` | Smacker | Standard format |
 | Sound | `SOUNDS\*.WAV` (+ audio in Smacker files) | PCM WAV | Standard format |
 | UI strings | `EXE\LIBDAYEN.DLL` | PE string resources | Partly used |
@@ -125,7 +125,7 @@ Each milestone ends with something runnable and with automated tests.
 | M1 | Asset layer | Jet 3 reader (validated against MDB Tools/editor exports), ZIP, DBI, INI, PE strings; command-line asset dump tool | Low — **done**: Jet 3 reader matches MDB Tools on all 121 shipped databases (overflow rows: targets carry the deleted flag; tdef row counts can be stale), ZIP (stored/deflate, CRC-checked), PE `RT_STRING`, CP1252; `libday` CLI `mdb-*`, `zip-list`, `strings` |
 | M2 | Map viewer | Render any skirmish map: terrain, buildings, roads/bridges, walls, decors, units, deployment zones; pan/zoom; matches the existing Python editor output | Low — **done**: `libday-view` scene + compositor, SDL viewer (`openlibday`), `libday map-scene`/`map-render`/`skirmishes`; draw list identical to the Tk editor canvas on all 47 skirmishes (`tools/modding/test_engine_parity.py`). Note: unit tech levels run 0..=10 in GLOBAL.MDB |
 | M3 | Animation and interface assets | FF container and Smacker decoding; unit idle/move/attack animations; UI art from interface Smacker files; palette cycling; WAV playback | FF/Smacker codecs done early (asset editor); UI art layout is undocumented |
-| M4 | Screen flow | Main menu, skirmish selector, technology allocation, deployment (budget, zones), battle shell, HUD, minimap | UI layout must be measured from the original |
+| M4 | Screen flow | Main menu, skirmish selector, technology allocation, deployment (budget, zones), battle shell, HUD, minimap | UI layout must be measured from the original — **battle HUD started**: sidebar/bottom bar from `1024X768.SMK` frames (`libday-view::ui`), minimap and MAP overview with per-player unit lists (`minimap`), GOAL dialog, resizable viewport, UI scale; action buttons are not wired up yet |
 | M5 | Core simulation | Turns, action points, movement costs, pathfinding, occupancy, reinforcements, scheduled support events | **Rules are largely unknown**; needs research track |
 | M6 | Combat | Range, line of sight, accuracy, damage/armor, overwatch/autofire, destruction, wrecks, mines | Unknown formulas |
 | M7 | AI and objectives | Scripted AI orders, skirmish AI, objective presets, win/loss, turn limits | Unknown AI behavior; an initial AI can be ours rather than native |

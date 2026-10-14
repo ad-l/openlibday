@@ -13,11 +13,18 @@ animation, video and sound files at runtime.
 Milestone M2 (map viewer) complete: every skirmish map renders natively
 (terrain, roads/bridges, walls, mines, buildings, units, reinforcements and
 deployment zones) with exact draw-order parity against the Python map editor.
+The battle interface is in place: right-hand sidebar (minimap, unit
+selector, action buttons) and bottom bar, drawn from the original
+`INTERF\1024X768.SMK` art and resizable with the window. The minimap, MAP
+overview (units in player colours, per-player unit lists that blink on the
+map) and GOAL dialog work; the other buttons are not wired up yet.
 DBI sprites, Jet 3 databases, ZIP archives and PE string tables decode natively. The first goal is playable
 stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 
 See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
 Implementation: Rust + SDL3. License: MIT (code only; no game data included).
+The bundled Liberation Sans font (`crates/libday-view/assets/fonts`) is under
+the SIL Open Font License 1.1.
 
 ## Building and running
 
@@ -39,7 +46,9 @@ cargo run -p libday-tools -- dbi-export UB.DBI out\ub
 Map viewer controls: mouse wheel or `+`/`-` zoom (anchored on the cursor),
 drag with any button or arrow keys to pan, `Home` recentre, `PgUp`/`PgDn`
 previous/next skirmish, `G` grid, `D` deployment zones, `U` units, `T` terrain
-only, `[`/`]` show reinforcements up to an arrival turn, `Esc` quit. The title
+only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
+`O` GOAL dialog, `I` cycle interface scale, `Esc` back to battle or quit.
+Click a unit to select it; click the minimap to move the view. The title
 bar shows the hovered tile's terrain, building and unit. Set
 `OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
 
