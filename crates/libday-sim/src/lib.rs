@@ -3,6 +3,7 @@
 //! Placeholder for milestone M4: commands in, events out, integer state and
 //! a seeded RNG so replays and network lockstep are reproducible.
 
+pub mod fire;
 pub mod path;
 
 /// Small deterministic PRNG (SplitMix64) used for all simulation randomness.

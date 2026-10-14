@@ -104,6 +104,10 @@ pub struct UnitType {
     pub damage_random: i64,
     /// `weaponRange`.
     pub range: i64,
+    /// `WeaponMinimumRange`: targets must be farther than this.
+    pub min_range: i64,
+    /// `UnitHasWeapon`: fires at ground targets.
+    pub has_weapon: bool,
     /// `IsAA`: fires at aircraft.
     pub anti_air: bool,
     /// `DamageAA`: damage against aircraft (shown instead of the average
@@ -275,6 +279,8 @@ impl Definitions {
                 damage_base: t.int_or(r, "damageBase", 0)?,
                 damage_random: t.int_or(r, "damageRandom", 0)?,
                 range: t.int_or(r, "weaponRange", 0)?,
+                min_range: t.int_or(r, "WeaponMinimumRange", 0)?,
+                has_weapon: t.flag_or(r, "UnitHasWeapon", true)?,
                 anti_air: t.flag_or(r, "IsAA", false)?,
                 damage_aa: t.int_or(r, "DamageAA", 0)?,
                 mine_detection: t.int_or(r, "MineDetectionRange", 0)?,

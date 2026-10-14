@@ -20,7 +20,9 @@ overview (units in player colours, per-player unit lists that blink on the
 map) and GOAL dialog work; the other buttons are not wired up yet.
 Units move: a click previews the cheapest path in action points (dots,
 crossed beyond the unit's AP), a second click walks it with the original
-walk animations; overwatch keeps a shot's AP in reserve.
+walk animations; overwatch keeps a shot's AP in reserve. The mouse cursor
+shows the order: move, fire (range and line of sight as the original
+checks them), move closer, or not enough AP.
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -82,7 +84,8 @@ at the end of the script, and `--size WxH` for its resolution (default
 as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
 `deploy UNIT`, `centre X Y`, `zoom F`, `screenshot FILE.png`, `record DIR N`
 (N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
-phase, turn, selection, path preview, motion, deploy zone and every unit),
+phase, turn, selection, hover cursor and fire check code, path preview,
+motion, deploy zone and every unit),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
 `units.-1.x`), `echo TEXT`, `quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
@@ -113,7 +116,7 @@ terrain cells that differ from the source (destroyed tiles). See
 | `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video; DBI/FF/Smacker encoders for modding |
 | `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup, databases, scenarios inside `SCENS\*.ZIP`, UI strings; typed GLOBAL.MDB definitions, scenario loader, skirmish catalog |
 | `libday-view` | Renderer-independent map scene (isometric projection, draw order, sprite choice) and a software compositor |
-| `libday-sim` | Deterministic headless simulation: movement rules and AP pathfinding (`path`) |
+| `libday-sim` | Deterministic headless simulation: movement rules and AP pathfinding (`path`), fire checks and line of sight (`fire`) |
 | `libday-tools` | `libday` CLI for inspecting/exporting data |
 | `openlibday` | SDL3 application |
 | `tools/modding` | Python/Tk map and scenario editor and unit/building asset editor (see its README) |

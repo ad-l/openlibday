@@ -20,6 +20,11 @@ expect phase Player
 expect turn 1
 tile 44 18
 expect selected 27
+hover 42 20
+expect cursor CMOVE
+hover 35 19
+expect cursor CMVSH
+expect fire 4
 tile 44 21
 tile 44 21
 record out/walk 30

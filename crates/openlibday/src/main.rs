@@ -954,7 +954,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             .collect()
     };
     // Red grid under a selectable unit the mouse is over, drawn beneath it.
-    let mut hover_tiles = if viewer.motion.is_none() && matches!(viewer.screen, Screen::Battle) {
+    let hover_tiles = if viewer.motion.is_none() && matches!(viewer.screen, Screen::Battle) {
         viewer
             .hover
             .and_then(|(x, y)| viewer.unit_at(x, y))
@@ -978,6 +978,17 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             Ok(())
         };
     let mut walker = viewer.walker_depth().map(|(x, y)| (x + y, x));
+    // Tile overlays drawn in depth order, after their tile's ground and
+    // buildings but before its units, so objects in front cover them: the
+    // selection grid, path dots and the order cursor.
+    let mut overlays: Vec<(i64, i64, &str)> = hover_tiles
+        .into_iter()
+        .map(|(x, y)| (x, y, "CSELC"))
+        .chain(moves::path_dots(viewer))
+        .chain(viewer.battle_cursor().map(|((x, y), name)| (x, y, name)))
+        .collect();
+    overlays.sort_by_key(|&(x, y, _)| (x + y, x));
+    let mut overlays = overlays.into_iter().peekable();
     for item in &viewer.map.scene.items {
         if let Some(depth) = walker
             && (item.x + item.y, item.x) > depth
@@ -985,12 +996,13 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
             walker = None;
         }
-        if item.layer == Layer::Unit
-            && let Some(at) = hover_tiles.iter().position(|&t| t == (item.x, item.y))
-        {
-            hover_tiles.swap_remove(at);
-            let (left, top) = sprite_origin(size, item.x, item.y);
-            cell(canvas, gfx, left, top, "CSELC")?;
+        let depth = (item.x + item.y, item.x);
+        while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| {
+            let at = (x + y, x);
+            at < depth || (at == depth && item.layer == Layer::Unit)
+        }) {
+            let (left, top) = sprite_origin(size, x, y);
+            cell(canvas, gfx, left, top, name)?;
         }
         let (left, top) = sprite_origin(size, item.x, item.y);
         let (x0, y0) = screen(left, top);
@@ -1007,6 +1019,10 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     if walker.is_some() {
         moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
     }
+    for (x, y, name) in overlays {
+        let (left, top) = sprite_origin(size, x, y);
+        cell(canvas, gfx, left, top, name)?;
+    }
     // Deployment cursor, on zone tiles only: a hazard-barred square, or a
     // red-barred one when a click would recall the unit already there.
     if matches!(viewer.screen, Screen::Deploy)
@@ -1020,14 +1036,6 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             "CDEPL"
         };
         cell(canvas, gfx, left, top, name)?;
-    }
-    for (x, y, dot) in moves::path_dots(viewer) {
-        let (left, top) = sprite_origin(size, x, y);
-        let (x0, y0) = screen(left, top);
-        let (x1, y1) = screen(left + 54, top + 56);
-        if let Some(texture) = gfx.sprite(&viewer.art, Sheet::Symbols, dot) {
-            canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
-        }
     }
     let diamond = |canvas: &mut Canvas<Window>, tx: i64, ty: i64| -> Result {
         let corners = libday_view::compose::diamond(size, tx, ty);

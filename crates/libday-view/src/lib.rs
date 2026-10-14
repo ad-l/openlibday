@@ -6,6 +6,7 @@
 //! (`tools/modding/map_editor.py` `render_map`), which is the reference.
 
 pub mod compose;
+pub mod fire;
 pub mod minimap;
 pub mod movement;
 pub mod scene;

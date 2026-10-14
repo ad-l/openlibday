@@ -486,6 +486,8 @@ pub fn state(viewer: &Viewer) -> Value {
         "setup": setup,
         "selected": viewer.selected,
         "hover": viewer.hover.map(|(x, y)| [x, y]),
+        "cursor": viewer.battle_cursor().map(|(_, name)| name),
+        "fire": viewer.hover_fire().map(|f| f.code()),
         "zoom": viewer.zoom / viewer.density,
         "camera": [viewer.camera.0, viewer.camera.1],
         "preview": preview,
