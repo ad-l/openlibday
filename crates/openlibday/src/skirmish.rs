@@ -439,19 +439,21 @@ impl Viewer {
         grid.is_none_or(|g| g.get(x as i32, y as i32).0 == Access::Stop)
     }
 
+    /// The unit on `(x, y)` that was deployed this phase, hence recallable.
+    pub(crate) fn recallable(&self, x: i64, y: i64) -> Option<usize> {
+        let i = self.unit_at(x, y)?;
+        let id = self.map.battle.scenario.units[i].id;
+        let setup = self.flow.setup.as_ref()?;
+        setup.deployed.contains(&id).then_some(i)
+    }
+
     /// A click on map tile `(x, y)` while deploying.
     pub(crate) fn deploy_click(&mut self, x: i64, y: i64) {
         if let Some(i) = self.unit_at(x, y) {
-            let unit = &self.map.battle.scenario.units[i];
-            let id = unit.id;
-            if !self
-                .flow
-                .setup
-                .as_ref()
-                .is_some_and(|s| s.deployed.contains(&id))
-            {
+            if self.recallable(x, y) != Some(i) {
                 return;
             }
+            let id = self.map.battle.scenario.units[i].id;
             let (refund, name) = self
                 .kind_of(i)
                 .map_or((0, String::new()), |k| (k.cost, k.name.clone()));

@@ -973,15 +973,19 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     if walker.is_some() {
         moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
     }
-    // Deployment cursor: a square, with a red box when the tile is taken.
+    // Deployment cursor, on zone tiles only: a hazard-barred square, or a
+    // red-barred one when a click would recall the unit already there.
     if matches!(viewer.screen, Screen::Deploy)
         && let Some((x, y)) = viewer.hover
+        && viewer.zone(x, y)
     {
         let (left, top) = sprite_origin(size, x, y);
-        cell(canvas, gfx, left, top, "CDEPL")?;
-        if viewer.unit_at(x, y).is_some() {
-            cell(canvas, gfx, left, top, "CINVA")?;
-        }
+        let name = if viewer.recallable(x, y).is_some() {
+            "CRECA"
+        } else {
+            "CDEPL"
+        };
+        cell(canvas, gfx, left, top, name)?;
     }
     for (x, y, dot) in moves::path_dots(viewer) {
         let (left, top) = sprite_origin(size, x, y);
