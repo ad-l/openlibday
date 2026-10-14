@@ -455,6 +455,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "unit": m.unit,
             "done": m.done,
             "steps": m.steps.len(),
+            "positions": m.positions.iter().map(|((x, y), s)| json!([x, y, s])).collect::<Vec<_>>(),
         })
     });
     let setup = viewer.flow.setup.as_ref().map(|s| {

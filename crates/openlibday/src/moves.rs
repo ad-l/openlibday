@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use libday_view::fire::{self, Fire, Target};
 use libday_view::movement::{
-    self, ANIMATION_FPS, ANIMATION_OFFSET, Step, affordable_steps, executable_steps, move_budget,
+    self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
-use libday_view::{Sheet, sprite_origin, tile_center};
+use libday_view::{SPRITE_ANCHOR_Y, SPRITE_W, Sheet, tile_center};
 use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
 
@@ -26,8 +26,9 @@ pub struct Preview {
 
 /// Where and how the walking unit is drawn.
 struct Walker {
-    /// Sprite cell origin in map pixels.
-    origin: (f64, f64),
+    /// Point the unit is centred on (a tile centre while standing), in map
+    /// pixels.
+    centre: (i32, i32),
     facing: u8,
     /// Animation frame counter.
     frame: usize,
@@ -43,19 +44,33 @@ pub struct Motion {
     pub done: usize,
     /// Tile the current step starts from.
     pub from: (i64, i64),
-    /// Clock times the current step and the walk started.
-    pub step_started: Duration,
+    /// Queued positions (map pixel centre, step index), each shown for
+    /// [`WALK_POSITION_MS`].
+    pub positions: Vec<((i32, i32), usize)>,
+    /// Clock time the walk started.
     pub started: Duration,
-    /// Map pixels per second.
-    pub speed: f64,
     pub final_ap: i64,
 }
 
-/// Map pixels between two tile centres.
-fn step_length(size: usize, a: (i64, i64), b: (i64, i64)) -> f64 {
-    let (ax, ay) = tile_center(size, a.0, a.1);
-    let (bx, by) = tile_center(size, b.0, b.1);
-    f64::from(bx - ax).hypot(f64::from(by - ay))
+/// The original's walk queue for `steps` from tile `start`.
+fn walk_queue(
+    size: usize,
+    start: (i64, i64),
+    steps: &[Step],
+    pix_speed: i32,
+) -> Vec<((i32, i32), usize)> {
+    let mut from = tile_center(size, start.0, start.1);
+    let mut out = Vec::new();
+    for (i, s) in steps.iter().enumerate() {
+        let to = tile_center(size, i64::from(s.x), i64::from(s.y));
+        let points = movement::walk_positions(from, to, pix_speed);
+        if points.is_empty() {
+            out.push((to, i));
+        }
+        out.extend(points.into_iter().map(|p| (p, i)));
+        from = to;
+    }
+    out
 }
 
 impl Viewer {
@@ -177,14 +192,17 @@ impl Viewer {
             return;
         }
         let now = self.clock.now();
+        let size = self.map.battle.scenario.size;
+        let start = (unit.x, unit.y);
+        let pix_speed = kind.move_pix_speed.clamp(1, 1000) as i32;
+        let steps = p.steps[..n].to_vec();
         self.motion = Some(Motion {
             unit: p.unit,
-            steps: p.steps[..n].to_vec(),
+            positions: walk_queue(size, start, &steps, pix_speed),
+            steps,
             done: 0,
-            from: (unit.x, unit.y),
-            step_started: now,
+            from: start,
             started: now,
-            speed: kind.move_pix_speed.max(1) as f64 * ANIMATION_FPS,
             final_ap: ap - i64::from(spent),
         });
         self.map.battle.scenario.units[p.unit].facing = i64::from(p.steps[0].facing);
@@ -194,19 +212,16 @@ impl Viewer {
 
     /// Advances the walking unit; returns whether one is moving.
     pub(crate) fn tick(&mut self) -> bool {
-        let size = self.map.battle.scenario.size;
         let Some(m) = &mut self.motion else {
             return false;
         };
-        let now = self.clock.now();
-        loop {
+        let shown =
+            (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
+        // Steps whose positions have all been shown are walked.
+        let walked = m.positions.get(shown).map_or(m.steps.len(), |&(_, s)| s);
+        while m.done < walked {
             let step = m.steps[m.done];
             let to = (i64::from(step.x), i64::from(step.y));
-            let length = step_length(size, m.from, to);
-            let elapsed = now.saturating_sub(m.step_started).as_secs_f64();
-            if elapsed * m.speed < length {
-                break;
-            }
             let unit = &mut self.map.battle.scenario.units[m.unit];
             (unit.x, unit.y) = to;
             if let Some(ap) = &mut unit.action_points {
@@ -214,7 +229,6 @@ impl Viewer {
             } else if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
                 unit.action_points = Some(k.action_points - i64::from(step.cost));
             }
-            m.step_started += Duration::from_secs_f64(length / m.speed);
             m.from = to;
             m.done += 1;
             if m.done == m.steps.len() {
@@ -231,27 +245,27 @@ impl Viewer {
         true
     }
 
-    /// The walking unit's sprite cell origin (map pixels), facing, animation
-    /// frame counter and the tile whose depth it is drawn at.
+    /// The walking unit's centre (map pixels), facing, animation frame
+    /// counter and the tile whose depth it is drawn at.
     fn walker(&self) -> Option<Walker> {
         let m = self.motion.as_ref()?;
         let size = self.map.battle.scenario.size;
         let step = m.steps.get(m.done)?;
         let to = (i64::from(step.x), i64::from(step.y));
-        let length = step_length(size, m.from, to);
-        let elapsed = self.clock.since(m.step_started).as_secs_f64();
-        let t = (elapsed * m.speed / length).clamp(0.0, 1.0);
-        let (ax, ay) = sprite_origin(size, m.from.0, m.from.1);
-        let (bx, by) = sprite_origin(size, to.0, to.1);
-        let lerp = |a: i32, b: i32| f64::from(a) + (f64::from(b) - f64::from(a)) * t;
-        let frame = (self.clock.since(m.started).as_secs_f64() * ANIMATION_FPS) as usize;
+        let shown =
+            (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
+        let centre = match m.positions.get(shown) {
+            Some(&(p, s)) if s == m.done => p,
+            _ => tile_center(size, to.0, to.1),
+        };
+        let frame = shown;
         let depth = if (to.0 + to.1, to.0) > (m.from.0 + m.from.1, m.from.0) {
             to
         } else {
             m.from
         };
         Some(Walker {
-            origin: (lerp(ax, bx), lerp(ay, by)),
+            centre,
             facing: step.facing,
             frame,
             depth,
@@ -352,7 +366,7 @@ pub fn draw_walker(
     let (Some(m), Some(w)) = (&viewer.motion, viewer.walker()) else {
         return Ok(());
     };
-    let ((x, y), facing, frame) = (w.origin, w.facing, w.frame);
+    let ((cx, cy), facing, frame) = (w.centre, w.facing, w.frame);
     let unit = &viewer.map.battle.scenario.units[m.unit];
     let Some(kind) = viewer.defs.unit(unit.kind) else {
         return Ok(());
@@ -373,17 +387,19 @@ pub fn draw_walker(
         && !frames.is_empty()
     {
         let texture = &frames[frame % frames.len()];
-        let (w, h) = (texture.width() as f64, texture.height() as f64);
-        let (ox, oy) = (
-            x - f64::from(ANIMATION_OFFSET.0),
-            y - f64::from(ANIMATION_OFFSET.1),
-        );
+        let (w, h) = (texture.width() as i32, texture.height() as i32);
+        // Centred on the point (`0x468515`), halves rounded down.
+        let (ox, oy) = (f64::from(cx - w / 2), f64::from(cy - h / 2));
         let (x0, y0) = screen(ox, oy);
-        let (x1, y1) = screen(ox + w, oy + h);
+        let (x1, y1) = screen(ox + f64::from(w), oy + f64::from(h));
         canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
         return Ok(());
     }
     // No animation: slide the standing sprite.
+    let (x, y) = (
+        f64::from(cx - SPRITE_W / 2),
+        f64::from(cy - SPRITE_ANCHOR_Y),
+    );
     let still = viewer.art.unit_frame(unit.kind, unit.owner).unwrap_or(0);
     let sprite = kind.sprite(0, 0, i64::from(facing), still);
     if let Some(texture) = gfx.sprite(&viewer.art, Sheet::Ub, &sprite) {
