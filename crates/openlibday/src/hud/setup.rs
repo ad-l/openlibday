@@ -5,8 +5,9 @@ use libday_data::defs::UnitType;
 use libday_data::scenario::difficulty_label;
 use libday_view::minimap;
 use libday_view::ui::{
-    self, Button, DEPLOY_ROWS, QUESTION_TEXT, Rect, SKIRMISH_ROWS, SKIRMISH_TEXT, Screen, State,
-    TECH_CELLS, TECH_EMBLEM, TECH_NAME, TECH_POINTS, TECH_STAT_ROW, TECH_STATS, frame,
+    self, AUTO_CELLS, Button, DEPLOY_ROWS, QUESTION_TEXT, Rect, SKIRMISH_ROWS, SKIRMISH_TEXT,
+    Screen, State, TECH_CELLS, TECH_COLUMNS, TECH_EMBLEM, TECH_NAME, TECH_POINTS, TECH_STAT_ROW,
+    TECH_STATS, frame,
 };
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Canvas};
@@ -72,6 +73,14 @@ pub(super) fn draw_selector(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: 
     Ok(())
 }
 
+/// How a technology grid cell is shown.
+struct Look {
+    /// Outlined.
+    selected: bool,
+    /// Portrait at half brightness (fully upgraded).
+    dim: bool,
+}
+
 /// A technology grid cell: portrait, then name and more lines beside it.
 fn cell(
     canvas: &mut Canvas<Window>,
@@ -80,7 +89,7 @@ fn cell(
     r: Rect,
     image: &str,
     lines: &[String],
-    selected: bool,
+    look: Look,
 ) -> Result {
     let s = viewer.layout().scale;
     let px = TEXT_PX * s as f32;
@@ -88,12 +97,19 @@ fn cell(
         let side = 38 * s;
         let to = Rect::new(r.x + 2 * s, r.y + 2 * s, side, side);
         canvas.copy(t, None, frect(to))?;
+        if look.dim {
+            // Fully upgraded units' portraits are shown at half brightness.
+            canvas.set_blend_mode(BlendMode::Blend);
+            canvas.set_draw_color(Color::RGBA(0, 0, 0, 128));
+            canvas.fill_rect(frect(to))?;
+            canvas.set_blend_mode(BlendMode::None);
+        }
     }
     for (i, line) in lines.iter().enumerate() {
         let y = r.y + s + i as i32 * 14 * s;
         gfx.text(canvas, &viewer.fonts, line, px, WHITE, r.x + 42 * s, y)?;
     }
-    if selected {
+    if look.selected {
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.draw_rect(frect(Rect::new(r.x, r.y, r.w - 2 * s, r.h - s)))?;
     }
@@ -123,21 +139,11 @@ pub(super) fn draw_tech(
     let e = layout.in_tech(Rect::new(ex, ey, 0, 0));
     gfx.frame(canvas, f, e.x, e.y, s)?;
     buttons(canvas, gfx, viewer, Screen::Tech { read_only })?;
-    // The automated units' arrows do nothing yet: drawn disabled.
-    let arrows = [
-        frame::TECH_LEFT,
-        frame::TECH_UP,
-        frame::TECH_DOWN,
-        frame::TECH_RIGHT,
-    ];
-    for (i, f) in arrows.into_iter().enumerate() {
-        let r = layout.in_tech(Rect::new(185 + 22 * i as i32, 426, 0, 0));
-        gfx.frame(canvas, f + 3, r.x, r.y, s)?;
-    }
     let Some(setup) = &viewer.flow.setup else {
         return Ok(());
     };
-    for i in 0..setup.units.len().min(TECH_CELLS) {
+    let first = setup.tech_scroll * TECH_COLUMNS;
+    for i in first..setup.units.len().min(first + TECH_CELLS) {
         let Some((kind, tl)) = viewer.tech_unit(i) else {
             continue;
         };
@@ -146,14 +152,32 @@ pub(super) fn draw_tech(
             Some(cost) => lines.extend([format!("Next tech: {}", tl + 2), format!("Cost: {cost}")]),
             None => lines.push("Maximum level".into()),
         }
-        let r = layout.tech_cell(i);
-        cell(canvas, gfx, viewer, r, &kind.image, &lines, i == setup.cell)?;
+        let maxed = lines.len() == 2;
+        let r = layout.tech_cell(i - first);
+        cell(
+            canvas,
+            gfx,
+            viewer,
+            r,
+            &kind.image,
+            &lines,
+            Look {
+                selected: i == setup.cell,
+                dim: maxed,
+            },
+        )?;
     }
-    for (i, id) in setup.automated.iter().enumerate().take(2) {
-        if let Some(a) = viewer.defs.automated.get(id) {
+    let first = setup.auto_scroll * ui::AUTO_COLUMNS;
+    for i in first..setup.automated.len().min(first + AUTO_CELLS) {
+        if let Some(a) = viewer.defs.automated.get(&setup.automated[i]) {
             let lines = [a.name.clone(), "Maximum level".into()];
-            let r = layout.tech_automated_cell(i);
-            cell(canvas, gfx, viewer, r, &a.image, &lines, false)?;
+            let r = layout.tech_automated_cell(i - first);
+            let selected = i == setup.auto_cell;
+            let look = Look {
+                selected,
+                dim: false,
+            };
+            cell(canvas, gfx, viewer, r, &a.image, &lines, look)?;
         }
     }
     if let Some((kind, tl)) = viewer.tech_unit(setup.cell) {
@@ -168,7 +192,11 @@ pub(super) fn draw_tech(
         let stats = [
             ("ARMOR", kind.armor, base.armor),
             ("ACTION POINTS", kind.action_points, base.action_points),
-            ("AVG DAMAGE", avg_damage(kind), avg_damage(base)),
+            if kind.anti_air {
+                ("DAMAGE AA", kind.damage_aa, base.damage_aa)
+            } else {
+                ("AVG DAMAGE", avg_damage(kind), avg_damage(base))
+            },
             ("RANGE", kind.range, base.range),
             ("ROF", rate_of_fire(kind), rate_of_fire(base)),
         ];

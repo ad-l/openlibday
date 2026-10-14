@@ -106,6 +106,9 @@ pub struct UnitType {
     pub range: i64,
     /// `IsAA`: fires at aircraft.
     pub anti_air: bool,
+    /// `DamageAA`: damage against aircraft (shown instead of the average
+    /// damage for anti-aircraft units).
+    pub damage_aa: i64,
     /// `MineDetectionRange`.
     pub mine_detection: i64,
     /// `weaponType` (1 = indirect fire).
@@ -273,6 +276,7 @@ impl Definitions {
                 damage_random: t.int_or(r, "damageRandom", 0)?,
                 range: t.int_or(r, "weaponRange", 0)?,
                 anti_air: t.flag_or(r, "IsAA", false)?,
+                damage_aa: t.int_or(r, "DamageAA", 0)?,
                 mine_detection: t.int_or(r, "MineDetectionRange", 0)?,
                 weapon_type: t.int_or(r, "weaponType", 0)?,
                 jammer: t.int_or(r, "Jammer", 100)?,

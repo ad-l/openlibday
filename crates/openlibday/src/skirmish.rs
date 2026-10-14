@@ -8,7 +8,9 @@ use libday_data::battle::PlayerRecord;
 use libday_data::defs::UnitType;
 use libday_data::scenario::{Order, SkirmishEntry, Unit};
 use libday_view::movement::{self, Access};
-use libday_view::ui::{DEPLOY_ROWS, SKIRMISH_ROWS, Screen, TECH_COLUMNS};
+use libday_view::ui::{
+    AUTO_COLUMNS, AUTO_ROWS, DEPLOY_ROWS, SKIRMISH_ROWS, Screen, TECH_COLUMNS, TECH_ROWS,
+};
 
 use crate::Viewer;
 
@@ -43,8 +45,12 @@ pub struct Setup {
     pub automated: Vec<i64>,
     /// Technology points left.
     pub points: i64,
-    /// Selected technology grid cell.
+    /// Selected technology grid cell and the grid's first visible row.
     pub cell: usize,
+    pub tech_scroll: usize,
+    /// Selected automated unit and the automated grid's first visible row.
+    pub auto_cell: usize,
+    pub auto_scroll: usize,
     /// Selected deployment list row (index into the list) and its scroll.
     pub row: usize,
     pub scroll: usize,
@@ -204,6 +210,9 @@ impl Viewer {
             automated,
             points,
             cell: 0,
+            tech_scroll: 0,
+            auto_cell: 0,
+            auto_scroll: 0,
             row: 0,
             scroll: 0,
             deployed: Vec::new(),
@@ -251,25 +260,62 @@ impl Viewer {
         }
     }
 
-    /// Moves the technology selection by `step` cells.
+    /// Moves the technology selection by `step` cells, scrolling the grid
+    /// to keep it visible.
     pub(crate) fn tech_step(&mut self, step: isize) {
-        if let Some(setup) = &mut self.flow.setup
-            && let Some(cell) = setup.cell.checked_add_signed(step)
-            && cell < setup.units.len()
+        if let Some(s) = &mut self.flow.setup
+            && let Some((cell, scroll)) = grid_step(
+                s.cell,
+                s.tech_scroll,
+                s.units.len(),
+                step,
+                TECH_COLUMNS,
+                TECH_ROWS,
+            )
         {
-            setup.cell = cell;
+            (s.cell, s.tech_scroll) = (cell, scroll);
         }
     }
 
     pub(crate) fn tech_step_ok(&self, step: isize) -> bool {
         self.flow.setup.as_ref().is_some_and(|s| {
-            s.cell
-                .checked_add_signed(step)
-                .is_some_and(|c| c < s.units.len())
+            grid_step(s.cell, 0, s.units.len(), step, TECH_COLUMNS, TECH_ROWS).is_some()
         })
     }
 
     pub(crate) const TECH_ROW: isize = TECH_COLUMNS as isize;
+
+    /// Moves the automated units selection by `step` cells.
+    pub(crate) fn auto_step(&mut self, step: isize) {
+        if let Some(s) = &mut self.flow.setup
+            && let Some((cell, scroll)) = grid_step(
+                s.auto_cell,
+                s.auto_scroll,
+                s.automated.len(),
+                step,
+                AUTO_COLUMNS,
+                AUTO_ROWS,
+            )
+        {
+            (s.auto_cell, s.auto_scroll) = (cell, scroll);
+        }
+    }
+
+    pub(crate) fn auto_step_ok(&self, step: isize) -> bool {
+        self.flow.setup.as_ref().is_some_and(|s| {
+            grid_step(
+                s.auto_cell,
+                0,
+                s.automated.len(),
+                step,
+                AUTO_COLUMNS,
+                AUTO_ROWS,
+            )
+            .is_some()
+        })
+    }
+
+    pub(crate) const AUTO_ROW: isize = AUTO_COLUMNS as isize;
 
     // Deployment.
 
@@ -548,5 +594,37 @@ fn new_unit(id: i64, kind: i64, tech: i64, x: i64, y: i64, k: &UnitType) -> Unit
         order: Order::default(),
         objective_order: false,
         overwatch: true,
+    }
+}
+
+/// Moves a selection `cell` of a `len`-item grid of `columns` by `step`,
+/// returning the new cell and first visible row (of `rows`) or `None` when
+/// the move leaves the grid.
+fn grid_step(
+    cell: usize,
+    scroll: usize,
+    len: usize,
+    step: isize,
+    columns: usize,
+    rows: usize,
+) -> Option<(usize, usize)> {
+    let cell = cell.checked_add_signed(step).filter(|&c| c < len)?;
+    let row = cell / columns;
+    let scroll = scroll.min(row).max((row + 1).saturating_sub(rows));
+    Some((cell, scroll))
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::grid_step;
+
+    #[test]
+    fn grid_scrolls_to_keep_selection_visible() {
+        assert_eq!(grid_step(20, 0, 36, 4, 4, 6), Some((24, 1)));
+        assert_eq!(grid_step(24, 1, 36, 4, 4, 6), Some((28, 2)));
+        assert_eq!(grid_step(28, 2, 36, -4, 4, 6), Some((24, 2)));
+        assert_eq!(grid_step(8, 2, 36, -4, 4, 6), Some((4, 1)));
+        assert_eq!(grid_step(33, 3, 36, 4, 4, 6), None);
+        assert_eq!(grid_step(2, 0, 5, 2, 2, 2), Some((4, 1)));
     }
 }

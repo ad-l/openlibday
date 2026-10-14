@@ -23,7 +23,7 @@ use libday_data::{Battle, Definitions, Dir, GameData};
 use libday_formats::Dbi;
 use libday_view::minimap::{self, Entry, Marker};
 use libday_view::text::Fonts;
-use libday_view::ui::{Button, LIST_ROWS, SKIRMISH_ROWS, Screen, TECH_CELLS};
+use libday_view::ui::{AUTO_CELLS, Button, LIST_ROWS, SKIRMISH_ROWS, Screen, TECH_CELLS};
 use libday_view::{Art, Options, Scene, Sheet, map_pixels, sprite_origin, tile_at};
 use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::Keycode;
@@ -362,6 +362,10 @@ impl Viewer {
             Button::TechRight => self.tech_step_ok(1),
             Button::TechUp => self.tech_step_ok(-Self::TECH_ROW),
             Button::TechDown => self.tech_step_ok(Self::TECH_ROW),
+            Button::AutoLeft => self.auto_step_ok(-1),
+            Button::AutoRight => self.auto_step_ok(1),
+            Button::AutoUp => self.auto_step_ok(-Self::AUTO_ROW),
+            Button::AutoDown => self.auto_step_ok(Self::AUTO_ROW),
             Button::TechUpgrade => self.can_upgrade(),
             Button::DeployUp => self.deploy_scroll_ok(-1),
             Button::DeployDown => self.deploy_scroll_ok(1),
@@ -395,6 +399,10 @@ impl Viewer {
             Button::TechRight => self.tech_step(1),
             Button::TechUp => self.tech_step(-Self::TECH_ROW),
             Button::TechDown => self.tech_step(Self::TECH_ROW),
+            Button::AutoLeft => self.auto_step(-1),
+            Button::AutoRight => self.auto_step(1),
+            Button::AutoUp => self.auto_step(-Self::AUTO_ROW),
+            Button::AutoDown => self.auto_step(Self::AUTO_ROW),
             Button::TechUpgrade => self.upgrade(),
             Button::TechContinue => self.begin_briefing(),
             Button::TechBack => self.screen = Screen::Deploy,
@@ -642,11 +650,21 @@ impl Viewer {
                 }
             }
             Screen::Tech { .. } if left => {
-                if let Some(cell) = (0..TECH_CELLS).find(|&i| layout.tech_cell(i).contains(ox, oy))
-                    && let Some(setup) = &mut self.flow.setup
-                    && cell < setup.units.len()
-                {
-                    setup.cell = cell;
+                if let Some(setup) = &mut self.flow.setup {
+                    if let Some(i) = (0..TECH_CELLS).find(|&i| layout.tech_cell(i).contains(ox, oy))
+                    {
+                        let cell = setup.tech_scroll * Self::TECH_ROW as usize + i;
+                        if cell < setup.units.len() {
+                            setup.cell = cell;
+                        }
+                    } else if let Some(i) =
+                        (0..AUTO_CELLS).find(|&i| layout.tech_automated_cell(i).contains(ox, oy))
+                    {
+                        let cell = setup.auto_scroll * Self::AUTO_ROW as usize + i;
+                        if cell < setup.automated.len() {
+                            setup.auto_cell = cell;
+                        }
+                    }
                 }
             }
             Screen::Skirmishes | Screen::Tech { .. } => {}

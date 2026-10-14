@@ -314,6 +314,10 @@ pub enum Button {
     TechUp,
     TechDown,
     TechRight,
+    AutoLeft,
+    AutoUp,
+    AutoDown,
+    AutoRight,
     TechUpgrade,
     TechContinue,
     TechBack,
@@ -412,10 +416,10 @@ impl Button {
             Button::Army => ARMY,
             Button::DeployContinue => DEPLOY_CONTINUE,
             Button::OverviewContinue => OVERVIEW_CONTINUE,
-            Button::TechLeft => TECH_LEFT,
-            Button::TechUp => TECH_UP,
-            Button::TechDown => TECH_DOWN,
-            Button::TechRight => TECH_RIGHT,
+            Button::TechLeft | Button::AutoLeft => TECH_LEFT,
+            Button::TechUp | Button::AutoUp => TECH_UP,
+            Button::TechDown | Button::AutoDown => TECH_DOWN,
+            Button::TechRight | Button::AutoRight => TECH_RIGHT,
             Button::TechUpgrade => TECH_UPGRADE,
             Button::TechContinue => TECH_CONTINUE,
             Button::TechBack => TECH_BACK,
@@ -491,6 +495,10 @@ impl Button {
             Button::TechUp => (269, 280),
             Button::TechDown => (291, 280),
             Button::TechRight => (313, 280),
+            Button::AutoLeft => (185, 426),
+            Button::AutoUp => (207, 426),
+            Button::AutoDown => (229, 426),
+            Button::AutoRight => (251, 426),
             Button::TechUpgrade => (471, 401),
             Button::TechContinue | Button::TechBack => (471, 428),
             // Relative to the question dialog.
@@ -564,7 +572,12 @@ pub const SKIRMISH_ROWS: usize = 8;
 /// Technology unit grid.
 pub const TECH_CELL: (i32, i32) = (135, 43);
 pub const TECH_COLUMNS: usize = 4;
-pub const TECH_CELLS: usize = 24;
+pub const TECH_ROWS: usize = 6;
+pub const TECH_CELLS: usize = TECH_COLUMNS * TECH_ROWS;
+/// Technology dialog's automated units grid.
+pub const AUTO_COLUMNS: usize = 2;
+pub const AUTO_ROWS: usize = 2;
+pub const AUTO_CELLS: usize = AUTO_COLUMNS * AUTO_ROWS;
 /// Technology dialog: selected unit name, stats and remaining points.
 pub const TECH_NAME: (i32, i32) = (299, 316);
 pub const TECH_STATS: (i32, i32, i32) = (299, 419, 358);
@@ -678,6 +691,10 @@ impl Layout {
             | Button::TechUp
             | Button::TechDown
             | Button::TechRight
+            | Button::AutoLeft
+            | Button::AutoUp
+            | Button::AutoDown
+            | Button::AutoRight
             | Button::TechUpgrade
             | Button::TechContinue
             | Button::TechBack => self.s(native).offset_by(self.tech_dialog()),
@@ -754,9 +771,10 @@ impl Layout {
 
     /// Cell `i` of the technology dialog's automated units.
     pub fn tech_automated_cell(&self, i: usize) -> Rect {
+        let (c, r) = ((i % AUTO_COLUMNS) as i32, (i / AUTO_COLUMNS) as i32);
         self.in_tech(Rect::new(
-            8 + TECH_CELL.0 * i as i32,
-            316,
+            8 + TECH_CELL.0 * c,
+            316 + TECH_CELL.1 * r,
             TECH_CELL.0,
             TECH_CELL.1,
         ))
@@ -815,6 +833,10 @@ impl Layout {
                     Button::TechUp,
                     Button::TechDown,
                     Button::TechRight,
+                    Button::AutoLeft,
+                    Button::AutoUp,
+                    Button::AutoDown,
+                    Button::AutoRight,
                     Button::TechUpgrade,
                 ]);
                 buttons.push(if read_only {
