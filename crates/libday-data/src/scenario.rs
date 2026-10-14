@@ -173,11 +173,18 @@ impl Deployment {
     /// human players, as the original does on load (0x44049C): one human
     /// gets slots 1–4, two humans get 1+3 and 2+4, more keep their own.
     pub fn merged_player(&self, humans: usize) -> i64 {
-        match (humans, self.player) {
-            (1, 1..=4) => 1,
-            (2, 3 | 4) => self.player - 2,
-            _ => self.player,
-        }
+        merged_owner(self.player, humans)
+    }
+}
+
+/// Owner of an authored player slot once merged for `humans` human players:
+/// one human takes slots 1–4, two humans take 1+3 and 2+4, more keep their
+/// own. The alien (0) is never merged.
+pub fn merged_owner(owner: i64, humans: usize) -> i64 {
+    match (humans, owner) {
+        (1, 1..=4) => 1,
+        (2, 3 | 4) => owner - 2,
+        _ => owner,
     }
 }
 
@@ -238,6 +245,24 @@ impl Scenario {
             d.player = d.merged_player(humans);
             seen.insert((d.player, d.turn, d.x, d.y))
         });
+    }
+
+    /// Merges player slots for `humans` human players at load: deployment
+    /// zones, plus the owners of units, reinforcements, buildings, roads,
+    /// walls and mines (so with one human, player 2's units become player 1's).
+    pub fn merge_players(&mut self, humans: usize) {
+        self.merge_deployments(humans);
+        let owners = self
+            .units
+            .iter_mut()
+            .map(|u| &mut u.owner)
+            .chain(self.buildings.iter_mut().map(|b| &mut b.owner))
+            .chain(self.roads.iter_mut().map(|s| &mut s.owner))
+            .chain(self.walls.iter_mut().map(|s| &mut s.owner))
+            .chain(self.mines.iter_mut().map(|m| &mut m.owner));
+        for owner in owners {
+            *owner = merged_owner(*owner, humans);
+        }
     }
 
     pub fn load(db: &Database) -> Result<Self, DataError> {
@@ -592,5 +617,13 @@ mod tests {
         assert_eq!(u.action_points, Some(0));
         u.restore_ap(120);
         assert_eq!(u.action_points, Some(120));
+    }
+
+    #[test]
+    fn owners_merge_by_human_count() {
+        let merged = |humans| (0..=4).map(|o| merged_owner(o, humans)).collect::<Vec<_>>();
+        assert_eq!(merged(1), [0, 1, 1, 1, 1]);
+        assert_eq!(merged(2), [0, 1, 2, 1, 2]);
+        assert_eq!(merged(3), [0, 1, 2, 3, 4]);
     }
 }
