@@ -24,7 +24,9 @@ pub const FILE: &str = "1024X768.SMK";
 /// and the map gets the space.
 pub const SIDEBAR_W: i32 = 136;
 pub const SIDEBAR_H: i32 = 768;
-pub const BOTTOM_H: i32 = 40;
+/// The bar art is 40 high; its last 8 rows (wall below the text boxes) are
+/// cut so the boxes sit flush with the window bottom.
+pub const BOTTOM_H: i32 = 32;
 pub const BOTTOM_W: i32 = 840;
 
 /// Frame numbers of the elements.
@@ -567,13 +569,13 @@ mod tests {
     #[test]
     fn layout_anchors_sidebar_and_bottom_bar() {
         let layout = Layout::new(1024, 768, 1);
-        assert_eq!(layout.viewport(), Rect::new(0, 0, 888, 728));
+        assert_eq!(layout.viewport(), Rect::new(0, 0, 888, 736));
         assert_eq!(layout.button(Button::Map), Rect::new(898, 169, 53, 17));
-        assert_eq!(layout.button(Button::Menu), Rect::new(828, 736, 53, 17));
-        assert_eq!(layout.field(Field::Timer), Rect::new(5, 735, 45, 19));
+        assert_eq!(layout.button(Button::Menu), Rect::new(828, 744, 53, 17));
+        assert_eq!(layout.field(Field::Timer), Rect::new(5, 743, 45, 19));
 
         let big = Layout::new(2560, 1600, 2);
-        assert_eq!(big.viewport(), Rect::new(0, 0, 2288, 1520));
+        assert_eq!(big.viewport(), Rect::new(0, 0, 2288, 1536));
         assert_eq!(
             big.button(Button::Goal),
             Rect::new(2288 + 142, 338, 106, 34)
