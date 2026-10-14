@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use libday_data::{Dir, GameData};
+use libday_data::{Definitions, Dir, GameData, Scenario};
 use libday_formats::jet::{self, Database, Value};
 use libday_formats::smacker::{self, Smacker};
 use libday_formats::{Dbi, Mff, Sprite, Zip};
+use libday_view::{Art, Options};
 use serde_json::{Map, Value as Json};
 
 #[derive(Parser)]
@@ -97,6 +98,40 @@ enum Command {
         #[arg(required = true)]
         replacements: Vec<String>,
     },
+    /// List the skirmish maps of the skirmish selector.
+    Skirmishes,
+    /// Print a scenario map's ordered draw list as JSON.
+    MapScene(MapArgs),
+    /// Render a whole scenario map to a PNG at 1:1.
+    MapRender {
+        #[command(flatten)]
+        map: MapArgs,
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Draw tile outlines.
+        #[arg(long)]
+        grid: bool,
+    },
+}
+
+/// Scenario selection and view options shared by the map commands.
+#[derive(clap::Args)]
+struct MapArgs {
+    /// Scenario database name (`s1-2-1.mdb`, looked up like the game does),
+    /// a path, or `archive.zip!member`.
+    scenario: String,
+    /// Show the human players' starting zones.
+    #[arg(long)]
+    deployment: bool,
+    /// Bare ground only (no buildings, units, overlays, trees or scenery).
+    #[arg(long)]
+    terrain_only: bool,
+    /// Show reinforcements arriving on this turn instead of the starting units.
+    #[arg(long, default_value_t = 0)]
+    arrival: i64,
+    /// Hide units.
+    #[arg(long)]
+    no_units: bool,
 }
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -339,6 +374,33 @@ fn write_png(path: &Path, sprite: &Sprite, rgba: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn load_scenario(root: &Option<PathBuf>, spec: &str) -> Result<Scenario> {
+    let bytes = if spec.contains('!') || Path::new(spec).is_file() {
+        read_spec(root, spec)?
+    } else {
+        game(root)?.scenario_bytes(spec)?
+    };
+    Ok(Scenario::load(&Database::open(bytes)?)?)
+}
+
+fn map_scene(root: &Option<PathBuf>, map: &MapArgs) -> Result<(libday_view::Scene, Art)> {
+    let game = game(root)?;
+    let defs: Definitions = game.definitions()?;
+    let art = Art::load(&game, &defs)?;
+    let scenario = load_scenario(root, &map.scenario)?;
+    let options = Options {
+        arrival: (!map.no_units).then_some(map.arrival),
+        deployment: map.deployment,
+        terrain_only: map.terrain_only,
+        ..Options::default()
+    };
+    let scene = libday_view::build(&scenario, &defs, &art, &options);
+    for name in &scene.missing {
+        eprintln!("warning: missing {name}");
+    }
+    Ok((scene, art))
+}
+
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Info => {
@@ -551,6 +613,54 @@ fn run(cli: Cli) -> Result<()> {
             }
             fs::write(&out, &bytes)?;
             println!("wrote {} ({} replaced)", out.display(), replacements.len());
+        }
+        Command::Skirmishes => {
+            for entry in game(&cli.root)?.skirmishes()? {
+                println!(
+                    "{:>3} {:<14} {:>3}x{:<3} {:>5} pts  {}",
+                    entry.counter,
+                    entry.file_name,
+                    entry.size,
+                    entry.size,
+                    entry.points,
+                    entry.title
+                );
+            }
+        }
+        Command::MapScene(map) => {
+            let (scene, _) = map_scene(&cli.root, &map)?;
+            let items: Vec<Json> = scene
+                .items
+                .iter()
+                .map(|item| {
+                    serde_json::json!({
+                        "layer": item.layer.name(),
+                        "sheet": item.sheet.name(),
+                        "sprite": item.sprite,
+                        "x": item.x,
+                        "y": item.y,
+                    })
+                })
+                .collect();
+            let json = serde_json::json!({
+                "size": scene.size,
+                "missing": scene.missing,
+                "items": items,
+            });
+            println!("{}", serde_json::to_string(&json)?);
+        }
+        Command::MapRender { map, out, grid } => {
+            let (scene, art) = map_scene(&cli.root, &map)?;
+            let image = libday_view::compose(&scene, &art, grid);
+            let mut encoder = png::Encoder::new(
+                fs::File::create(&out)?,
+                image.width as u32,
+                image.height as u32,
+            );
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header()?.write_image_data(&image.rgba)?;
+            println!("wrote {} ({}x{})", out.display(), image.width, image.height);
         }
     }
     Ok(())

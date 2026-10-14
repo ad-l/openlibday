@@ -304,8 +304,17 @@ dependencies = [
  "clap",
  "libday-data",
  "libday-formats",
+ "libday-view",
  "png",
  "serde_json",
+]
+
+[[package]]
+name = "libday-view"
+version = "0.1.0"
+dependencies = [
+ "libday-data",
+ "libday-formats",
 ]
 
 [[package]]
@@ -346,6 +355,7 @@ version = "0.1.0"
 dependencies = [
  "libday-data",
  "libday-formats",
+ "libday-view",
  "sdl3",
 ]
 

@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 libday-formats.workspace = true
 libday-data.workspace = true
+libday-view.workspace = true
 sdl3 = { version = "0.20", features = ["build-from-source-static"] }
 
 [lints]

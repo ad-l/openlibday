@@ -18,6 +18,7 @@
 //! `u16 count, u16 kind` where kind 1 skips transparent pixels and kind 2 is
 //! followed by `count` palette indices.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use thiserror::Error;
@@ -91,7 +92,7 @@ impl Sprite {
 /// A parsed DBI database borrowing the file bytes.
 #[derive(Debug)]
 pub struct Dbi<'a> {
-    data: &'a [u8],
+    data: Cow<'a, [u8]>,
     pub cell_width: u32,
     pub cell_height: u32,
     /// Embedded palette; only meaningful when `has_palette` is true.
@@ -169,11 +170,33 @@ impl<'a> Dbi<'a> {
             }
         }
         Ok(Self {
-            data,
+            data: Cow::Borrowed(data),
             cell_width,
             cell_height,
             palette: Palette(palette),
             has_palette: u32_at(data, 20) == 1,
+            names,
+            records,
+        })
+    }
+
+    /// Parses a DBI that owns its bytes.
+    pub fn from_vec(data: Vec<u8>) -> Result<Dbi<'static>, DbiError> {
+        let Dbi {
+            cell_width,
+            cell_height,
+            palette,
+            has_palette,
+            names,
+            records,
+            ..
+        } = Dbi::parse(&data)?;
+        Ok(Dbi {
+            data: Cow::Owned(data),
+            cell_width,
+            cell_height,
+            palette,
+            has_palette,
             names,
             records,
         })
@@ -202,7 +225,7 @@ impl<'a> Dbi<'a> {
             .records
             .get(&name.to_ascii_uppercase())
             .ok_or_else(|| DbiError::NotFound(name.to_owned()))?;
-        let d = self.data;
+        let d: &[u8] = &self.data;
         let width = u16_at(d, record + 8) as usize;
         let height = u16_at(d, record + 10) as usize;
         let size = u16_at(d, record + 12) as usize;
@@ -302,7 +325,7 @@ impl<'a> Dbi<'a> {
         {
             return Err(DbiError::InvalidSpriteHeader(name.to_owned()));
         }
-        let encoding = u16_at(self.data, record + 14);
+        let encoding = u16_at(&self.data, record + 14);
         let mut payload = encode_rows(sprite);
         if encoding == 1 {
             payload.push(0);

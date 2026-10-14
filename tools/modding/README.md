@@ -38,6 +38,12 @@ changes. `python run_tests.py --slow` runs each slow test in its own process
 10 for the sequential `LIBDAY_SLOW_TESTS=1 python -m unittest`. Extra arguments
 filter test ids by substring, e.g. `python run_tests.py --slow test_map_resize`.
 
+`test_engine_parity.py` (slow, about 6 s) checks the Rust engine renderer
+against the editor: it compares every image item on the Tk map canvas (sprite
+and position, in stacking order) with `libday map-scene` for three skirmishes,
+with and without deployment zones. It uses the newest of
+`target\{release,debug}\libday.exe` (or `LIBDAY_CLI`) and skips if none is built.
+
 ## Current status
 
 ### Graphical map editor: terrain and object layers

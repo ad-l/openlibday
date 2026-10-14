@@ -12,6 +12,7 @@ repository = "https://github.com/ad-l/openlibday"
 [workspace.dependencies]
 libday-formats = { path = "crates/libday-formats" }
 libday-data = { path = "crates/libday-data" }
+libday-view = { path = "crates/libday-view" }
 thiserror = "2"
 png = "0.17"
 clap = { version = "4", features = ["derive"] }

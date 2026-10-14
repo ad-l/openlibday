@@ -7,6 +7,10 @@
 //! copied installation keeps working. File lookups are case-insensitive so
 //! the same data works on case-sensitive file systems.
 
+pub mod defs;
+pub mod records;
+pub mod scenario;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +18,9 @@ use std::collections::BTreeMap;
 
 use libday_formats::{Database, Ini, JetError, Zip, ZipError};
 use thiserror::Error;
+
+pub use defs::Definitions;
+pub use scenario::{Scenario, SkirmishEntry};
 
 pub const ROOT_ENV: &str = "LIBDAY_ROOT";
 
@@ -31,6 +38,8 @@ pub enum DataError {
     Archive(String, ZipError),
     #[error("{0}: {1}")]
     Strings(String, libday_formats::pe::PeError),
+    #[error("{table}: {message}")]
+    Invalid { table: String, message: String },
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -201,6 +210,29 @@ impl GameData {
         let name = "LIBDAYEN.DLL";
         libday_formats::pe::string_table(&self.read(Dir::Exe, name)?)
             .map_err(|e| DataError::Strings(name.to_owned(), e))
+    }
+}
+
+impl GameData {
+    /// Definitions from `GLOBALS\GLOBAL.MDB`.
+    pub fn definitions(&self) -> Result<Definitions, DataError> {
+        Definitions::load(&self.database(Dir::Globals, "GLOBAL.MDB")?)
+    }
+
+    /// Loads a scenario by database name (see [`GameData::scenario_bytes`]).
+    pub fn load_scenario(&self, name: &str) -> Result<Scenario, DataError> {
+        Scenario::load(&self.scenario(name)?).map_err(|e| match e {
+            DataError::Invalid { table, message } => DataError::Invalid {
+                table: format!("{name}: {table}"),
+                message,
+            },
+            other => other,
+        })
+    }
+
+    /// The skirmish selector catalog (`SCENS\SKIRMISH.MDB`).
+    pub fn skirmishes(&self) -> Result<Vec<SkirmishEntry>, DataError> {
+        scenario::skirmish_catalog(&self.database(Dir::Scenarios, "SKIRMISH.MDB")?)
     }
 }
 

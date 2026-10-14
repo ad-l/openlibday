@@ -96,3 +96,44 @@ fn listbox_dbi_decodes_with_38px_cells() {
             .unwrap_or_else(|e| panic!("LISTBOX.DBI: {e}"));
     }
 }
+
+#[test]
+fn definitions_and_skirmishes_load() {
+    let Some(game) = game() else { return };
+    let defs = game.definitions().unwrap();
+    assert!(defs.terrains.len() > 100, "{}", defs.terrains.len());
+    assert!(defs.terrain("BORE000").unwrap().paintable());
+    assert!(!defs.buildings.is_empty() && !defs.units.is_empty());
+    assert!(defs.units.keys().any(|&(_, tech)| tech == 10));
+    assert_eq!(defs.roads[&0].image, "ROAL");
+    let catalog = game.skirmishes().unwrap();
+    assert_eq!(catalog.len(), 47);
+    for entry in &catalog {
+        let scenario = game.load_scenario(&entry.file_name).unwrap();
+        assert!(scenario.size >= 10, "{}", entry.file_name);
+        for cell in &scenario.cells {
+            assert!(
+                defs.terrain(&cell.terrain).is_some(),
+                "{} {}",
+                entry.file_name,
+                cell.terrain
+            );
+        }
+        for b in &scenario.buildings {
+            assert!(defs.buildings.contains_key(&b.kind), "{}", entry.file_name);
+        }
+        for u in &scenario.units {
+            assert!(
+                defs.unit(u.kind).is_some(),
+                "{} unit {}",
+                entry.file_name,
+                u.kind
+            );
+        }
+        assert!(
+            scenario.deployments.iter().any(|d| d.is_start_zone()),
+            "{} has no deployment zone",
+            entry.file_name
+        );
+    }
+}
