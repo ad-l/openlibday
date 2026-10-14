@@ -961,7 +961,7 @@ distance to the next offset in file order. All 5146 members are Smacker 2
 - `PREFIX\P<c>\PREFIX<c><A><f>.SMK`: unit animations, where `PREFIX` is the unit's
   `facingsImageID`, `c` the player colour 1-4, `f` the facing 0-7, and `A` the
   action. The letters match the `Unit Types` `*Animation_Begin` fields (-1 = no
-  animation): `M` move, `L` move start, `N` move end (L/N order inferred),
+  animation): `M` move, `L` move start, `N` move end (L/N order confirmed visually),
   `S` shoot begin, `T` shoot (muzzle flash, carries the shot sound), `U` shoot
   end, `P` projectile, `I` impact and `E` explosion. P/I/E exist for facing 0
   only. Two types ship projectile files although their field is -1.
