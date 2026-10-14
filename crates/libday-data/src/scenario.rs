@@ -188,6 +188,25 @@ pub fn merged_owner(owner: i64, humans: usize) -> i64 {
     }
 }
 
+/// Facing of a unit placed on `(x, y)` of a `size`-tile map: toward the map
+/// centre, as LIBDAY.EXE 0x43430b. The original takes `atan2` of the
+/// centre-to-unit vector, converts it to whole degrees with its 6.28318
+/// approximation of 2π, offsets by 22° and buckets by 45°.
+#[allow(clippy::approx_constant)]
+pub fn deploy_facing(size: i64, x: i64, y: i64) -> i64 {
+    let c = size / 2;
+    let rad = ((y - c) as f64).atan2((x - c) as f64);
+    let mut deg = rad * 360.0 / 6.28318;
+    if rad < 0.0 {
+        deg += 360.0;
+    }
+    let e = (deg as i64 + 22) % 360;
+    [2, 3, 4, 5, 6, 7, 0, 1]
+        .get(e as usize / 45)
+        .copied()
+        .unwrap_or(0)
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScenarioInfo {
     pub title: String,
@@ -554,6 +573,20 @@ pub fn difficulty_label(points: i64) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deployed_units_face_the_map_centre() {
+        // Facing 0 = +y (south), 2 = -x, 4 = -y, 6 = +x.
+        assert_eq!(deploy_facing(64, 60, 32), 2);
+        assert_eq!(deploy_facing(64, 4, 32), 6);
+        assert_eq!(deploy_facing(64, 32, 60), 4);
+        assert_eq!(deploy_facing(64, 32, 4), 0);
+        assert_eq!(deploy_facing(64, 4, 60), 5);
+        assert_eq!(deploy_facing(64, 60, 4), 1);
+        assert_eq!(deploy_facing(64, 4, 4), 7);
+        assert_eq!(deploy_facing(64, 60, 60), 3);
+        assert_eq!(deploy_facing(64, 32, 32), 2);
+    }
 
     #[test]
     fn deployment_slots_merge_by_human_count() {

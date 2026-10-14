@@ -432,7 +432,10 @@ impl Viewer {
             }
         }
         let scenario = &mut self.map.battle.scenario;
-        scenario.units.push(new_unit(0, kind, tech, x, y, k));
+        let size = scenario.size as i64;
+        scenario
+            .units
+            .push(new_unit(0, kind, tech, (x, y), size, k));
         let grid = movement::move_grid(scenario, &self.defs, scenario.units.len() - 1);
         scenario.units.pop();
         // Larger units cannot move, hence have no grid: the zone check is all.
@@ -483,7 +486,8 @@ impl Viewer {
         let Some(k) = self.defs.unit_tech(kind, tech) else {
             return;
         };
-        let unit = new_unit(id, kind, tech, x, y, k);
+        let size = self.map.battle.scenario.size as i64;
+        let unit = new_unit(id, kind, tech, (x, y), size, k);
         self.map.battle.scenario.units.push(unit);
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.push(id);
@@ -587,14 +591,21 @@ impl Viewer {
     }
 }
 
-fn new_unit(id: i64, kind: i64, tech: i64, x: i64, y: i64, k: &UnitType) -> Unit {
+/// A freshly deployed unit on `(x, y)` of a `size`-tile map, facing the
+/// centre when its type has facings.
+fn new_unit(id: i64, kind: i64, tech: i64, (x, y): (i64, i64), size: i64, k: &UnitType) -> Unit {
+    let facing = if k.facings {
+        libday_data::scenario::deploy_facing(size, x, y)
+    } else {
+        0
+    };
     Unit {
         counter: id,
         id,
         kind,
         tech,
         owner: PLAYER,
-        facing: 0,
+        facing,
         x,
         y,
         arrival: 0,
