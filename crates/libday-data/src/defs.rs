@@ -30,6 +30,8 @@ pub struct TerrainType {
     /// Average colour (minimap).
     pub colour: [u8; 3],
     pub burned_id: String,
+    /// `burned_min`, rounded up: the least damage that burns the tile.
+    pub burned_min: i64,
     pub can_fire_through: bool,
 }
 
@@ -65,9 +67,22 @@ pub struct BuildingType {
     pub ai_target: bool,
     pub damaged_images: bool,
     pub category: i64,
+    pub race: i64,
+    /// `isDestructible`: takes damage from weapons.
+    pub destructible: bool,
+    /// `hasRuin`: leaves `B?RUI` wreckage when destroyed.
+    pub has_ruin: bool,
+    /// `ExplosionAnimation_Begin` and `_Qty`: frames of
+    /// `BUILDING\{image}.SMK` played when destroyed.
+    pub explosion: Option<(usize, usize)>,
 }
 
 impl BuildingType {
+    /// Drawn damaged at a third of its armour or less (`0x42811b`).
+    pub fn damaged(&self, armor: i64) -> bool {
+        armor as f64 <= self.armor as f64 * 0.33
+    }
+
     /// `UB.DBI` sprite for footprint part `(dx, dy)`.
     pub fn sprite(&self, dx: i64, dy: i64, damaged: bool, level: u8) -> String {
         let damaged = damaged && self.damaged_images && self.transform_into.is_none();
@@ -102,6 +117,12 @@ pub struct UnitType {
     pub cost_to_next: i64,
     pub damage_base: i64,
     pub damage_random: i64,
+    /// `damageType`: 0 destroys (armour), 1 paralyses (action points).
+    pub damage_type: i64,
+    /// `DamageArea`: side of the square the damage spreads over (1, 3, 5).
+    pub damage_area: i64,
+    /// `ruinImageID`: wreckage left on plain ground when destroyed.
+    pub ruin: String,
     /// `weaponRange`.
     pub range: i64,
     /// `WeaponMinimumRange`: targets must be farther than this.
@@ -293,6 +314,7 @@ impl Definitions {
                 overlapping: t.flag(r, "Overlapping")?,
                 colour,
                 burned_id: t.text_or(r, "burned_id")?.to_ascii_uppercase(),
+                burned_min: t.float_or(r, "burned_min", 1.0)?.ceil() as i64,
                 can_fire_through: t.flag_or(r, "can_fire_through", true)?,
             };
             insert_unique(&mut defs.terrains, &t.table, id, item)?;
@@ -314,6 +336,18 @@ impl Definitions {
                 ai_target: t.flag(r, "isAItarget")?,
                 damaged_images: t.flag(r, "DamagedImages")?,
                 category: t.int_or(r, "BuildingCat", 0)?,
+                race: t.int_or(r, "Race", 0)?,
+                destructible: t.flag_or(r, "isDestructible", true)?,
+                has_ruin: t.flag_or(r, "hasRuin", false)?,
+                explosion: match (
+                    t.int_or(r, "ExplosionAnimation_Begin", -1)?,
+                    t.int_or(r, "ExplosionAnimation_Qty", 0)?,
+                ) {
+                    (begin, qty) if (0..65535).contains(&begin) && qty > 0 => {
+                        Some((begin as usize, qty as usize))
+                    }
+                    _ => None,
+                },
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));
@@ -343,6 +377,9 @@ impl Definitions {
                 cost_to_next: t.int_or(r, "CostToNextTL", 0)?,
                 damage_base: t.int_or(r, "damageBase", 0)?,
                 damage_random: t.int_or(r, "damageRandom", 0)?,
+                damage_type: t.int_or(r, "damageType", 0)?,
+                damage_area: t.int_or(r, "DamageArea", 1)?,
+                ruin: t.text_or(r, "ruinImageID")?.to_ascii_uppercase(),
                 range: t.int_or(r, "weaponRange", 0)?,
                 min_range: t.int_or(r, "WeaponMinimumRange", 0)?,
                 has_weapon: t.flag_or(r, "UnitHasWeapon", true)?,

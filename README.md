@@ -33,8 +33,16 @@ shooter's `HitShortRange`/`HitMediumRange`/`HitLongRange` chance (bands from
 the `Ranges` table, 3 and 6 tiles) is rolled with the game's `rand()`, and a
 miss lands on a random neighbouring tile on the map, whoever stands there.
 A unit of the side whose turn it is (the target of reaction fire) scales
-the chance by its `Jammer` percentage. Damage and craters are not
-implemented yet.
+the chance by its `Jammer` percentage. Damage follows the original: one
+roll of `damageBase + 1 + rand() % damageRandom`, spread over the
+`DamageArea` square with falloff by distance. Units and walls lose armour
+(paralysing weapons drain AP instead), destructible buildings lose armour
+and switch to their damaged sprites at a third, mines go off, paved roads
+and bridges break (dirt roads never do; a bridge takes the unit on it down
+with it) and bare ground and forest burn, while water, mountains and pits
+do not. Destroyed units and buildings play their explosions and leave
+their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
+footprint).
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.

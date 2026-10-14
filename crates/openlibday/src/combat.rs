@@ -6,8 +6,10 @@
 
 use std::time::Duration;
 
-use libday_data::scenario::facing_toward;
+use libday_data::scenario::{Ruin, Scenario, facing_toward};
+use libday_view::damage::{self, Destroyed};
 use libday_view::fire::{self, Checker, Fire, Target};
+use libday_view::minimap;
 use libday_view::movement::{self, WALK_POSITION_MS, affordable_steps};
 use libday_view::scatter;
 use libday_view::shot::{self, Anim};
@@ -44,6 +46,28 @@ pub struct Shot {
     pub impact_start: usize,
     pub impact_len: usize,
     pub total: usize,
+    /// The shooter's artwork, for its projectile and impact.
+    pub image: String,
+    pub owner: i64,
+    /// Frame the damage shows: once the impact has played.
+    pub hit: usize,
+    pub damage: i64,
+    /// The scenario after the damage, swapped in at `hit`.
+    pub result: Option<Box<Scenario>>,
+    pub removed_units: Vec<usize>,
+    pub explosions: Vec<Explosion>,
+    /// Wreckage, added once the shot is over.
+    pub ruins: Vec<Ruin>,
+}
+
+/// An explosion of something destroyed, played from the shot's `hit`.
+pub struct Explosion {
+    pub name: String,
+    /// First frame and frame count of the animation.
+    pub first: usize,
+    pub len: usize,
+    /// Centre (map pixels).
+    pub centre: (i32, i32),
 }
 
 impl Shot {
@@ -77,6 +101,15 @@ impl Shot {
     pub fn impact(&self, f: usize) -> Option<usize> {
         let k = f.checked_sub(self.impact_start)?;
         (k < self.impact_len).then_some(k)
+    }
+
+    /// Explosions playing at timeline frame `f`, with their frames.
+    pub fn explosions(&self, f: usize) -> impl Iterator<Item = (&Explosion, usize)> {
+        let k = f.checked_sub(self.hit);
+        self.explosions.iter().filter_map(move |e| {
+            let k = k.filter(|&k| k < e.len)?;
+            Some((e, e.first + k))
+        })
     }
 
     fn animating_shooter(&self) -> bool {
@@ -255,12 +288,32 @@ impl Viewer {
             Vec::new()
         };
         let impact_start = launch + path.len();
-        let total = (begin + shoot + end).max(impact_start + impact_len);
+        let hit = impact_start + impact_len;
+        let damage = damage::roll(&mut self.rng, kind.damage_base, kind.damage_random);
+        let (damage_type, area) = (kind.damage_type, kind.damage_area);
+        let (image, owner) = (kind.image.clone(), u.owner);
         let cost = kind.shoot_action_points.max(0);
         let ap = u.action_points.unwrap_or(kind.action_points);
         let u = &mut self.map.battle.scenario.units[unit];
         u.facing = facing;
         u.action_points = Some((ap - cost).max(0));
+        let mut result = self.map.battle.scenario.clone();
+        let outcome = damage::resolve(
+            &mut result,
+            &self.defs,
+            &mut self.rng,
+            lands,
+            damage,
+            damage_type,
+            area,
+        );
+        let explosions: Vec<Explosion> = outcome
+            .destroyed
+            .iter()
+            .filter_map(|d| self.explosion(d))
+            .collect();
+        let blast = explosions.iter().map(|e| e.len).max().unwrap_or(0);
+        let total = (begin + shoot + end).max(hit + blast);
         let shot = Shot {
             unit,
             target,
@@ -276,6 +329,14 @@ impl Viewer {
             impact_start,
             impact_len,
             total,
+            image,
+            owner,
+            hit,
+            damage,
+            result: Some(Box::new(result)),
+            removed_units: outcome.removed_units,
+            explosions,
+            ruins: outcome.ruins,
         };
         if shot.animating_shooter() {
             self.options.hidden_unit = Some(unit);
@@ -300,16 +361,90 @@ impl Viewer {
             return false;
         };
         let f = s.frame(self.clock.now());
+        if f >= s.hit && s.result.is_some() {
+            self.apply_hit();
+        }
+        let Some(s) = &self.shot else {
+            return false;
+        };
         let (unit, total) = (s.unit, s.total);
         if s.shooter(f).is_none() && self.options.hidden_unit == Some(unit) {
             self.options.hidden_unit = None;
             self.rebuild();
         }
         if f >= total {
-            self.shot = None;
+            if let Some(s) = self.shot.take()
+                && !s.ruins.is_empty()
+            {
+                self.map.battle.scenario.ruins.extend(s.ruins);
+                self.rebuild();
+            }
             return false;
         }
         true
+    }
+
+    /// Shows the damage: swaps in the damaged scenario, keeping the unit
+    /// indices pointing at the same (surviving) units.
+    fn apply_hit(&mut self) {
+        let Some(s) = &mut self.shot else {
+            return;
+        };
+        let Some(result) = s.result.take() else {
+            return;
+        };
+        self.map.battle.scenario = *result;
+        let removed = std::mem::take(&mut s.removed_units);
+        if removed.is_empty() && s.explosions.is_empty() {
+            self.rebuild();
+            return;
+        }
+        let remap = |i: Option<usize>| i.and_then(|i| damage::remap(i, &removed));
+        match damage::remap(s.unit, &removed) {
+            Some(u) => s.unit = u,
+            // Caught in its own blast: no more shooter to animate.
+            None => (s.begin, s.shoot, s.end) = (0, 0, 0),
+        }
+        self.selected = remap(self.selected);
+        self.info = remap(self.info);
+        self.options.hidden_unit = remap(self.options.hidden_unit);
+        self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
+        self.entry = None;
+        self.rebuild();
+    }
+
+    /// The explosion of something destroyed, if it has one.
+    fn explosion(&self, d: &Destroyed) -> Option<Explosion> {
+        let ff = self.anims.as_deref()?;
+        let size = self.map.battle.scenario.size;
+        match d {
+            Destroyed::Unit { image, owner, at } => {
+                let name = shot::animation_name(image, *owner, Anim::Explosion, 0);
+                let len = shot::animation_length(ff, &name).filter(|&n| n > 0)?;
+                Some(Explosion {
+                    name,
+                    first: 0,
+                    len,
+                    centre: tile_center(size, at.0, at.1),
+                })
+            }
+            Destroyed::Building { kind, at } => {
+                let b = self.defs.buildings.get(kind)?;
+                let (first, len) = b.explosion?;
+                let name = format!("BUILDING\\{}.SMK", b.image.to_ascii_uppercase());
+                let frames = shot::animation_length(ff, &name)?;
+                let len = len.min(frames.saturating_sub(first));
+                // Centred on the footprint.
+                let a = tile_center(size, at.0, at.1);
+                let z = tile_center(size, at.0 + b.width - 1, at.1 + b.height - 1);
+                (len > 0).then(|| Explosion {
+                    name,
+                    first,
+                    len,
+                    centre: ((a.0 + z.0) / 2, (a.1 + z.1) / 2),
+                })
+            }
+        }
     }
 
     /// Tiles of the locked target's footprint.
@@ -367,6 +502,19 @@ mod tests {
             impact_start: 7,
             impact_len: 6,
             total: 13,
+            image: String::new(),
+            owner: 1,
+            hit: 13,
+            damage: 0,
+            result: None,
+            removed_units: Vec::new(),
+            explosions: vec![Explosion {
+                name: String::new(),
+                first: 1,
+                len: 3,
+                centre: (0, 0),
+            }],
+            ruins: Vec::new(),
         }
     }
 
@@ -383,5 +531,10 @@ mod tests {
         assert_eq!(s.impact(6), None);
         assert_eq!(s.impact(12), Some(5));
         assert_eq!(s.impact(13), None);
+        let frames = |f| s.explosions(f).map(|(_, k)| k).collect::<Vec<_>>();
+        assert_eq!(frames(12), Vec::<usize>::new());
+        assert_eq!(frames(13), vec![1]);
+        assert_eq!(frames(15), vec![3]);
+        assert_eq!(frames(16), Vec::<usize>::new());
     }
 }

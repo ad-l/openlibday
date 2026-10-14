@@ -260,7 +260,7 @@ impl Viewer {
     fn walker(&self) -> Option<Walker> {
         if let Some(s) = &self.shot {
             let (anim, frame) = s.shooter(s.frame(self.clock.now()))?;
-            let unit = &self.map.battle.scenario.units[s.unit];
+            let unit = self.map.battle.scenario.units.get(s.unit)?;
             let kind = self.defs.unit(unit.kind)?;
             let facing = unit.facing.rem_euclid(8) as u8;
             return Some(Walker {
@@ -469,19 +469,18 @@ pub fn draw_shot_effects(
         return Ok(());
     };
     let f = s.frame(viewer.clock.now());
-    let unit = &viewer.map.battle.scenario.units[s.unit];
-    let Some(kind) = viewer.defs.unit(unit.kind) else {
-        return Ok(());
-    };
     if let Some((at, frame)) = s.projectile(f) {
-        let name = shot::animation_name(&kind.image, unit.owner, Anim::Projectile, 0);
+        let name = shot::animation_name(&s.image, s.owner, Anim::Projectile, 0);
         draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
     }
     if let Some(frame) = s.impact(f) {
-        let name = shot::animation_name(&kind.image, unit.owner, Anim::Impact, 0);
+        let name = shot::animation_name(&s.image, s.owner, Anim::Impact, 0);
         let size = viewer.map.battle.scenario.size;
         let at = tile_center(size, s.lands.0, s.lands.1);
         draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
+    }
+    for (e, frame) in s.explosions(f) {
+        draw_animation(canvas, gfx, viewer, &e.name, frame, e.centre, screen)?;
     }
     Ok(())
 }

@@ -272,7 +272,7 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 parts
                     .entry((building.x + dx, building.y + dy))
                     .or_default()
-                    .push(kind.sprite(dx, dy, false, level));
+                    .push(kind.sprite(dx, dy, kind.damaged(building.armor), level));
             }
         }
     }

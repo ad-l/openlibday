@@ -33,28 +33,47 @@ expect units.-1.x 35
 expect units.-1.y 25
 expect units.-1.facing 4
 expect units.-1.ap 75
-# The Grenadier lobs a grenade: walk next turn, then shoot from in range.
+# The Footman is destroyed: it explodes, leaves its wreck and the unit
+# list closes up behind it.
+expect ruins.0.0 UBRUI141
+expect ruins.0.1 35
+expect ruins.0.2 19
+expect units.-1.index 27
+expect units.9.name Footman
+expect units.9.armor 10
+# The Grenadier lobs a grenade at the Footman at (35, 15): two turns'
+# walk, then it shoots from in range.
 tile 44 18
-tile 35 19
-tile 35 19
+tile 35 15
+tile 35 15
+idle 2000
+button EndTurn
+idle 2000
+tile 42 16
+tile 35 15
+tile 35 15
 idle 2000
 button EndTurn
 idle 2000
 # Seed 5 rolls a miss: the grenade scatters to a neighbouring tile.
 seed 5
-tile 41 20
-tile 35 19
+tile 40 14
+tile 35 15
 expect preview.target.0 39
-tile 35 19
+tile 35 15
 wait 30
-expect shot.unit 27
-expect shot.path.0.0 1805
+expect shot.unit 26
+expect shot.path.0.0 1988
 expect shot.aim.0 35
-expect shot.aim.1 19
+expect shot.aim.1 15
 expect shot.lands.0 36
-expect shot.lands.1 18
+expect shot.lands.1 14
+expect shot.damage 10
 idle 2000
+# The blast (DamageArea 3) reaches the Footman one tile away at half
+# strength: 10 - 10 / 2.
+expect units.9.armor 5
 expect units.-2.x 39
-expect units.-2.ap 4
+expect units.-2.ap 20
 expect cursor CINVA
 echo combat test passed

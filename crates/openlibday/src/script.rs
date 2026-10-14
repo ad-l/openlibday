@@ -484,8 +484,22 @@ pub fn state(viewer: &Viewer) -> Value {
             "impact_start": s.impact_start,
             "impact_len": s.impact_len,
             "total": s.total,
+            "hit": s.hit,
+            "damage": s.damage,
+            "explosions": s.explosions.iter().map(|e| json!([e.name, e.first, e.len])).collect::<Vec<_>>(),
+            "ruins": s.ruins.iter().map(|r| json!([r.id, r.x, r.y])).collect::<Vec<_>>(),
         })
     });
+    let buildings: Vec<Value> = scenario
+        .buildings
+        .iter()
+        .map(|b| json!({"kind": b.kind, "owner": b.owner, "x": b.x, "y": b.y, "armor": b.armor}))
+        .collect();
+    let ruins: Vec<Value> = scenario
+        .ruins
+        .iter()
+        .map(|r| json!([r.id, r.x, r.y]))
+        .collect();
     let setup = viewer.flow.setup.as_ref().map(|s| {
         json!({
             "points": s.points,
@@ -525,6 +539,8 @@ pub fn state(viewer: &Viewer) -> Value {
         "shot": shot,
         "zone": zone,
         "units": units,
+        "buildings": buildings,
+        "ruins": ruins,
     })
 }
 

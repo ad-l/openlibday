@@ -77,6 +77,16 @@ impl Records {
         }
     }
 
+    /// Number, or `default` when the column is absent or NULL.
+    pub fn float_or(&self, row: usize, column: &str, default: f64) -> Result<f64, DataError> {
+        match self.index(column).map(|i| &self.rows[row][i]) {
+            None | Some(Value::Null) => Ok(default),
+            Some(v) => v
+                .as_f64()
+                .ok_or_else(|| self.invalid(row, column, "expected a number")),
+        }
+    }
+
     pub fn flag(&self, row: usize, column: &str) -> Result<bool, DataError> {
         self.value(row, column)?
             .as_bool()
