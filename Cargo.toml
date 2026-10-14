@@ -16,6 +16,8 @@ thiserror = "2"
 png = "0.17"
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
+miniz_oxide = "0.8"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

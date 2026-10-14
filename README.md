@@ -10,7 +10,8 @@ animation, video and sound files at runtime.
 
 ## Status
 
-Milestone M0 (workspace, tooling, first decoder). The first goal is playable
+Milestone M1 (asset layer) complete: DBI sprites, Jet 3 databases, ZIP archives
+and PE string tables decode natively. The first goal is playable
 stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 
 See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
@@ -31,8 +32,8 @@ cargo run -p libday-tools -- dbi-export UB.DBI out\ub
 
 | Crate | Purpose |
 |---|---|
-| `libday-formats` | Pure decoders (DBI sprites, INI; Jet3, ZIP, Smacker to come) |
-| `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup |
+| `libday-formats` | Pure decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252 |
+| `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup, databases, scenarios inside `SCENS\*.ZIP`, UI strings |
 | `libday-sim` | Deterministic headless simulation (placeholder) |
 | `libday-tools` | `libday` CLI for inspecting/exporting data |
 | `openlibday` | SDL3 application |

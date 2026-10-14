@@ -31,10 +31,9 @@ impl Ini {
         ini
     }
 
-    /// Parses bytes as Windows-1252-compatible text (non-ASCII bytes map to
-    /// their Latin-1 code points).
+    /// Parses Windows-1252 bytes.
     pub fn parse_bytes(bytes: &[u8]) -> Self {
-        Self::parse(&bytes.iter().map(|&b| b as char).collect::<String>())
+        Self::parse(&crate::cp1252::decode(bytes))
     }
 
     pub fn get(&self, section: &str, key: &str) -> Option<&str> {
