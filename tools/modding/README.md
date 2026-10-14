@@ -981,8 +981,9 @@ is slightly smaller (108.5 MB versus 108.8 MB). The real-data test
 
 `Unit Types` has no explicit stealth column. `Jammer` is 0 for the Chopper,
 Commando, Flyer, Mind Warrior, Pack Freak, Shocktrooper and Submarine, 10 for
-grav units and 100 for everything else; the editor labels 0 as stealth and
-values below 100 as a low signature, which is an inference to verify in play.
+grav units and 100 for everything else. Jammer 0 is stealth (confirmed from
+play): enemy units do not react when the unit enters their range. The editor
+labels values below 100 as a low signature, which is still an inference.
 Other capabilities: `weaponType` 1 = indirect fire, `DamageArea` 1/3/5 (area
 side), `damageType` 1 = drains action points, `IsAA`/`DamageAA`,
 `canOverwatch`, `MineDetectionRange`.
