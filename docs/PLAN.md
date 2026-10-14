@@ -40,7 +40,7 @@ counterattacks, multiplayer, savegame compatibility with the original game.
 | Scenarios | `SCENS\SCEN1.ZIP`, `SCEN2.ZIP`, `DEATHM.ZIP` | ZIP of Jet 3 MDBs | 22-table schema documented |
 | Skirmish catalog | `SCENS\SKIRMISH.MDB` | Jet 3 | Documented |
 | Sprites | `IMGS\*.DBI` | Custom: 32-byte header, BGRA palette, RLE 54x56 frames | Fully decoded for static frames |
-| Unit animations | `ANMSUNIT\ANMSUNIT.FF` | `FF` container (`MFF` header) of Smacker files | Container unexplored |
+| Unit animations | `ANMSUNIT\ANMSUNIT.FF` | `FF` container of Smacker files | **Done**: container and Smacker decoder/encoder (lossless round trip of all 5146 members); member naming and action letters documented |
 | Interface | `INTERF\640X480.SMK`, `1024X768.SMK`, `PAL.BMP`, `PALCYCLE.PAL` | Smacker frames used as UI art; palette cycling | Unexplored |
 | Video | `VIDEO\*.SMK`, `COLANMS`, `ENCYCL` | Smacker | Standard format |
 | Sound | `SOUNDS\*.WAV` (+ audio in Smacker files) | PCM WAV | Standard format |
@@ -124,7 +124,7 @@ Each milestone ends with something runnable and with automated tests.
 | M0 | Repository and tooling | Build, CI on Windows and Linux, data-path configuration, test fixtures that skip without game data | Low — **done**: workspace, CI, `LIBDAY_ROOT`, DBI decoder bit-exact with the Python editor on all 8 DBIs (incl. `LISTBOX.DBI`: encoding 0, no palette), SDL3 tile demo |
 | M1 | Asset layer | Jet 3 reader (validated against MDB Tools/editor exports), ZIP, DBI, INI, PE strings; command-line asset dump tool | Low — **done**: Jet 3 reader matches MDB Tools on all 121 shipped databases (overflow rows: targets carry the deleted flag; tdef row counts can be stale), ZIP (stored/deflate, CRC-checked), PE `RT_STRING`, CP1252; `libday` CLI `mdb-*`, `zip-list`, `strings` |
 | M2 | Map viewer | Render any skirmish map: terrain, buildings, roads/bridges, walls, decors, units, deployment zones; pan/zoom; matches the existing Python editor output | Low; the editor is a reference implementation |
-| M3 | Animation and interface assets | FF container and Smacker decoding; unit idle/move/attack animations; UI art from interface Smacker files; palette cycling; WAV playback | FF index layout, UI art layout is undocumented |
+| M3 | Animation and interface assets | FF container and Smacker decoding; unit idle/move/attack animations; UI art from interface Smacker files; palette cycling; WAV playback | FF/Smacker codecs done early (asset editor); UI art layout is undocumented |
 | M4 | Screen flow | Main menu, skirmish selector, technology allocation, deployment (budget, zones), battle shell, HUD, minimap | UI layout must be measured from the original |
 | M5 | Core simulation | Turns, action points, movement costs, pathfinding, occupancy, reinforcements, scheduled support events | **Rules are largely unknown**; needs research track |
 | M6 | Combat | Range, line of sight, accuracy, damage/armor, overwatch/autofire, destruction, wrecks, mines | Unknown formulas |
@@ -169,7 +169,7 @@ then combat formulas, then AI. Where research stalls, ship a clearly labeled
 
 | Crate | Role | Depends on SDL |
 | --- | --- | --- |
-| `libday-formats` | Jet 3, ZIP, DBI, FF/Smacker, INI, PE strings; read-only decoders | No |
+| `libday-formats` | Jet 3, ZIP, DBI, FF/Smacker, INI, PE strings; decoders plus DBI/FF/Smacker encoders for modding | No |
 | `libday-data` | Typed definitions and scenarios, lossless raw rows | No |
 | `libday-sim` | Deterministic headless simulation, commands, events, AI | No |
 | `libday-tools` | Command-line asset dump/inspection and golden-output generation | No |

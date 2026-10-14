@@ -54,6 +54,8 @@ pub enum DbiError {
         row: usize,
         reason: &'static str,
     },
+    #[error("encoded sprite {0} does not fit in its 8192-byte record")]
+    TooLarge(String),
 }
 
 /// 256-entry RGB palette.
@@ -284,6 +286,64 @@ impl<'a> Dbi<'a> {
             pixels,
         })
     }
+
+    /// Returns a copy of the whole file with sprite `name` replaced.
+    ///
+    /// The sprite must match the cell size; the record header's unknown bytes
+    /// and encoding are kept.
+    pub fn replace(&self, name: &str, sprite: &Sprite) -> Result<Vec<u8>, DbiError> {
+        let record = *self
+            .records
+            .get(&name.to_ascii_uppercase())
+            .ok_or_else(|| DbiError::NotFound(name.to_owned()))?;
+        if sprite.width as u32 != self.cell_width
+            || sprite.height as u32 != self.cell_height
+            || sprite.pixels.len() != sprite.width * sprite.height
+        {
+            return Err(DbiError::InvalidSpriteHeader(name.to_owned()));
+        }
+        let encoding = u16_at(self.data, record + 14);
+        let mut payload = encode_rows(sprite);
+        if encoding == 1 {
+            payload.push(0);
+        }
+        if payload.len() > RECORD - RECORD_HEADER {
+            return Err(DbiError::TooLarge(name.to_owned()));
+        }
+        let mut out = self.data.to_vec();
+        let body = &mut out[record + RECORD_HEADER..record + RECORD];
+        body.fill(0);
+        body[..payload.len()].copy_from_slice(&payload);
+        out[record + 12..record + 14].copy_from_slice(&(payload.len() as u16).to_le_bytes());
+        Ok(out)
+    }
+}
+
+/// Encodes sprite rows as length-prefixed skip/literal runs.
+fn encode_rows(sprite: &Sprite) -> Vec<u8> {
+    let mut out = Vec::new();
+    for row in sprite.pixels.chunks(sprite.width.max(1)) {
+        let start = out.len();
+        out.extend_from_slice(&[0; 4]);
+        let mut x = 0;
+        while x < row.len() {
+            let opaque = row[x].is_some();
+            let run = row[x..]
+                .iter()
+                .take_while(|p| p.is_some() == opaque)
+                .take(u16::MAX as usize)
+                .count();
+            out.extend_from_slice(&(run as u16).to_le_bytes());
+            out.extend_from_slice(&(if opaque { 2u16 } else { 1 }).to_le_bytes());
+            if opaque {
+                out.extend(row[x..x + run].iter().map(|p| p.unwrap_or(0)));
+            }
+            x += run;
+        }
+        let length = (out.len() - start) as u32;
+        out[start..start + 4].copy_from_slice(&length.to_le_bytes());
+    }
+    out
 }
 
 #[cfg(test)]
@@ -364,6 +424,31 @@ mod tests {
         data[HEADER + PALETTE + 14] = 0;
         let sprite = Dbi::parse(&data).unwrap().sprite("TEST").unwrap();
         assert_eq!(sprite.pixels, [Some(5), Some(6)]);
+    }
+
+    #[test]
+    fn replace_round_trips() {
+        let mut payload = row(&[(1, 1, &[]), (2, 2, &[7, 9])]);
+        payload.extend(row(&[(3, 2, &[1, 2, 3])]));
+        payload.push(0);
+        let data = build(3, 2, &payload);
+        let dbi = Dbi::parse(&data).unwrap();
+        let original = dbi.sprite("TEST").unwrap();
+        assert_eq!(dbi.replace("test", &original).unwrap(), data);
+        let edited = Sprite {
+            width: 3,
+            height: 2,
+            pixels: vec![Some(1), None, Some(2), None, None, None],
+        };
+        let out = dbi.replace("TEST", &edited).unwrap();
+        assert_eq!(out.len(), data.len());
+        assert_eq!(Dbi::parse(&out).unwrap().sprite("TEST").unwrap(), edited);
+        let wrong = Sprite {
+            width: 2,
+            height: 2,
+            pixels: vec![None; 4],
+        };
+        assert!(dbi.replace("TEST", &wrong).is_err());
     }
 
     #[test]

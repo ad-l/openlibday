@@ -32,15 +32,26 @@ cargo run -p libday-tools -- dbi-export UB.DBI out\ub
 
 | Crate | Purpose |
 |---|---|
-| `libday-formats` | Pure decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252 |
+| `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video; DBI/FF/Smacker encoders for modding |
 | `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup, databases, scenarios inside `SCENS\*.ZIP`, UI strings |
 | `libday-sim` | Deterministic headless simulation (placeholder) |
 | `libday-tools` | `libday` CLI for inspecting/exporting data |
 | `openlibday` | SDL3 application |
+| `tools/modding` | Python/Tk map and scenario editor and unit/building asset editor (see its README) |
+
+## Modding tools
+
+`tools/modding` holds the map/scenario editor and the unit/building asset editor
+(game data per tech level, sprites, Smacker animations). They need Python 3.10+
+with Tk (standard Windows installer) and a built `libday` CLI (`cargo build`);
+point them at your install with `LIBDAY_ROOT`. Launch `Map Editor.cmd` or
+`Asset Editor.cmd`, and see [tools/modding/README.md](tools/modding/README.md).
+The map editor writes scenario databases through 32-bit Windows Jet, so it is
+Windows-only for now.
 
 ## Knowledge base
 
-Reverse-engineering notes, file formats and observed native behavior are in the
-companion modding project (`libday/modding/README.md`, "Engine reconstruction
+Reverse-engineering notes, file formats and observed native behavior are in
+[tools/modding/README.md](tools/modding/README.md) ("Engine reconstruction
 knowledge base"). Findings that the engine relies on are summarized in
 `docs/` as they are implemented.

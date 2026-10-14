@@ -8,7 +8,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use libday_data::{Dir, GameData};
 use libday_formats::jet::{self, Database, Value};
-use libday_formats::{Dbi, Sprite, Zip};
+use libday_formats::smacker::{self, Smacker};
+use libday_formats::{Dbi, Mff, Sprite, Zip};
 use serde_json::{Map, Value as Json};
 
 #[derive(Parser)]
@@ -49,6 +50,51 @@ enum Command {
     ZipList { file: String },
     /// Dump the string table of a PE resource DLL.
     Strings { file: String },
+    /// List the members of an MFF archive (`ANMSUNIT/ANMSUNIT.FF`).
+    FfList {
+        file: String,
+        /// Only list names starting with this prefix (case-insensitive).
+        #[arg(long)]
+        prefix: Option<String>,
+    },
+    /// Show a Smacker file's header as JSON (`file.smk` or `archive.ff!member`).
+    SmkInfo { file: String },
+    /// Export Smacker frames as indexed PNGs plus `meta.json`.
+    SmkExport { file: String, out: PathBuf },
+    /// Export every Smacker member under a prefix of an MFF archive, one
+    /// sub-directory per member (path separators preserved, `.SMK` dropped).
+    FfExport {
+        file: String,
+        out: PathBuf,
+        #[arg(long, default_value = "")]
+        prefix: String,
+    },
+    /// Re-encode a Smacker file with frames from `frame_NNN.png` files.
+    ///
+    /// Indexed PNGs are used as-is; other PNGs are mapped to the nearest
+    /// colour of each frame's palette.
+    SmkImport {
+        file: String,
+        frames: PathBuf,
+        out: PathBuf,
+    },
+    /// Write a copy of an MFF archive with members replaced (`NAME=FILE`).
+    FfReplace {
+        file: String,
+        out: PathBuf,
+        #[arg(required = true)]
+        replacements: Vec<String>,
+    },
+    /// Write a copy of a DBI with sprites replaced from PNGs (`NAME=FILE`).
+    ///
+    /// Transparent pixels (alpha < 128) stay transparent; colours map to the
+    /// nearest DBI palette entry.
+    DbiReplace {
+        file: String,
+        out: PathBuf,
+        #[arg(required = true)]
+        replacements: Vec<String>,
+    },
 }
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -90,9 +136,150 @@ fn read_spec(root: &Option<PathBuf>, spec: &str) -> Result<Vec<u8>> {
     }
     let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(match member {
+        Some(member) if is_mff(&path) => Mff::parse(&bytes)?.get(member)?.to_vec(),
         Some(member) => Zip::parse(&bytes)?.read(member)?,
         None => bytes,
     })
+}
+
+fn is_mff(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("ff"))
+}
+
+/// Resolves a plain file path against the game root when it does not exist.
+fn resolve(root: &Option<PathBuf>, file: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(file);
+    if path.exists() || !path.is_relative() {
+        return Ok(path);
+    }
+    Ok(game(root)?.root().join(path))
+}
+
+fn split_replacement(spec: &str) -> Result<(&str, &str)> {
+    spec.split_once('=')
+        .ok_or_else(|| format!("expected NAME=FILE, got {spec:?}").into())
+}
+
+fn write_indexed_png(
+    path: &Path,
+    width: u32,
+    height: u32,
+    palette: &[[u8; 3]; 256],
+    pixels: &[u8],
+) -> Result<()> {
+    let mut encoder = png::Encoder::new(fs::File::create(path)?, width, height);
+    encoder.set_color(png::ColorType::Indexed);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_palette(palette.concat());
+    encoder.write_header()?.write_image_data(pixels)?;
+    Ok(())
+}
+
+/// A decoded PNG: raw indices (8-bit indexed) or RGBA8.
+enum Image {
+    Indexed(Vec<u8>),
+    Rgba(Vec<u8>),
+}
+
+fn read_png(path: &Path, width: usize, height: usize, keep_indices: bool) -> Result<Image> {
+    let open = |t| -> Result<_> {
+        let mut decoder = png::Decoder::new(fs::File::open(path)?);
+        decoder.set_transformations(t);
+        Ok(decoder.read_info()?)
+    };
+    let mut reader = open(png::Transformations::IDENTITY)?;
+    let info = reader.info();
+    if (info.width as usize, info.height as usize) != (width, height) {
+        return Err(format!(
+            "{}: expected {width}x{height}, got {}x{}",
+            path.display(),
+            info.width,
+            info.height
+        )
+        .into());
+    }
+    if keep_indices
+        && info.color_type == png::ColorType::Indexed
+        && info.bit_depth == png::BitDepth::Eight
+    {
+        let mut buf = vec![0; reader.output_buffer_size()];
+        reader.next_frame(&mut buf)?;
+        buf.truncate(width * height);
+        return Ok(Image::Indexed(buf));
+    }
+    let mut reader = open(png::Transformations::EXPAND | png::Transformations::STRIP_16)?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let frame = reader.next_frame(&mut buf)?;
+    let data = &buf[..frame.buffer_size()];
+    let rgba: Vec<u8> = match frame.color_type {
+        png::ColorType::Rgba => data.to_vec(),
+        png::ColorType::Rgb => data
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => data
+            .chunks(2)
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .collect(),
+        png::ColorType::Grayscale => data.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        other => {
+            return Err(
+                format!("{}: unsupported PNG colour type {other:?}", path.display()).into(),
+            );
+        }
+    };
+    Ok(Image::Rgba(rgba))
+}
+
+/// Nearest palette entry by squared RGB distance (first exact match wins).
+fn nearest(palette: &[[u8; 3]; 256], rgb: [u8; 3]) -> u8 {
+    let mut best = (u32::MAX, 0u8);
+    for (i, p) in palette.iter().enumerate() {
+        let d: u32 = (0..3)
+            .map(|c| (i32::from(p[c]) - i32::from(rgb[c])).pow(2) as u32)
+            .sum();
+        if d < best.0 {
+            best = (d, i as u8);
+            if d == 0 {
+                break;
+            }
+        }
+    }
+    best.1
+}
+
+fn smk_meta(smk: &Smacker) -> Json {
+    let h = &smk.header;
+    serde_json::json!({
+        "width": h.width,
+        "height": h.height,
+        "frames": h.frames,
+        "frame_micros": h.frame_micros(),
+        "ring_frame": h.has_ring_frame(),
+        "audio": smk.has_audio(),
+        "key_frames": (0..h.frames as usize).filter(|&i| smk.is_key_frame(i)).collect::<Vec<_>>(),
+    })
+}
+
+fn export_smk(bytes: &[u8], out: &Path) -> Result<usize> {
+    let smk = Smacker::parse(bytes)?;
+    fs::create_dir_all(out)?;
+    let frames = smk.decode_all()?;
+    for (i, frame) in frames.iter().enumerate() {
+        write_indexed_png(
+            &out.join(format!("frame_{i:03}.png")),
+            smk.header.width,
+            smk.header.height,
+            &frame.palette,
+            &frame.pixels,
+        )?;
+    }
+    fs::write(
+        out.join("meta.json"),
+        serde_json::to_string_pretty(&smk_meta(&smk))?,
+    )?;
+    Ok(frames.len())
 }
 
 fn json_value(value: &Value) -> Json {
@@ -233,6 +420,113 @@ fn run(cli: Cli) -> Result<()> {
                         .replace('\r', "\\r")
                 );
             }
+        }
+        Command::FfList { file, prefix } => {
+            let bytes = fs::read(resolve(&cli.root, &file)?)?;
+            let prefix = prefix
+                .unwrap_or_default()
+                .to_ascii_uppercase()
+                .replace('/', "\\");
+            for e in Mff::parse(&bytes)?.entries() {
+                if e.name.to_ascii_uppercase().starts_with(&prefix) {
+                    println!("{}\t{}", e.name, e.size);
+                }
+            }
+        }
+        Command::SmkInfo { file } => {
+            let bytes = read_spec(&cli.root, &file)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&smk_meta(&Smacker::parse(&bytes)?))?
+            );
+        }
+        Command::SmkExport { file, out } => {
+            let n = export_smk(&read_spec(&cli.root, &file)?, &out)?;
+            println!("exported {n} frames to {}", out.display());
+        }
+        Command::FfExport { file, out, prefix } => {
+            let bytes = fs::read(resolve(&cli.root, &file)?)?;
+            let mff = Mff::parse(&bytes)?;
+            let prefix = prefix.to_ascii_uppercase().replace('/', "\\");
+            let mut count = 0;
+            for e in mff.entries() {
+                let upper = e.name.to_ascii_uppercase();
+                if !upper.starts_with(&prefix) || !upper.ends_with(".SMK") {
+                    continue;
+                }
+                let stem = &e.name[..e.name.len() - 4];
+                let dir = stem.split('\\').fold(out.clone(), |p, part| p.join(part));
+                export_smk(mff.get(&e.name)?, &dir)?;
+                count += 1;
+            }
+            println!("exported {count} animations to {}", out.display());
+        }
+        Command::SmkImport { file, frames, out } => {
+            let bytes = read_spec(&cli.root, &file)?;
+            let smk = Smacker::parse(&bytes)?;
+            let (w, h) = (smk.header.width as usize, smk.header.height as usize);
+            let decoded = smk.decode_all()?;
+            let mut pixels = Vec::with_capacity(decoded.len());
+            for (i, frame) in decoded.iter().enumerate() {
+                pixels.push(
+                    match read_png(&frames.join(format!("frame_{i:03}.png")), w, h, true)? {
+                        Image::Indexed(p) => p,
+                        Image::Rgba(rgba) => rgba
+                            .chunks(4)
+                            .map(|p| nearest(&frame.palette, [p[0], p[1], p[2]]))
+                            .collect(),
+                    },
+                );
+            }
+            fs::write(&out, smacker::encode(&smk, &pixels)?)?;
+            println!("wrote {} ({} frames)", out.display(), pixels.len());
+        }
+        Command::FfReplace {
+            file,
+            out,
+            replacements,
+        } => {
+            let bytes = fs::read(resolve(&cli.root, &file)?)?;
+            let mff = Mff::parse(&bytes)?;
+            let mut map = std::collections::HashMap::new();
+            for spec in &replacements {
+                let (name, path) = split_replacement(spec)?;
+                let name = name.replace('/', "\\");
+                let entry = mff
+                    .entry(&name)
+                    .ok_or_else(|| format!("no member {name}"))?;
+                map.insert(entry.name.clone(), fs::read(path)?);
+            }
+            fs::write(&out, mff.rebuild(&map)?)?;
+            println!("wrote {} ({} replaced)", out.display(), map.len());
+        }
+        Command::DbiReplace {
+            file,
+            out,
+            replacements,
+        } => {
+            let mut bytes = read_dbi(&cli.root, &file)?;
+            for spec in &replacements {
+                let (name, path) = split_replacement(spec)?;
+                let dbi = Dbi::parse(&bytes)?;
+                let (w, h) = (dbi.cell_width as usize, dbi.cell_height as usize);
+                let palette = &dbi.palette.0;
+                let pixels = match read_png(Path::new(path), w, h, false)? {
+                    Image::Indexed(p) => p.into_iter().map(Some).collect(),
+                    Image::Rgba(rgba) => rgba
+                        .chunks(4)
+                        .map(|p| (p[3] >= 128).then(|| nearest(palette, [p[0], p[1], p[2]])))
+                        .collect(),
+                };
+                let sprite = Sprite {
+                    width: w,
+                    height: h,
+                    pixels,
+                };
+                bytes = dbi.replace(name, &sprite)?;
+            }
+            fs::write(&out, &bytes)?;
+            println!("wrote {} ({} replaced)", out.display(), replacements.len());
         }
     }
     Ok(())

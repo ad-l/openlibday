@@ -22,3 +22,9 @@
 /local/
 *.log
 *.dmp
+
+# Modding tools: registries and fixtures are generated from the game data
+__pycache__/
+/tools/modding/*.csv
+/tools/modding/.registries-root
+/tools/modding/.fixtures/
