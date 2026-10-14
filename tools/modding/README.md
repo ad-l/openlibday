@@ -30,9 +30,13 @@ below refer to that original install's `modding` folder, which was not moved.
 | `registries.py` | Generates the `*-types.csv` registries from `GLOBALS\GLOBAL.MDB` via the CLI and runs CLI commands |
 | `testsupport.py`, `test_*.py` | Regression tests; skipped unless `LIBDAY_ROOT` is set. Fixtures are extracted into `.fixtures\` |
 
-Run the tests from this directory with `python -m unittest` (about 5 s). The
-slow Jet round-trip and Tk GUI tests are skipped unless `LIBDAY_SLOW_TESTS=1`
-is set (about 10 minutes); run them before committing editor changes.
+Run the tests from this directory with `python -m unittest` or
+`python run_tests.py` (about 5 s). The slow Jet round-trip and Tk GUI tests are
+skipped unless `LIBDAY_SLOW_TESTS=1` is set; run them before committing editor
+changes. `python run_tests.py --slow` runs each slow test in its own process
+(default `--jobs` is half the CPU count) and takes about 2 minutes instead of
+10 for the sequential `LIBDAY_SLOW_TESTS=1 python -m unittest`. Extra arguments
+filter test ids by substring, e.g. `python run_tests.py --slow test_map_resize`.
 
 ## Current status
 
@@ -620,8 +624,11 @@ Launch **`Asset Editor.cmd`**, or run `python .\tools\modding\asset_editor.py`
   export as indexed PNGs plus `meta.json`; edit them, keeping the frame count and
   size, and import the folder to re-encode the animation. Indexed PNGs keep their
   palette indices; other PNGs are mapped to the animation's palette. Each
-  animation has its own solid background key colour (it varies per file), so
-  keep the background pixels unchanged.
+  animation paints its background in its own key colour (it varies per file);
+  the editor shows it transparent over a selectable preview background (dark,
+  grass, light or the original key colour). Exported PNGs mark the key colour
+  transparent (tRNS) and `meta.json` records it as `key_colour`; in RGBA
+  imports, pixels with alpha < 128 become the key colour.
 
 Edits are staged in a temporary work folder. **Save copies** writes the edited
 `UB.DBI`/`ANMSUNIT.FF` into a folder of your choice; **Install into game**
@@ -969,10 +976,17 @@ distance to the next offset in file order. All 5146 members are Smacker 2
 - `AUTOUNIT\<id><nn>.SMK`: air support (e.g. bombers `HBMB01-03`, helicopters
   `HHTR11-13`); `MINE\MINE.SMK`, `MINE\GMINE.SMK`: mine explosions.
 
-Each animation has a solid background key colour that differs per file
-(common ones: index 198 = (28,0,0), 245 = magenta (255,0,174), 83, 148 grey).
-How the engine chooses the key (corner pixel, fixed index per file, ...) is not
-yet confirmed. The `libday-formats` Smacker codec decodes all members and its
+Smacker has no transparency field and no database table names a key, so each
+animation paints its background in a solid key colour that differs per file
+(of 5146 members: (28,0,0) at index 198 in 3402, magenta (255,0,174) at 245 in
+1265, grey (93,93,93) in 250, orange (174,77,0) in 124, then a few blues and
+reds). The key is the most frequent colour of the first frame
+(`Frame::dominant_colour`); this matches the background of every member but
+`MPAR\P3\MPAR3M3.SMK`, whose background is dithered noise in the original data.
+The top-left pixel is a weaker rule: the HTAA3T1 projectile covers it, and
+HHTR03 has a 1-pixel black edge line. Match the key by RGB, not index, because
+palettes can change between frames. That the engine uses exactly this rule is
+not yet confirmed from the disassembly. The `libday-formats` Smacker codec decodes all members and its
 encoder (Huffman trees rebuilt per file, original palette/audio chunks kept)
 re-encodes every member pixel- and palette-identically; the re-encoded archive
 is slightly smaller (108.5 MB versus 108.8 MB). The real-data test
@@ -2356,7 +2370,7 @@ agree with any new dimensions. Scaling does not resolve those requirements.
 ## Verification and runtime probe
 
 ```bash
-cd tools/modding && LIBDAY_SLOW_TESTS=1 python3 -m unittest -v
+cd tools/modding && python3 run_tests.py --slow
 objdump -d -Mintel EXE/LIBDAY.EXE > modding/archive/libday.disasm.txt
 ```
 

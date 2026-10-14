@@ -263,6 +263,27 @@ pub struct Frame {
     pub pixels: Vec<u8>,
 }
 
+impl Frame {
+    /// The RGB of the most frequent pixel.
+    ///
+    /// Animations carry no transparency metadata: each file paints its
+    /// background in an arbitrary key colour (dark red, magenta, grey, ...)
+    /// that differs between files and palette indices. The most frequent
+    /// colour of the first frame identifies it for every installed
+    /// animation except `MPAR\P3\MPAR3M3.SMK`, whose background is dithered.
+    /// Match it by RGB in later frames, since palettes can change.
+    pub fn dominant_colour(&self) -> [u8; 3] {
+        let mut counts = [0usize; 256];
+        for &p in &self.pixels {
+            counts[p as usize] += 1;
+        }
+        let index = (0..256)
+            .max_by_key(|&i| (counts[i], std::cmp::Reverse(i)))
+            .unwrap_or(0);
+        self.palette[index]
+    }
+}
+
 struct BitReader<'a> {
     data: &'a [u8],
     pos: usize,
@@ -990,6 +1011,18 @@ mod real_data {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dominant_colour_is_most_frequent_rgb() {
+        let mut palette = [[0u8; 3]; 256];
+        palette[7] = [255, 0, 174];
+        palette[9] = [10, 20, 30];
+        let frame = Frame {
+            palette,
+            pixels: vec![9, 7, 7, 7, 9, 0],
+        };
+        assert_eq!(frame.dominant_colour(), [255, 0, 174]);
+    }
 
     #[test]
     fn huffman_lengths_respect_limit() {

@@ -31,7 +31,7 @@ def green_skirmish() -> Path:
     if not path.is_file():
         FIXTURES.mkdir(exist_ok=True)
         with zipfile.ZipFile(ROOT / "SCENS" / "SCEN1.ZIP") as archive:
-            temp = path.with_suffix(".tmp")
+            temp = path.with_suffix(f".{os.getpid()}.tmp")
             temp.write_bytes(archive.read("s1-99-1.mdb"))
             temp.replace(path)
     return path

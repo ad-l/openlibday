@@ -21,6 +21,8 @@ from asset_editor_core import (ACTIONS, FIELD_GROUPS, HIDDEN_FIELDS, TECH_LEVELS
 from map_editor import default_game_root
 
 ZOOMS = {"1x": 1, "2x": 2, "3x": 3, "4x": 4}
+# Preview fills behind transparent animation pixels; None shows the original key colour.
+ANIM_BACKGROUNDS = {"Dark": "#202020", "Grass": "#4a6b2f", "Light": "#d0d0d0", "Key colour": None}
 
 
 class AssetEditor:
@@ -34,6 +36,7 @@ class AssetEditor:
         self.capability_text = tk.StringVar()
         self.sprite_zoom = tk.StringVar(value="1x")
         self.anim_zoom = tk.StringVar(value="2x")
+        self.anim_background = tk.StringVar(value="Dark")
         self.colour = tk.StringVar()
         self.action = tk.StringVar()
         self.facing = tk.StringVar()
@@ -167,6 +170,11 @@ class AssetEditor:
         zoom = ttk.Combobox(bar, textvariable=self.anim_zoom, values=list(ZOOMS), width=4, state="readonly")
         zoom.pack(side="left")
         zoom.bind("<<ComboboxSelected>>", lambda _: self.load_animation())
+        ttk.Label(bar, text="Background:").pack(side="left", padx=(12, 2))
+        background = ttk.Combobox(bar, textvariable=self.anim_background, values=list(ANIM_BACKGROUNDS),
+                                  width=10, state="readonly")
+        background.pack(side="left")
+        background.bind("<<ComboboxSelected>>", lambda _: self.show_frame(self.frame_index.get()))
         controls = ttk.Frame(tab)
         controls.pack(fill="x", pady=4)
         self.play_button = ttk.Button(controls, text="Play", command=self.toggle_play)
@@ -451,9 +459,11 @@ class AssetEditor:
         self.anim_meta = meta
         edited = " - EDITED" if animation.member in self.store.animation_edits else ""
         fps = 1_000_000 / meta["frame_micros"] if meta["frame_micros"] else 0
+        key = meta.get("key_colour")
+        key_text = f", transparent key #{key[0]:02X}{key[1]:02X}{key[2]:02X}" if key else ""
         self.anim_info.set(f"{animation.member}: {meta['frames']} frames, {meta['width']}x{meta['height']}, "
                            f"{fps:.1f} fps, audio {'yes' if meta['audio'] else 'no'}, "
-                           f"loops {'yes' if meta['ring_frame'] else 'no'}{edited}. "
+                           f"loops {'yes' if meta['ring_frame'] else 'no'}{key_text}{edited}. "
                            "Imported frames must keep the frame count and size; palette and sound are kept.")
         self.frame_scale.configure(to=max(0, len(self.anim_frames) - 1))
         self.frame_index.set(0)
@@ -465,8 +475,17 @@ class AssetEditor:
         index = max(0, min(index, len(self.anim_frames) - 1))
         self.frame_index.set(index)
         self.anim_canvas.delete("all")
-        self.anim_canvas.create_image(10, 10, image=self.anim_frames[index], anchor="nw")
-        self.anim_canvas.create_text(12, 10 + self.anim_frames[index].height() + 10, anchor="nw", fill="white",
+        image = self.anim_frames[index]
+        fill = ANIM_BACKGROUNDS[self.anim_background.get()]
+        key = self.anim_meta.get("key_colour")
+        if fill is None:
+            fill = f"#{key[0]:02x}{key[1]:02x}{key[2]:02x}" if key else "#202020"
+        self.anim_canvas.configure(background=fill)
+        red, green, blue = (c // 256 for c in self.anim_canvas.winfo_rgb(fill))
+        text = "black" if red * 0.3 + green * 0.59 + blue * 0.11 > 128 else "white"
+        self.anim_canvas.create_rectangle(9, 9, 10 + image.width(), 10 + image.height(), outline="#808080")
+        self.anim_canvas.create_image(10, 10, image=image, anchor="nw")
+        self.anim_canvas.create_text(12, 10 + image.height() + 10, anchor="nw", fill=text,
                                      text=f"Frame {index + 1}/{len(self.anim_frames)}")
 
     def toggle_play(self):

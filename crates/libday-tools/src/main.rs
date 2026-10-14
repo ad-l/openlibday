@@ -59,7 +59,8 @@ enum Command {
     },
     /// Show a Smacker file's header as JSON (`file.smk` or `archive.ff!member`).
     SmkInfo { file: String },
-    /// Export Smacker frames as indexed PNGs plus `meta.json`.
+    /// Export Smacker frames as indexed PNGs (background key colour
+    /// transparent) plus `meta.json`.
     SmkExport { file: String, out: PathBuf },
     /// Export every Smacker member under a prefix of an MFF archive, one
     /// sub-directory per member (path separators preserved, `.SMK` dropped).
@@ -72,7 +73,8 @@ enum Command {
     /// Re-encode a Smacker file with frames from `frame_NNN.png` files.
     ///
     /// Indexed PNGs are used as-is; other PNGs are mapped to the nearest
-    /// colour of each frame's palette.
+    /// colour of each frame's palette, with transparent pixels (alpha < 128)
+    /// becoming the background key colour.
     SmkImport {
         file: String,
         frames: PathBuf,
@@ -167,11 +169,19 @@ fn write_indexed_png(
     height: u32,
     palette: &[[u8; 3]; 256],
     pixels: &[u8],
+    key: Option<[u8; 3]>,
 ) -> Result<()> {
     let mut encoder = png::Encoder::new(fs::File::create(path)?, width, height);
     encoder.set_color(png::ColorType::Indexed);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.set_palette(palette.concat());
+    if let Some(key) = key {
+        let alpha: Vec<u8> = palette
+            .iter()
+            .map(|&c| if c == key { 0 } else { 255 })
+            .collect();
+        encoder.set_trns(alpha);
+    }
     encoder.write_header()?.write_image_data(pixels)?;
     Ok(())
 }
@@ -249,9 +259,14 @@ fn nearest(palette: &[[u8; 3]; 256], rgb: [u8; 3]) -> u8 {
     best.1
 }
 
-fn smk_meta(smk: &Smacker) -> Json {
+/// Header summary plus the background key colour (see `Frame::dominant_colour`).
+fn smk_meta(smk: &Smacker) -> Result<Json> {
     let h = &smk.header;
-    serde_json::json!({
+    let key = smk
+        .decoder()?
+        .next_frame()?
+        .map(|frame| frame.dominant_colour());
+    Ok(serde_json::json!({
         "width": h.width,
         "height": h.height,
         "frames": h.frames,
@@ -259,13 +274,16 @@ fn smk_meta(smk: &Smacker) -> Json {
         "ring_frame": h.has_ring_frame(),
         "audio": smk.has_audio(),
         "key_frames": (0..h.frames as usize).filter(|&i| smk.is_key_frame(i)).collect::<Vec<_>>(),
-    })
+        "key_colour": key,
+    }))
 }
 
+/// Writes indexed PNGs whose key colour is transparent (tRNS), plus `meta.json`.
 fn export_smk(bytes: &[u8], out: &Path) -> Result<usize> {
     let smk = Smacker::parse(bytes)?;
     fs::create_dir_all(out)?;
     let frames = smk.decode_all()?;
+    let key = frames.first().map(|f| f.dominant_colour());
     for (i, frame) in frames.iter().enumerate() {
         write_indexed_png(
             &out.join(format!("frame_{i:03}.png")),
@@ -273,11 +291,12 @@ fn export_smk(bytes: &[u8], out: &Path) -> Result<usize> {
             smk.header.height,
             &frame.palette,
             &frame.pixels,
+            key,
         )?;
     }
     fs::write(
         out.join("meta.json"),
-        serde_json::to_string_pretty(&smk_meta(&smk))?,
+        serde_json::to_string_pretty(&smk_meta(&smk)?)?,
     )?;
     Ok(frames.len())
 }
@@ -437,7 +456,7 @@ fn run(cli: Cli) -> Result<()> {
             let bytes = read_spec(&cli.root, &file)?;
             println!(
                 "{}",
-                serde_json::to_string_pretty(&smk_meta(&Smacker::parse(&bytes)?))?
+                serde_json::to_string_pretty(&smk_meta(&Smacker::parse(&bytes)?)?)?
             );
         }
         Command::SmkExport { file, out } => {
@@ -466,14 +485,19 @@ fn run(cli: Cli) -> Result<()> {
             let smk = Smacker::parse(&bytes)?;
             let (w, h) = (smk.header.width as usize, smk.header.height as usize);
             let decoded = smk.decode_all()?;
+            let key = decoded.first().map(|f| f.dominant_colour());
             let mut pixels = Vec::with_capacity(decoded.len());
             for (i, frame) in decoded.iter().enumerate() {
+                let key_index = key.map(|k| nearest(&frame.palette, k));
                 pixels.push(
                     match read_png(&frames.join(format!("frame_{i:03}.png")), w, h, true)? {
                         Image::Indexed(p) => p,
                         Image::Rgba(rgba) => rgba
                             .chunks(4)
-                            .map(|p| nearest(&frame.palette, [p[0], p[1], p[2]]))
+                            .map(|p| match key_index {
+                                Some(k) if p[3] < 128 => k,
+                                _ => nearest(&frame.palette, [p[0], p[1], p[2]]),
+                            })
                             .collect(),
                     },
                 );

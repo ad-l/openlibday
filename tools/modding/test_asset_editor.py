@@ -131,6 +131,38 @@ class AssetStoreTest(unittest.TestCase):
         finally:
             store.close()
 
+    def test_animation_background_key_is_transparent(self):
+        import tkinter as tk
+        store = AssetStore(ROOT)
+        try:
+            paths, meta = store.frames("AUTOUNIT\\BZLN.SMK")
+            self.assertEqual(meta["key_colour"], [255, 0, 174])  # magenta explosion background
+            animation = store.unit_animations(store.units[0])[0]
+            paths, meta = store.frames(animation.member)
+            self.assertEqual(meta["key_colour"], [28, 0, 0])
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                image = tk.PhotoImage(master=root, file=str(paths[0]))
+                self.assertTrue(image.transparency_get(0, 0))
+                opaque = [(x, y) for x in range(0, image.width(), 2) for y in range(0, image.height(), 2)
+                          if not image.transparency_get(x, y)]
+                self.assertTrue(opaque, "the unit itself must stay opaque")
+
+                # A fully transparent RGBA frame imports as background only.
+                frames = self.temp / "frames"
+                store.export_animation(animation.member, frames)
+                (frames / "frame_000.png").write_bytes(
+                    Texture(meta["width"], meta["height"], bytes(4 * meta["width"] * meta["height"])).png())
+                store.replace_animation(animation.member, frames)
+                paths, _ = store.frames(animation.member)
+                image = tk.PhotoImage(master=root, file=str(paths[0]))
+                self.assertTrue(all(image.transparency_get(x, y) for x, y in opaque))
+            finally:
+                root.destroy()
+        finally:
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
