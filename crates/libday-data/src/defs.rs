@@ -104,6 +104,14 @@ pub struct UnitType {
     pub damage_random: i64,
     /// `weaponRange`.
     pub range: i64,
+    /// `IsAA`: fires at aircraft.
+    pub anti_air: bool,
+    /// `MineDetectionRange`.
+    pub mine_detection: i64,
+    /// `weaponType` (1 = indirect fire).
+    pub weapon_type: i64,
+    /// `Jammer`: 0 = stealth, below 100 = reduced signature.
+    pub jammer: i64,
 }
 
 impl UnitType {
@@ -264,6 +272,10 @@ impl Definitions {
                 damage_base: t.int_or(r, "damageBase", 0)?,
                 damage_random: t.int_or(r, "damageRandom", 0)?,
                 range: t.int_or(r, "weaponRange", 0)?,
+                anti_air: t.flag_or(r, "IsAA", false)?,
+                mine_detection: t.int_or(r, "MineDetectionRange", 0)?,
+                weapon_type: t.int_or(r, "weaponType", 0)?,
+                jammer: t.int_or(r, "Jammer", 100)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));

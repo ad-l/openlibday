@@ -127,6 +127,8 @@ struct Viewer {
     drag: Option<(f32, f32)>,
     press: Option<(f32, f32)>,
     minimap_drag: bool,
+    /// Unit whose info replaces the minimap while the right button is held.
+    info: Option<usize>,
     hover: Option<(i64, i64)>,
     /// Index into `map.battle.scenario.units`.
     selected: Option<usize>,
@@ -224,6 +226,7 @@ impl Viewer {
         self.scroll = 0;
         self.entry = None;
         self.selected = None;
+        self.info = None;
         self.preview = None;
         self.motion = None;
         self.options.hidden_unit = None;
@@ -281,6 +284,13 @@ impl Viewer {
     fn entries(&self) -> Vec<Entry> {
         let owner = self.players.get(self.player).copied().unwrap_or(0);
         minimap::entries(&self.markers, &self.defs, owner)
+    }
+
+    /// Unit on the map tile under output pixel `(x, y)`.
+    fn unit_under(&self, x: i32, y: i32) -> Option<usize> {
+        let (mx, my) = self.to_map(x as f32, y as f32);
+        let (tx, ty) = tile_at(self.map.battle.scenario.size, mx as f64, my as f64)?;
+        self.unit_at(tx, ty)
     }
 
     /// Unit on tile `(x, y)` among the shown units.
@@ -669,6 +679,12 @@ impl Viewer {
                     self.minimap_drag = true;
                     self.centre_on_tile(tx, ty);
                 } else if !layout.on_panel(ox, oy) {
+                    if button == MouseButton::Right
+                        && let Some(i) = self.unit_under(ox, oy)
+                    {
+                        self.info = Some(i);
+                        return;
+                    }
                     self.drag = Some((x, y));
                     self.press = left.then_some((x, y));
                 }
@@ -696,6 +712,7 @@ impl Viewer {
         }
         self.drag = None;
         self.minimap_drag = false;
+        self.info = None;
     }
 
     fn mouse_motion(&mut self, x: f32, y: f32) {
@@ -1010,6 +1027,7 @@ fn main() -> Result {
     let mut canvas = window.into_canvas();
     let creator = canvas.texture_creator();
     let mut gfx = Gfx::new(&creator, &ui);
+    gfx.load_icons(&game);
     drop(ui);
 
     let anims = game.read(Dir::AnmsUnit, "ANMSUNIT.FF").ok();
@@ -1041,6 +1059,7 @@ fn main() -> Result {
         drag: None,
         press: None,
         minimap_drag: false,
+        info: None,
         hover: None,
         selected: None,
         preview: None,

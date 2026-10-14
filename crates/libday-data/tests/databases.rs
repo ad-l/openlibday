@@ -161,3 +161,14 @@ fn ui_strings_load() {
     assert_eq!(strings.len(), 312);
     assert_eq!(strings.get(&1).map(String::as_str), Some("Liberation Day"));
 }
+
+#[test]
+fn exe_icon_bitmaps_load() {
+    let Some(game) = game() else { return };
+    for id in [181, 182, 183, 184, 185, 309] {
+        let icon = game.exe_bitmap(id).unwrap().unwrap();
+        assert_eq!((icon.width, icon.height), (25, 25), "bitmap {id}");
+        assert_eq!(icon.rgba.len(), 25 * 25 * 4);
+    }
+    assert!(game.exe_bitmap(1).unwrap().is_none());
+}

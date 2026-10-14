@@ -215,6 +215,13 @@ impl GameData {
         libday_formats::pe::string_table(&self.read(Dir::Exe, name)?)
             .map_err(|e| DataError::Strings(name.to_owned(), e))
     }
+
+    /// Bitmap resource `id` of the game executable (`EXE\LIBDAY.EXE`).
+    pub fn exe_bitmap(&self, id: u32) -> Result<Option<libday_formats::pe::Bitmap>, DataError> {
+        let name = "LIBDAY.EXE";
+        libday_formats::pe::bitmap(&self.read(Dir::Exe, name)?, id)
+            .map_err(|e| DataError::Strings(name.to_owned(), e))
+    }
 }
 
 impl GameData {

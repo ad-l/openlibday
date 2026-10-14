@@ -2092,6 +2092,36 @@ a quarter of the cells), so converted saves do not depend on save slots
 that the original game may overwrite. Readers reject other formats and
 newer versions.
 
+### Executable bitmaps and the right-button unit info
+
+Some interface art is not in any DBI, SMK or FF file. It exists only as
+`RT_BITMAP` resources (uncompressed 8-bit DIBs) inside `EXE\LIBDAY.EXE`, so a
+replacement engine must load it from the PE file at runtime
+(`libday_formats::pe::bitmap`, `GameData::exe_bitmap`) and never ship it:
+
+| Id | Picture | Use |
+|---|---|---|
+| 181 | dark figure | stealth (`Jammer` = 0) |
+| 182 | tree and man | moves through forest (`Movement` = 2) |
+| 183 | arc and fire | indirect fire (`weaponType` = 1) |
+| 184 | radar dish | mine detection (`MineDetectionRange` > 0) |
+| 185 | crossed-out plane | anti-air (`IsAA`) |
+| 309 | yellow star | reduced signature (0 < `Jammer` < 100) |
+| 305–308 | light bulbs | tech centres on the map overview, and a tech centre being captured when a unit is near it (not yet implemented; the variant per state is still to be traced) |
+| 240–243 | coloured flags | not yet identified |
+
+While the right button is held on any unit, the minimap well shows the unit
+info instead (`0x45593D`; bitmaps loaded at `0x454FD5`). Offsets are relative
+to the well: a 38×38 portrait at (8,6), and 14-pixel text lines from y 6.
+The first three lines (name, `AR n`, `AP n`) sit beside the portrait at x 49.
+The next lines are at x 8: `RANGE n`, `OVERWATCH YES|NO` and the owner name
+(`Alien` for owner 0). The strings are `LIBDAYEN.DLL` ids 0x280–0x285 and 0x41.
+YES means the current AP covers one shot.
+
+The capability icons (`0x455DCC`) are 25×25 and laid out left to right with
+a 30-pixel step from (8,87), in the order 185, 184, 182, 181, 183, 309.
+Only the icons whose condition holds are drawn.
+
 ### What remains unknown for a replacement engine
 
 The current work establishes data import, substantial static rendering,

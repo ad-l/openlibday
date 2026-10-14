@@ -1,4 +1,5 @@
-//! String tables from PE resources (`EXE\LIBDAYEN.DLL` holds UI text).
+//! String tables and bitmaps from PE resources (`EXE\LIBDAYEN.DLL` holds UI
+//! text, `EXE\LIBDAY.EXE` some interface icons).
 
 use std::collections::BTreeMap;
 
@@ -149,10 +150,110 @@ pub fn string_table(data: &[u8]) -> Result<BTreeMap<u32, String>, PeError> {
     Ok(strings)
 }
 
+const RT_BITMAP: u32 = 2;
+
+/// A decoded `RT_BITMAP` resource.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bitmap {
+    pub width: usize,
+    pub height: usize,
+    /// Opaque RGBA, top row first.
+    pub rgba: Vec<u8>,
+}
+
+/// Raw data of resource `kind`/`id` (first language).
+fn resource(data: &[u8], kind: u32, id: u32) -> Result<Option<&[u8]>, PeError> {
+    let image = Image::parse(data)?;
+    if image.resources == 0 {
+        return Ok(None);
+    }
+    let base = image.offset(image.resources)?;
+    let find = |dir: usize, want: u32| -> Result<Option<u32>, PeError> {
+        Ok(image
+            .directory(base, dir)?
+            .into_iter()
+            .find(|&(name, _)| name == want)
+            .map(|(_, off)| off))
+    };
+    let sub = |off: u32| {
+        if off & 0x8000_0000 != 0 {
+            Ok((off & 0x7FFF_FFFF) as usize)
+        } else {
+            Err(PeError::Corrupt("expected a resource subdirectory"))
+        }
+    };
+    let Some(types) = find(0, kind)? else {
+        return Ok(None);
+    };
+    let Some(langs) = find(sub(types)?, id)? else {
+        return Ok(None);
+    };
+    let Some(&(_, leaf)) = image.directory(base, sub(langs)?)?.first() else {
+        return Ok(None);
+    };
+    if leaf & 0x8000_0000 != 0 {
+        return Err(PeError::Corrupt("unexpected resource depth"));
+    }
+    let entry = base + leaf as usize;
+    let start = image.offset(u32_at(data, entry)?)?;
+    let size = u32_at(data, entry + 4)? as usize;
+    data.get(start..start + size)
+        .map(Some)
+        .ok_or(PeError::Corrupt("resource overrun"))
+}
+
+/// Decodes bitmap resource `id` (uncompressed 8- or 24-bit DIB), if present.
+pub fn bitmap(data: &[u8], id: u32) -> Result<Option<Bitmap>, PeError> {
+    let Some(dib) = resource(data, RT_BITMAP, id)? else {
+        return Ok(None);
+    };
+    let header = u32_at(dib, 0)? as usize;
+    let width = u32_at(dib, 4)? as i32;
+    let height = u32_at(dib, 8)? as i32;
+    let bits = u16_at(dib, 14)?;
+    let compression = u32_at(dib, 16)?;
+    if width <= 0 || height == 0 || compression != 0 || !matches!(bits, 8 | 24) {
+        return Err(PeError::Corrupt("unsupported bitmap"));
+    }
+    let (width, rows) = (width as usize, height.unsigned_abs() as usize);
+    let colours = match (bits, u32_at(dib, 32)? as usize) {
+        (8, 0) => 256,
+        (8, n) => n.min(256),
+        _ => 0,
+    };
+    let palette = dib
+        .get(header..header + colours * 4)
+        .ok_or(PeError::Corrupt("bitmap palette overrun"))?;
+    let pixels = header + colours * 4;
+    let stride = (width * bits as usize / 8).div_ceil(4) * 4;
+    let mut rgba = Vec::with_capacity(width * rows * 4);
+    for row in 0..rows {
+        let src = if height > 0 { rows - 1 - row } else { row };
+        let line = dib
+            .get(pixels + src * stride..pixels + src * stride + stride)
+            .ok_or(PeError::Corrupt("bitmap overrun"))?;
+        for x in 0..width {
+            let [b, g, r] = if bits == 8 {
+                let i = line[x] as usize * 4;
+                palette.get(i..i + 3).map_or([0; 3], |c| [c[0], c[1], c[2]])
+            } else {
+                [line[x * 3], line[x * 3 + 1], line[x * 3 + 2]]
+            };
+            rgba.extend([r, g, b, 255]);
+        }
+    }
+    Ok(Some(Bitmap {
+        width,
+        height: rows,
+        rgba,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn rejects_non_pe() {
+        assert_eq!(super::bitmap(b"hello", 1), Err(super::PeError::NotPe));
         assert_eq!(
             super::string_table(b"MZ"),
             Err(super::PeError::Corrupt("read past end"))

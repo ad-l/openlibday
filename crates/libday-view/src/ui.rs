@@ -885,6 +885,54 @@ pub fn wrap(text: &str, max: f32, measure: impl Fn(&str) -> f32) -> Vec<String> 
     lines
 }
 
+/// Right-button unit info, drawn over the minimap well (offsets relative to
+/// the well, original pixels; measured from the original and `LIBDAY.EXE`).
+pub mod unit_info {
+    /// Portrait position and size.
+    pub const PORTRAIT: (i32, i32, i32) = (8, 6, 38);
+    /// Text: left edge beside the portrait, left edge below it, first line
+    /// top and line height. The first three lines sit beside the portrait.
+    pub const TEXT_BESIDE: i32 = 49;
+    pub const TEXT_LEFT: i32 = 8;
+    pub const TEXT_TOP: i32 = 6;
+    pub const LINE: i32 = 14;
+    /// Capability icons: first position, size and horizontal step.
+    pub const ICONS: (i32, i32) = (8, 87);
+    pub const ICON: i32 = 25;
+    pub const ICON_STEP: i32 = 30;
+
+    /// `LIBDAY.EXE` bitmap resources of the capability icons.
+    pub const ANTI_AIR: u32 = 185;
+    pub const MINE_DETECTION: u32 = 184;
+    pub const FOREST: u32 = 182;
+    pub const STEALTH: u32 = 181;
+    pub const INDIRECT: u32 = 183;
+    pub const LOW_SIGNATURE: u32 = 309;
+    pub const ALL: [u32; 6] = [
+        ANTI_AIR,
+        MINE_DETECTION,
+        FOREST,
+        STEALTH,
+        INDIRECT,
+        LOW_SIGNATURE,
+    ];
+
+    /// Icons shown for a unit type, left to right (as in `LIBDAY.EXE`).
+    pub fn icons(kind: &libday_data::defs::UnitType) -> Vec<u32> {
+        [
+            (kind.anti_air, ANTI_AIR),
+            (kind.mine_detection > 0, MINE_DETECTION),
+            (kind.movement == 2, FOREST),
+            (kind.jammer <= 0, STEALTH),
+            (kind.weapon_type == 1, INDIRECT),
+            ((1..100).contains(&kind.jammer), LOW_SIGNATURE),
+        ]
+        .into_iter()
+        .filter_map(|(on, id)| on.then_some(id))
+        .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

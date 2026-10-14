@@ -65,7 +65,8 @@ only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
 load, `Esc` back to battle or quit.
 Click a unit to select it; with a unit selected, click a tile to preview
 its path and click it again (or double click) to move. The OVERWATCH box
-toggles the reserve. Click the minimap to move the view. The title
+toggles the reserve. Hold the right button on a unit to show its AR, AP,
+range, overwatch, owner and capability icons in the minimap well. Click the minimap to move the view. The title
 bar shows the hovered tile's terrain, building and unit. Set
 `OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
 

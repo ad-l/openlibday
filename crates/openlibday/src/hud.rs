@@ -9,7 +9,7 @@ use libday_view::minimap::{self, Marker};
 use libday_view::text::Fonts;
 use libday_view::ui::{
     self, BOTTOM_H, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_TILE, BOTTOM_W, Button, Field, LIST_ROWS,
-    Layout, Rect, SIDEBAR_H, SIDEBAR_TILE, SIDEBAR_W, Screen, State, UiArt, frame,
+    Layout, Rect, SIDEBAR_H, SIDEBAR_TILE, SIDEBAR_W, Screen, State, UiArt, frame, unit_info,
 };
 use libday_view::{Art, Image, Scene, Sheet, map_point, tile_coords};
 use sdl3::pixels::{Color, PixelFormat};
@@ -59,6 +59,8 @@ pub struct Gfx<'r> {
     ui: HashMap<u16, Texture<'r>>,
     text: HashMap<(String, u32, [u8; 3]), Option<Texture<'r>>>,
     portraits: HashMap<String, Option<Texture<'r>>>,
+    /// Capability icons by `LIBDAY.EXE` bitmap id.
+    icons: HashMap<u32, Texture<'r>>,
     minimap: Option<((u64, i32), Texture<'r>)>,
     overview: Option<((u64, usize), Texture<'r>)>,
 }
@@ -76,8 +78,29 @@ impl<'r> Gfx<'r> {
             ui,
             text: HashMap::new(),
             portraits: HashMap::new(),
+            icons: HashMap::new(),
             minimap: None,
             overview: None,
+        }
+    }
+
+    /// Loads the unit-info capability icons from the game executable.
+    pub fn load_icons(&mut self, game: &libday_data::GameData) {
+        for id in unit_info::ALL {
+            match game.exe_bitmap(id) {
+                Ok(Some(b)) => {
+                    let image = Image {
+                        width: b.width,
+                        height: b.height,
+                        rgba: b.rgba,
+                    };
+                    if let Some(t) = texture(self.creator, &image) {
+                        self.icons.insert(id, t);
+                    }
+                }
+                Ok(None) => eprintln!("LIBDAY.EXE: missing bitmap {id}"),
+                Err(e) => eprintln!("LIBDAY.EXE: bitmap {id}: {e}"),
+            }
         }
     }
 
@@ -568,7 +591,8 @@ fn draw_turns(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Re
     Ok(())
 }
 
-/// Minimap: box-filtered top-down picture, markers, camera outline.
+/// Minimap: box-filtered top-down picture, markers, camera outline. While the
+/// right button is held on a unit, its info replaces the minimap.
 fn draw_minimap(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,
@@ -576,6 +600,9 @@ fn draw_minimap(
     scene: &Scene,
     art: &Art,
 ) -> Result {
+    if let Some(i) = viewer.info {
+        return draw_unit_info(canvas, gfx, viewer, i);
+    }
     let layout = viewer.layout();
     let (rect, square) = viewer.minimap_square();
     let key = (viewer.generation, rect.w);
@@ -599,6 +626,64 @@ fn draw_minimap(
     draw_markers(canvas, viewer, square, false)?;
     canvas.set_clip_rect(None);
     draw_view_outline(canvas, viewer, square, rect)
+}
+
+/// Unit info in the minimap well: portrait, name, AR, AP, range, whether it
+/// can still fire on overwatch, owner and capability icons.
+fn draw_unit_info(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, i: usize) -> Result {
+    let layout = viewer.layout();
+    let (s, fonts) = (layout.scale, &viewer.fonts);
+    let px = TEXT_PX * s as f32;
+    let well = layout.field(Field::Minimap);
+    fill(canvas, frect(well), BLACK)?;
+    let (Some(unit), Some(kind)) = (viewer.map.battle.scenario.units.get(i), viewer.kind_of(i))
+    else {
+        return Ok(());
+    };
+    let at =
+        |x: i32, y: i32, w: i32, h: i32| Rect::new(well.x + x * s, well.y + y * s, w * s, h * s);
+    let (x, y, side) = unit_info::PORTRAIT;
+    if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &kind.image) {
+        canvas.copy(t, None, frect(at(x, y, side, side)))?;
+    }
+    let ap = unit.action_points.unwrap_or(kind.action_points);
+    let overwatch = if ap >= kind.shoot_action_points {
+        "YES"
+    } else {
+        "NO"
+    };
+    let lines = [
+        kind.name.clone(),
+        format!("AR {}", unit.armor.unwrap_or(kind.armor)),
+        format!("AP {ap}"),
+        format!("RANGE {}", kind.range),
+        format!("OVERWATCH {overwatch}"),
+        minimap::player_name(unit.owner),
+    ];
+    let well_w = well.w / s;
+    for (row, text) in lines.iter().enumerate() {
+        let left = if row < 3 {
+            unit_info::TEXT_BESIDE
+        } else {
+            unit_info::TEXT_LEFT
+        };
+        let top = unit_info::TEXT_TOP + row as i32 * unit_info::LINE;
+        let r = at(left, top, well_w - left, unit_info::LINE);
+        gfx.text_in(canvas, fonts, text, px, WHITE, r, 0.0, 0)?;
+    }
+    let (x, y) = unit_info::ICONS;
+    for (n, id) in unit_info::icons(kind).into_iter().enumerate() {
+        if let Some(t) = gfx.icons.get(&id) {
+            let r = at(
+                x + n as i32 * unit_info::ICON_STEP,
+                y,
+                unit_info::ICON,
+                unit_info::ICON,
+            );
+            canvas.copy(t, None, frect(r))?;
+        }
+    }
+    Ok(())
 }
 
 fn draw_overview(
