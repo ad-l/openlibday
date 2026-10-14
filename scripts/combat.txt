@@ -1,0 +1,54 @@
+# Combat: lock a target, move into range and shoot (projectile and impact).
+# Run: openlibday --headless --script scripts/combat.txt  (needs LIBDAY_ROOT)
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Grenadier
+tile 44 18
+deploy Beast Wagon
+tile 44 20
+key Return
+key Y
+# Enemies are never selected (the first unit is selected at the start).
+tile 35 19
+expect selected 0
+# The Beast Wagon cannot hit the Footman at (35, 19) from here: the lock
+# proposes a path to a tile it can shoot from.
+tile 44 20
+expect selected 28
+tile 35 19
+expect selected 28
+expect lock.target Unit(9)
+expect lock.pending false
+expect preview.target.0 35
+expect preview.target.1 25
+# Confirm: it walks there, faces the target and shoots (no projectile).
+tile 35 19
+expect lock.pending true
+idle 2000
+expect lock null
+expect shot null
+expect units.-1.x 35
+expect units.-1.y 25
+expect units.-1.facing 4
+expect units.-1.ap 75
+# The Grenadier lobs a grenade: walk next turn, then shoot from in range.
+tile 44 18
+tile 35 19
+tile 35 19
+idle 2000
+button EndTurn
+idle 2000
+tile 41 20
+tile 35 19
+expect preview.target.0 39
+tile 35 19
+wait 30
+expect shot.unit 27
+expect shot.path.0.0 1799
+idle 2000
+expect units.-2.x 39
+expect units.-2.ap 4
+expect cursor CINVA
+echo combat test passed

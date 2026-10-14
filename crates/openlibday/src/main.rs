@@ -15,6 +15,7 @@
 //! it without a window, at `--size` (default 1024x768).
 
 mod clock;
+mod combat;
 mod hud;
 mod moves;
 mod script;
@@ -165,6 +166,9 @@ struct Viewer {
     selected: Option<usize>,
     preview: Option<moves::Preview>,
     motion: Option<moves::Motion>,
+    /// Enemy locked as the selected unit's target, and a shot playing.
+    lock: Option<combat::Lock>,
+    shot: Option<combat::Shot>,
     /// `ANMSUNIT.FF` (walk animations).
     anims: Option<Vec<u8>>,
     objectives: bool,
@@ -262,7 +266,9 @@ impl Viewer {
         self.selected = None;
         self.info = None;
         self.preview = None;
+        self.lock = None;
         self.motion = None;
+        self.shot = None;
         self.options.hidden_unit = None;
         self.hover = None;
         self.started = self.clock.now();
@@ -392,7 +398,7 @@ impl Viewer {
     /// Selects the next (`step` 1) or previous (`step` -1) unit and centres on it.
     fn cycle_selected(&mut self, step: isize) {
         let units = self.cycle_units();
-        if units.is_empty() || self.motion.is_some() {
+        if units.is_empty() || self.busy() {
             return;
         }
         let n = units.len() as isize;
@@ -407,6 +413,7 @@ impl Viewer {
         let unit = units[next as usize];
         if self.selected != Some(unit) {
             self.preview = None;
+            self.lock = None;
         }
         self.selected = Some(unit);
         self.centre_on_selected();
@@ -421,7 +428,7 @@ impl Viewer {
                 self.controllable(i) && self.kind_of(i).is_some_and(|k| k.can_overwatch)
             }),
             Button::AutoFire => self.selected.is_some(),
-            Button::Left | Button::Right => self.motion.is_none() && !self.cycle_units().is_empty(),
+            Button::Left | Button::Right => !self.busy() && !self.cycle_units().is_empty(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
             Button::Menu => self.screen != Screen::Goal,
@@ -676,6 +683,7 @@ impl Viewer {
                 self.options.arrival = self.show_units.then_some(0);
                 self.selected = None;
                 self.preview = None;
+                self.lock = None;
                 self.rebuild();
             }
             Keycode::LeftBracket | Keycode::RightBracket if free => {
@@ -685,7 +693,7 @@ impl Viewer {
                 self.options.arrival = Some(turn);
                 self.selected = None;
                 self.preview = None;
-                self.preview = None;
+                self.lock = None;
                 self.rebuild();
             }
             _ => {}
@@ -797,7 +805,11 @@ impl Viewer {
             match tile_at(self.map.battle.scenario.size, mx as f64, my as f64) {
                 Some((tx, ty)) if self.screen == Screen::Deploy => self.deploy_click(tx, ty),
                 Some((tx, ty)) if self.screen == Screen::Battle => self.click_tile(tx, ty),
-                _ => self.preview = None,
+                _ if !self.busy() => {
+                    self.preview = None;
+                    self.lock = None;
+                }
+                _ => {}
             }
         }
         self.drag = None;
@@ -954,7 +966,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             .collect()
     };
     // Red grid under a selectable unit the mouse is over, drawn beneath it.
-    let hover_tiles = if viewer.motion.is_none() && matches!(viewer.screen, Screen::Battle) {
+    let hover_tiles = if !viewer.busy() && matches!(viewer.screen, Screen::Battle) {
         viewer
             .hover
             .and_then(|(x, y)| viewer.unit_at(x, y))
@@ -1041,6 +1053,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         let (left, top) = sprite_origin(size, x, y);
         cell(canvas, gfx, left, top, name)?;
     }
+    moves::draw_shot_effects(canvas, gfx, viewer, &screen_f)?;
     // Deployment cursor, on zone tiles only: a hazard-barred square, or a
     // red-barred one when a click would recall the unit already there.
     if matches!(viewer.screen, Screen::Deploy)
@@ -1075,24 +1088,32 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             }
         }
     }
-    if viewer.motion.is_none()
-        && let Some(i) = viewer.selected
-        && let Some(unit) = viewer.map.battle.scenario.units.get(i)
-    {
-        // Arrow in the owner's colour above the centre of the unit's footprint.
-        let tiles = footprint(i);
-        let (a, b) = (tiles[0], tiles[tiles.len() - 1]);
+    // Arrows above the centre of a footprint: the selected unit's in its
+    // owner's colour, a locked target's in red.
+    let arrow = |canvas: &mut Canvas<Window>, gfx: &mut Gfx, tiles: &[(i64, i64)], name: &str| {
+        let (Some(a), Some(b)) = (tiles.first(), tiles.last()) else {
+            return Ok(());
+        };
         let (ax, ay) = libday_view::tile_center(size, a.0, a.1);
         let (bx, by) = libday_view::tile_center(size, b.0, b.1);
         let (mx, my) = ((ax + bx) / 2, (ay + by) / 2);
-        let name = format!("SU{:03}", unit.owner.clamp(0, 4));
         cell(
             canvas,
             gfx,
             mx - 27,
             my - libday_view::SPRITE_ANCHOR_Y,
-            &name,
-        )?;
+            name,
+        )
+    };
+    if !viewer.busy()
+        && let Some(i) = viewer.selected
+        && let Some(unit) = viewer.map.battle.scenario.units.get(i)
+    {
+        let name = format!("SU{:03}", unit.owner.clamp(0, 4));
+        arrow(canvas, gfx, &footprint(i), &name)?;
+    }
+    if !viewer.busy() {
+        arrow(canvas, gfx, &viewer.lock_tiles(), "SU000")?;
     }
     canvas.set_clip_rect(None);
     Ok(())
@@ -1268,6 +1289,8 @@ fn main() -> Result {
         selected: None,
         preview: None,
         motion: None,
+        lock: None,
+        shot: None,
         anims,
         objectives: true,
         markers: Vec::new(),

@@ -10,6 +10,7 @@ pub mod fire;
 pub mod minimap;
 pub mod movement;
 pub mod scene;
+pub mod shot;
 pub mod text;
 pub mod ui;
 

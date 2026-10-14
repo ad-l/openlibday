@@ -215,6 +215,46 @@ impl MoveGrid {
             .map_or((Access::None, BASE_COST), |i| self.cells[i])
     }
 
+    /// Tiles the unit may stop on reachable from `from` (excluding it), with
+    /// the cost of the cheapest path to each, cheapest first.
+    pub fn reachable(&self, from: (i32, i32)) -> Vec<((i32, i32), u32)> {
+        let Some(start) = self.index(from.0, from.1) else {
+            return Vec::new();
+        };
+        let mut dist = vec![u32::MAX; self.cells.len()];
+        let mut heap = BinaryHeap::new();
+        dist[start] = 0;
+        heap.push(Reverse((0u32, 0u16, start)));
+        let mut out = Vec::new();
+        while let Some(Reverse((d, s, i))) = heap.pop() {
+            if d > dist[i] {
+                continue;
+            }
+            let (x, y) = ((i as i32) % self.width, (i as i32) / self.width);
+            if i != start && self.cells[i].0 == Access::Stop {
+                out.push(((x, y), d));
+            }
+            if usize::from(s) >= MAX_STEPS {
+                continue;
+            }
+            for (dx, dy) in DIRS {
+                let Some(j) = self.index(x + dx, y + dy) else {
+                    continue;
+                };
+                let (access, cost) = self.cells[j];
+                if access == Access::None {
+                    continue;
+                }
+                let nd = d + cost + u32::from(dx != 0 && dy != 0);
+                if nd < dist[j] {
+                    dist[j] = nd;
+                    heap.push(Reverse((nd, s + 1, j)));
+                }
+            }
+        }
+        out
+    }
+
     /// Cheapest path from `from` to `to` (excluding `from`), or `None`
     /// when `to` is unreachable or not a tile the unit may stop on.
     pub fn find_path(&self, from: (i32, i32), to: (i32, i32)) -> Option<Vec<Step>> {

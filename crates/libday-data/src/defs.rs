@@ -119,6 +119,34 @@ pub struct UnitType {
     pub weapon_type: i64,
     /// `Jammer`: 0 = stealth, below 100 = reduced signature.
     pub jammer: i64,
+    pub shot: ShotAnimation,
+}
+
+/// Which shot animations a unit type has (`Shoot*Animation_Begin` != -1)
+/// and how its projectile flies.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShotAnimation {
+    /// `S`: raise the weapon.
+    pub begin: bool,
+    /// `T`: fire.
+    pub shoot: bool,
+    /// `U`: lower the weapon.
+    pub end: bool,
+    /// `P`: a projectile flies to the target.
+    pub projectile: bool,
+    /// `I`: impact at the target.
+    pub impact: bool,
+    /// `E`: the unit blows up.
+    pub explosion: bool,
+    /// `ShootShootAnimation_ProjBegin`: fire frame launching the projectile.
+    pub proj_begin: i64,
+    /// `ShootProjectileAnimation_PixOffset`: path pixels skipped at launch.
+    pub pix_offset: i64,
+    /// `ShootProjectileAnimation_PixSpeed`: path pixels per frame.
+    pub pix_speed: i64,
+    /// `ShootProjectileAnimation_Curve`: arc height in percent of the
+    /// path length.
+    pub curve: i64,
 }
 
 impl UnitType {
@@ -286,6 +314,18 @@ impl Definitions {
                 mine_detection: t.int_or(r, "MineDetectionRange", 0)?,
                 weapon_type: t.int_or(r, "weaponType", 0)?,
                 jammer: t.int_or(r, "Jammer", 100)?,
+                shot: ShotAnimation {
+                    begin: t.int_or(r, "ShootBeginAnimation_Begin", -1)? != -1,
+                    shoot: t.int_or(r, "ShootShootAnimation_Begin", -1)? != -1,
+                    end: t.int_or(r, "ShootEndAnimation_Begin", -1)? != -1,
+                    projectile: t.int_or(r, "ShootProjectileAnimation_Begin", -1)? != -1,
+                    impact: t.int_or(r, "ShootImpactAnimation_Begin", -1)? != -1,
+                    explosion: t.int_or(r, "ExplosionAnimation_Begin", -1)? != -1,
+                    proj_begin: t.int_or(r, "ShootShootAnimation_ProjBegin", 0)?,
+                    pix_offset: t.int_or(r, "ShootProjectileAnimation_PixOffset", 0)?,
+                    pix_speed: t.int_or(r, "ShootProjectileAnimation_PixSpeed", 20)?,
+                    curve: t.int_or(r, "ShootProjectileAnimation_Curve", 0)?,
+                },
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));

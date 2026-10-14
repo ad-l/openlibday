@@ -23,6 +23,12 @@ crossed beyond the unit's AP), a second click walks it with the original
 walk animations; overwatch keeps a shot's AP in reserve. The mouse cursor
 shows the order: move, fire (range and line of sight as the original
 checks them), move closer, or not enough AP.
+Combat has begun: clicking an enemy locks it as the target (red arrow), with
+a path to the cheapest tile the unit can shoot from when it cannot hit it
+from where it stands; a second click moves there, turns to the target and
+shoots with the original raise/fire/lower, projectile (arced, for units
+that have one and are not adjacent) and impact animations, charging the
+shot's AP. Hits, damage, scatter and craters are not implemented yet.
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -66,7 +72,8 @@ only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
 `O` GOAL dialog, `I` cycle interface scale, `F5` quick save, `F9` quick
 load, `Esc` back to battle or quit.
 Click a unit to select it (click it again to turn it clockwise); with a unit selected, click a tile to preview
-its path and click it again (or double click) to move. The OVERWATCH box
+its path and click it again (or double click) to move; click an enemy to
+target it and again to attack. The OVERWATCH box
 toggles the reserve. Hold the right button on a unit to show its AR, AP,
 range, overwatch, owner and capability icons in the minimap well. Click the minimap to move the view. The title
 bar shows the hovered tile's terrain, building and unit. Set
@@ -79,18 +86,19 @@ clock (time only advances per scripted frame, so runs are deterministic),
 then continues interactively; add `--headless` to render offscreen and exit
 at the end of the script, and `--size WxH` for its resolution (default
 1024x768). Commands, one per line (`#` comments): `fps N`, `wait FRAMES`,
-`idle [MAX]` (until movement and the AI turn finish), `key NAME`, `click X Y
+`idle [MAX]` (until movement, shots and the AI turn finish), `key NAME`, `click X Y
 [right]`, `move X Y`, `tile X Y [right]` / `hover X Y` (map tiles; recentres
 as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
 `deploy UNIT`, `centre X Y`, `zoom F`, `screenshot FILE.png`, `record DIR N`
 (N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
 phase, turn, selection, hover cursor and fire check code, path preview,
-motion, deploy zone and every unit),
+motion, target lock, shot timeline, deploy zone and every unit),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
 `units.-1.x`), `echo TEXT`, `quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
-skirmish from selection to turn 2 and is run by `cargo test` when
-`LIBDAY_ROOT` is set:
+skirmish from selection to turn 2 and
+[scripts/combat.txt](scripts/combat.txt) two attacks; both are run by
+`cargo test` when `LIBDAY_ROOT` is set:
 
 ```powershell
 cargo run --release -p openlibday -- --headless --script scripts\smoke.txt

@@ -8,6 +8,7 @@ use libday_view::fire::{self, Fire, Target};
 use libday_view::movement::{
     self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
+use libday_view::shot::{self, Anim};
 use libday_view::{SPRITE_ANCHOR_Y, SPRITE_W, Sheet, tile_center};
 use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
@@ -24,13 +25,15 @@ pub struct Preview {
     pub affordable: usize,
 }
 
-/// Where and how the walking unit is drawn.
+/// Where and how the walking (or shooting) unit is drawn.
 struct Walker {
+    unit: usize,
     /// Point the unit is centred on (a tile centre while standing), in map
     /// pixels.
     centre: (i32, i32),
     facing: u8,
-    /// Animation frame counter.
+    /// Animation (`None`: slide the standing sprite) and its frame counter.
+    anim: Option<String>,
     frame: usize,
     /// Tile whose depth the unit is drawn at.
     depth: (i64, i64),
@@ -137,13 +140,19 @@ impl Viewer {
 
     /// A left click on map tile `(x, y)`.
     pub(crate) fn click_tile(&mut self, x: i64, y: i64) {
-        if self.motion.is_some() {
+        if self.busy() {
             return;
         }
+        if let Some(target) = self.enemy_at(x, y) {
+            self.click_target(target);
+            return;
+        }
+        self.lock = None;
         let unit = self.unit_at(x, y);
         match (self.selected, unit) {
             (Some(sel), Some(u)) if sel == u => self.turn_clockwise(u),
-            (_, Some(u)) => {
+            // Only own units are selected; enemies are targeted.
+            (_, Some(u)) if self.controllable(u) => {
                 if self.selected != Some(u) {
                     self.preview = None;
                 }
@@ -175,7 +184,7 @@ impl Viewer {
         self.rebuild();
     }
 
-    fn start_move(&mut self) {
+    pub(crate) fn start_move(&mut self) {
         let Some(p) = self.preview.take() else {
             return;
         };
@@ -210,10 +219,10 @@ impl Viewer {
         self.rebuild();
     }
 
-    /// Advances the walking unit; returns whether one is moving.
+    /// Advances the walking or shooting unit; returns whether one is busy.
     pub(crate) fn tick(&mut self) -> bool {
         let Some(m) = &mut self.motion else {
-            return false;
+            return self.tick_shot();
         };
         let shown =
             (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
@@ -238,7 +247,8 @@ impl Viewer {
                 self.options.hidden_unit = None;
                 self.rebuild();
                 self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-                return false;
+                self.arrived();
+                return self.shot.is_some();
             }
             unit.facing = i64::from(m.steps[m.done].facing);
         }
@@ -248,6 +258,20 @@ impl Viewer {
     /// The walking unit's centre (map pixels), facing, animation frame
     /// counter and the tile whose depth it is drawn at.
     fn walker(&self) -> Option<Walker> {
+        if let Some(s) = &self.shot {
+            let (anim, frame) = s.shooter(s.frame(self.clock.now()))?;
+            let unit = &self.map.battle.scenario.units[s.unit];
+            let kind = self.defs.unit(unit.kind)?;
+            let facing = unit.facing.rem_euclid(8) as u8;
+            return Some(Walker {
+                unit: s.unit,
+                centre: tile_center(self.map.battle.scenario.size, unit.x, unit.y),
+                facing,
+                anim: Some(shot::animation_name(&kind.image, unit.owner, anim, facing)),
+                frame,
+                depth: (unit.x, unit.y),
+            });
+        }
         let m = self.motion.as_ref()?;
         let size = self.map.battle.scenario.size;
         let step = m.steps.get(m.done)?;
@@ -264,9 +288,17 @@ impl Viewer {
         } else {
             m.from
         };
+        let unit = &self.map.battle.scenario.units[m.unit];
+        let anim = self
+            .defs
+            .unit(unit.kind)
+            .filter(|k| k.move_animation)
+            .map(|k| movement::walk_animation_name(&k.image, unit.owner, step.facing));
         Some(Walker {
+            unit: m.unit,
             centre,
             facing: step.facing,
+            anim,
             frame,
             depth,
         })
@@ -278,7 +310,7 @@ impl Viewer {
     }
 
     /// Building on tile `(x, y)`.
-    fn building_at(&self, x: i64, y: i64) -> Option<usize> {
+    pub(crate) fn building_at(&self, x: i64, y: i64) -> Option<usize> {
         if self.options.terrain_only {
             return None;
         }
@@ -299,7 +331,7 @@ impl Viewer {
     /// otherwise (out of range or line of sight: move closer). Own units
     /// get the selection grid, drawn separately.
     pub(crate) fn battle_cursor(&self) -> Option<((i64, i64), &'static str)> {
-        if self.motion.is_some() || !matches!(self.screen, libday_view::ui::Screen::Battle) {
+        if self.busy() || !matches!(self.screen, libday_view::ui::Screen::Battle) {
             return None;
         }
         let (x, y) = self.hover?;
@@ -356,45 +388,61 @@ impl Viewer {
     }
 }
 
-/// Draws the walking unit; `screen` maps map pixels to output pixels.
+/// Draws frame `frame` (looping) of `ANMSUNIT.FF` animation `name`
+/// centred on map pixel `centre`; `false` when it has no frames.
+pub fn draw_animation(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    name: &str,
+    frame: usize,
+    centre: (i32, i32),
+    screen: &dyn Fn(f64, f64) -> (f32, f32),
+) -> Result<bool> {
+    let creator = gfx.creator();
+    let frames = gfx
+        .anims
+        .entry(name.to_string())
+        .or_insert_with(|| {
+            let ff = viewer.anims.as_deref()?;
+            let frames = movement::animation_frames(ff, name)?;
+            frames.iter().map(|f| hud::texture(creator, f)).collect()
+        })
+        .as_ref();
+    let Some(frames) = frames.filter(|f| !f.is_empty()) else {
+        return Ok(false);
+    };
+    let texture = &frames[frame % frames.len()];
+    let (w, h) = (texture.width() as i32, texture.height() as i32);
+    // Centred on the point (`0x468515`), halves rounded down.
+    let (ox, oy) = (f64::from(centre.0 - w / 2), f64::from(centre.1 - h / 2));
+    let (x0, y0) = screen(ox, oy);
+    let (x1, y1) = screen(ox + f64::from(w), oy + f64::from(h));
+    canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
+    Ok(true)
+}
+
+/// Draws the walking or shooting unit; `screen` maps map pixels to output
+/// pixels.
 pub fn draw_walker(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,
     viewer: &Viewer,
     screen: &dyn Fn(f64, f64) -> (f32, f32),
 ) -> Result {
-    let (Some(m), Some(w)) = (&viewer.motion, viewer.walker()) else {
+    let Some(w) = viewer.walker() else {
         return Ok(());
     };
-    let ((cx, cy), facing, frame) = (w.centre, w.facing, w.frame);
-    let unit = &viewer.map.battle.scenario.units[m.unit];
+    let ((cx, cy), facing) = (w.centre, w.facing);
+    if let Some(name) = &w.anim
+        && draw_animation(canvas, gfx, viewer, name, w.frame, w.centre, screen)?
+    {
+        return Ok(());
+    }
+    let unit = &viewer.map.battle.scenario.units[w.unit];
     let Some(kind) = viewer.defs.unit(unit.kind) else {
         return Ok(());
     };
-    let name = movement::walk_animation_name(&kind.image, unit.owner, facing);
-    let creator = gfx.creator();
-    let frames = gfx
-        .anims
-        .entry(name.clone())
-        .or_insert_with(|| {
-            let ff = viewer.anims.as_deref()?;
-            let frames = movement::animation_frames(ff, &name)?;
-            frames.iter().map(|f| hud::texture(creator, f)).collect()
-        })
-        .as_ref();
-    if kind.move_animation
-        && let Some(frames) = frames
-        && !frames.is_empty()
-    {
-        let texture = &frames[frame % frames.len()];
-        let (w, h) = (texture.width() as i32, texture.height() as i32);
-        // Centred on the point (`0x468515`), halves rounded down.
-        let (ox, oy) = (f64::from(cx - w / 2), f64::from(cy - h / 2));
-        let (x0, y0) = screen(ox, oy);
-        let (x1, y1) = screen(ox + f64::from(w), oy + f64::from(h));
-        canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
-        return Ok(());
-    }
     // No animation: slide the standing sprite.
     let (x, y) = (
         f64::from(cx - SPRITE_W / 2),
@@ -406,6 +454,34 @@ pub fn draw_walker(
         let (x0, y0) = screen(x, y);
         let (x1, y1) = screen(x + 54.0, y + 56.0);
         canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
+    }
+    Ok(())
+}
+
+/// Draws the shot's projectile and impact, over everything.
+pub fn draw_shot_effects(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    screen: &dyn Fn(f64, f64) -> (f32, f32),
+) -> Result {
+    let Some(s) = &viewer.shot else {
+        return Ok(());
+    };
+    let f = s.frame(viewer.clock.now());
+    let unit = &viewer.map.battle.scenario.units[s.unit];
+    let Some(kind) = viewer.defs.unit(unit.kind) else {
+        return Ok(());
+    };
+    if let Some((at, frame)) = s.projectile(f) {
+        let name = shot::animation_name(&kind.image, unit.owner, Anim::Projectile, 0);
+        draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
+    }
+    if let Some(frame) = s.impact(f) {
+        let name = shot::animation_name(&kind.image, unit.owner, Anim::Impact, 0);
+        let size = viewer.map.battle.scenario.size;
+        let at = tile_center(size, s.aim.0, s.aim.1);
+        draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
     }
     Ok(())
 }

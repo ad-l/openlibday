@@ -198,7 +198,7 @@ impl Runner<'_, '_> {
             }
             Command::Idle(max) => {
                 let mut n = 0;
-                while viewer.motion.is_some() || viewer.flow.ai_until.is_some() {
+                while viewer.busy() || viewer.flow.ai_until.is_some() {
                     if n == *max {
                         return Err(format!("still busy after {max} frames").into());
                     }
@@ -458,6 +458,29 @@ pub fn state(viewer: &Viewer) -> Value {
             "positions": m.positions.iter().map(|((x, y), s)| json!([x, y, s])).collect::<Vec<_>>(),
         })
     });
+    let lock = viewer.lock.as_ref().map(|l| {
+        json!({
+            "unit": l.unit,
+            "target": format!("{:?}", l.target),
+            "pending": l.pending,
+        })
+    });
+    let shot = viewer.shot.as_ref().map(|s| {
+        json!({
+            "unit": s.unit,
+            "target": format!("{:?}", s.target),
+            "aim": [s.aim.0, s.aim.1],
+            "frame": s.frame(viewer.clock.now()),
+            "begin": s.begin,
+            "shoot": s.shoot,
+            "end": s.end,
+            "launch": s.launch,
+            "path": s.path.iter().map(|(x, y)| json!([x, y])).collect::<Vec<_>>(),
+            "impact_start": s.impact_start,
+            "impact_len": s.impact_len,
+            "total": s.total,
+        })
+    });
     let setup = viewer.flow.setup.as_ref().map(|s| {
         json!({
             "points": s.points,
@@ -493,6 +516,8 @@ pub fn state(viewer: &Viewer) -> Value {
         "camera": [viewer.camera.0, viewer.camera.1],
         "preview": preview,
         "motion": motion,
+        "lock": lock,
+        "shot": shot,
         "zone": zone,
         "units": units,
     })

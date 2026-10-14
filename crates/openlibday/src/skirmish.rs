@@ -547,6 +547,7 @@ impl Viewer {
             .iter()
             .position(|u| u.owner == PLAYER && u.arrival == 0);
         self.preview = None;
+        self.lock = None;
         self.started = self.clock.now();
         self.centre_on_selected();
     }
@@ -564,6 +565,7 @@ impl Viewer {
         self.screen = Screen::AiTurn;
         self.selected = None;
         self.preview = None;
+        self.lock = None;
         self.started = self.clock.now();
         self.flow.message = Some(format!(
             "{}'s turn has begun",

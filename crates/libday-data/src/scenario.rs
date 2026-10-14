@@ -188,14 +188,11 @@ pub fn merged_owner(owner: i64, humans: usize) -> i64 {
     }
 }
 
-/// Facing of a unit placed on `(x, y)` of a `size`-tile map: toward the map
-/// centre, as LIBDAY.EXE 0x43430b. The original takes `atan2` of the
-/// centre-to-unit vector, converts it to whole degrees with its 6.28318
-/// approximation of 2π, offsets by 22° and buckets by 45°.
+/// Facing of a unit on `from` looking at tile `to` (the deployment rule's
+/// buckets).
 #[allow(clippy::approx_constant)]
-pub fn deploy_facing(size: i64, x: i64, y: i64) -> i64 {
-    let c = size / 2;
-    let rad = ((y - c) as f64).atan2((x - c) as f64);
+pub fn facing_toward(from: (i64, i64), to: (i64, i64)) -> i64 {
+    let rad = ((from.1 - to.1) as f64).atan2((from.0 - to.0) as f64);
     let mut deg = rad * 360.0 / 6.28318;
     if rad < 0.0 {
         deg += 360.0;
@@ -205,6 +202,15 @@ pub fn deploy_facing(size: i64, x: i64, y: i64) -> i64 {
         .get(e as usize / 45)
         .copied()
         .unwrap_or(0)
+}
+
+/// Facing of a unit placed on `(x, y)` of a `size`-tile map: toward the map
+/// centre, as LIBDAY.EXE 0x43430b. The original takes `atan2` of the
+/// centre-to-unit vector, converts it to whole degrees with its 6.28318
+/// approximation of 2π, offsets by 22° and buckets by 45°.
+pub fn deploy_facing(size: i64, x: i64, y: i64) -> i64 {
+    let c = size / 2;
+    facing_toward((x, y), (c, c))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
