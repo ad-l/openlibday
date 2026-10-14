@@ -59,7 +59,7 @@ fn step_length(size: usize, a: (i64, i64), b: (i64, i64)) -> f64 {
 impl Viewer {
     /// Current and maximum action points of unit `i`.
     pub(crate) fn action_points(&self, i: usize) -> Option<(i64, i64)> {
-        let unit = self.map.scenario.units.get(i)?;
+        let unit = self.map.battle.scenario.units.get(i)?;
         let kind = self.defs.unit(unit.kind)?;
         Some((
             unit.action_points.unwrap_or(kind.action_points),
@@ -75,34 +75,36 @@ impl Viewer {
     pub(crate) fn overwatch(&self, i: usize) -> bool {
         let can = self
             .map
+            .battle
             .scenario
             .units
             .get(i)
             .and_then(|u| self.defs.unit(u.kind))
             .is_some_and(|k| k.can_overwatch);
-        can && !self.overwatch_off.contains(&i)
+        can && self.map.battle.scenario.units[i].overwatch
     }
 
     pub(crate) fn toggle_overwatch(&mut self) {
-        if let Some(i) = self.selected
-            && !self.overwatch_off.remove(&i)
+        if let Some(unit) = self
+            .selected
+            .and_then(|i| self.map.battle.scenario.units.get_mut(i))
         {
-            self.overwatch_off.insert(i);
+            unit.overwatch ^= true;
         }
         self.refresh_preview();
     }
 
     /// AP of one shot reserved by overwatch, if on.
     fn reserve(&self, i: usize) -> Option<u32> {
-        let unit = self.map.scenario.units.get(i)?;
+        let unit = self.map.battle.scenario.units.get(i)?;
         let kind = self.defs.unit(unit.kind)?;
         self.overwatch(i)
             .then_some(kind.shoot_action_points.max(0) as u32)
     }
 
     pub(crate) fn plan(&self, unit: usize, target: (i64, i64)) -> Option<Preview> {
-        let u = self.map.scenario.units.get(unit)?;
-        let grid = movement::move_grid(&self.map.scenario, &self.defs, unit)?;
+        let u = self.map.battle.scenario.units.get(unit)?;
+        let grid = movement::move_grid(&self.map.battle.scenario, &self.defs, unit)?;
         let steps = grid.find_path((u.x as i32, u.y as i32), (target.0 as i32, target.1 as i32))?;
         let ap = self.action_points(unit)?.0.max(0) as u32;
         // The preview always keeps the overwatch shot back.
@@ -151,7 +153,7 @@ impl Viewer {
         };
         let budget = move_budget(ap.max(0) as u32, self.reserve(p.unit));
         let (n, spent) = executable_steps(&p.steps, budget);
-        let unit = &self.map.scenario.units[p.unit];
+        let unit = &self.map.battle.scenario.units[p.unit];
         let Some(kind) = self.defs.unit(unit.kind) else {
             return;
         };
@@ -169,14 +171,14 @@ impl Viewer {
             speed: kind.move_pix_speed.max(1) as f64 * ANIMATION_FPS,
             final_ap: ap - i64::from(spent),
         });
-        self.map.scenario.units[p.unit].facing = i64::from(p.steps[0].facing);
+        self.map.battle.scenario.units[p.unit].facing = i64::from(p.steps[0].facing);
         self.options.hidden_unit = Some(p.unit);
         self.rebuild();
     }
 
     /// Advances the walking unit; returns whether one is moving.
     pub(crate) fn tick(&mut self) -> bool {
-        let size = self.map.scenario.size;
+        let size = self.map.battle.scenario.size;
         let Some(m) = &mut self.motion else {
             return false;
         };
@@ -189,7 +191,7 @@ impl Viewer {
             if elapsed * m.speed < length {
                 break;
             }
-            let unit = &mut self.map.scenario.units[m.unit];
+            let unit = &mut self.map.battle.scenario.units[m.unit];
             (unit.x, unit.y) = to;
             if let Some(ap) = &mut unit.action_points {
                 *ap -= i64::from(step.cost);
@@ -202,10 +204,10 @@ impl Viewer {
             if m.done == m.steps.len() {
                 let (i, ap) = (m.unit, m.final_ap);
                 self.motion = None;
-                self.map.scenario.units[i].action_points = Some(ap.max(0));
+                self.map.battle.scenario.units[i].action_points = Some(ap.max(0));
                 self.options.hidden_unit = None;
                 self.rebuild();
-                self.markers = libday_view::minimap::markers(&self.map.scenario, &self.defs);
+                self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
                 return false;
             }
             unit.facing = i64::from(m.steps[m.done].facing);
@@ -217,7 +219,7 @@ impl Viewer {
     /// frame counter and the tile whose depth it is drawn at.
     fn walker(&self) -> Option<Walker> {
         let m = self.motion.as_ref()?;
-        let size = self.map.scenario.size;
+        let size = self.map.battle.scenario.size;
         let step = m.steps.get(m.done)?;
         let to = (i64::from(step.x), i64::from(step.y));
         let length = step_length(size, m.from, to);
@@ -256,7 +258,7 @@ pub fn draw_walker(
         return Ok(());
     };
     let ((x, y), facing, frame) = (w.origin, w.facing, w.frame);
-    let unit = &viewer.map.scenario.units[m.unit];
+    let unit = &viewer.map.battle.scenario.units[m.unit];
     let Some(kind) = viewer.defs.unit(unit.kind) else {
         return Ok(());
     };

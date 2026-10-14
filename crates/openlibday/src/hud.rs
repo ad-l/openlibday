@@ -259,7 +259,7 @@ impl Viewer {
         let well = layout.field(Field::Minimap);
         let s = layout.scale;
         let side = (well.w.min(well.h) - 4 * s).max(1);
-        let size = self.map.scenario.size.max(1) as f32;
+        let size = self.map.battle.scenario.size.max(1) as f32;
         let tile = (side as f32 / size).floor().max(1.0);
         let used = (tile * size) as i32;
         let x = well.x + (well.w - used) / 2;
@@ -277,7 +277,7 @@ impl Viewer {
     /// The overview's map square, centred in the viewport.
     fn overview_square(&self) -> (Rect, usize) {
         let v = self.layout().viewport();
-        let size = self.map.scenario.size.max(1) as i32;
+        let size = self.map.battle.scenario.size.max(1) as i32;
         let cell = ((v.w.min(v.h) as f32 * 0.92) as i32 / size).max(1);
         let side = cell * size;
         (
@@ -312,7 +312,7 @@ impl Viewer {
             rect.h + 2 * margin,
         );
         grown.contains(x, y).then(|| {
-            let size = self.map.scenario.size as f64;
+            let size = self.map.battle.scenario.size as f64;
             let (tx, ty) = square.tile_of(x, y);
             (tx.clamp(0.0, size), ty.clamp(0.0, size))
         })
@@ -320,7 +320,7 @@ impl Viewer {
 
     /// Centres the camera on continuous tile coordinates.
     pub(crate) fn centre_on_tile(&mut self, tx: f64, ty: f64) {
-        let (px, py) = map_point(self.map.scenario.size, tx, ty);
+        let (px, py) = map_point(self.map.battle.scenario.size, tx, ty);
         let v = self.layout().viewport();
         self.camera = (
             px as f32 - v.w as f32 / (2.0 * self.zoom),
@@ -331,7 +331,7 @@ impl Viewer {
     /// The camera's viewport corners in continuous tile coordinates.
     fn view_corners(&self) -> [(f64, f64); 4] {
         let v = self.layout().viewport();
-        let size = self.map.scenario.size;
+        let size = self.map.battle.scenario.size;
         [(0, 0), (v.w, 0), (v.w, v.h), (0, v.h)].map(|(x, y)| {
             let (mx, my) = self.to_map(x as f32, y as f32);
             tile_coords(size, mx as f64, my as f64)
@@ -511,12 +511,12 @@ fn draw_battle_sidebar(
     for button in layout.buttons(Screen::Battle, 0) {
         let on = match button {
             Button::Overwatch => viewer.overwatch_on(),
-            Button::AutoFire => viewer.auto_fire,
+            Button::AutoFire => viewer.map.battle.auto_fire,
             _ => false,
         };
         gfx.button(canvas, viewer, &layout, button, State::Normal, on)?;
     }
-    let info = &viewer.map.scenario.info;
+    let info = &viewer.map.battle.scenario.info;
     if info.points > 0 {
         let r = layout.field(Field::Credits);
         gfx.text_in(
@@ -666,7 +666,7 @@ fn draw_goal(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Res
         )?;
     }
     let r = layout.field(Field::GoalText);
-    let info = &viewer.map.scenario.info;
+    let info = &viewer.map.battle.scenario.info;
     let mut lines = vec![String::new()];
     if !info.province.is_empty() {
         lines.extend([info.province.clone(), String::new()]);

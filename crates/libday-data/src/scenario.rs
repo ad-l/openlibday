@@ -4,6 +4,7 @@
 //! editor (`ORDER BY` id/counter), which is also their draw order.
 
 use libday_formats::Database;
+use serde::{Deserialize, Serialize};
 
 use crate::DataError;
 use crate::records::Records;
@@ -15,7 +16,7 @@ pub struct Cell {
     pub terrain: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Building {
     pub counter: i64,
     pub id: i64,
@@ -27,7 +28,33 @@ pub struct Building {
     pub ai_target: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// AI order of a unit on the map (`OrderID`, `Turn`, `Probability`,
+/// `EnemyUnitType`). Targets are in [`Scenario::order_targets`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Order {
+    /// `Unit Order Id Lookup`: 0 none, 1 goto, 2 goto fast, 3 escort,
+    /// 4 defend, 5 patrol, 6 attack.
+    pub id: i64,
+    /// Inclusive expiry turn: cleared once the current turn is later.
+    pub expiry: i64,
+    /// Retention roll: cleared when `rand() % 100` exceeds it.
+    pub probability: i64,
+    pub enemy_type: i64,
+}
+
+impl Default for Order {
+    /// The editor's defaults for a new unit.
+    fn default() -> Self {
+        Self {
+            id: 0,
+            expiry: 0,
+            probability: 100,
+            enemy_type: 65535,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unit {
     pub counter: i64,
     pub id: i64,
@@ -43,10 +70,35 @@ pub struct Unit {
     pub reinforcement: bool,
     pub armor: Option<i64>,
     pub action_points: Option<i64>,
+    /// `negAP` (always 0 in the stock scenarios and saves seen).
+    pub neg_ap: i64,
+    pub order: Order,
+    /// Reinforcements only: `order`, an AI order derived from the objective.
+    pub objective_order: bool,
+    /// Overwatch requested (effective only for types that can overwatch).
+    /// Not stored by the original game; on for every unit at load.
+    pub overwatch: bool,
+}
+
+/// A target of a unit's AI order: another unit or building
+/// (`Unit Order ID List`) or a position (`Unit Order Pos List`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderTarget {
+    pub counter: i64,
+    pub unit: i64,
+    #[serde(flatten)]
+    pub target: Target,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Target {
+    Id(i64),
+    Position { x: i64, y: i64 },
 }
 
 /// A road (`Roads On Map`) or wall (`Walls On Map`) tile.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Surface {
     pub counter: i64,
     pub kind: i64,
@@ -58,7 +110,7 @@ pub struct Surface {
     pub broken: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ruin {
     pub counter: i64,
     /// `RUINS.DBI` sprite / `Ruin Types.id` (upper case).
@@ -67,7 +119,7 @@ pub struct Ruin {
     pub y: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mine {
     pub counter: i64,
     pub kind: i64,
@@ -105,9 +157,13 @@ pub struct ScenarioInfo {
     pub turns: i64,
     /// `One Off Deployment`: technology/deployment points of a skirmish.
     pub points: i64,
+    /// `NextID_Units` / `NextID_Buildings`. The original does not update
+    /// them in savegames; see [`Scenario::next_unit_id`].
+    pub next_unit_id: i64,
+    pub next_building_id: i64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scenario {
     pub size: usize,
     /// Row-major (`y * size + x`).
@@ -120,6 +176,8 @@ pub struct Scenario {
     pub ruins: Vec<Ruin>,
     pub mines: Vec<Mine>,
     pub deployments: Vec<Deployment>,
+    /// AI order targets: `Unit Order ID List`, then `Unit Order Pos List`.
+    pub order_targets: Vec<OrderTarget>,
     pub info: ScenarioInfo,
 }
 
@@ -189,6 +247,15 @@ impl Scenario {
                 reinforcement: false,
                 armor: Some(t.int(r, "currentAR")?),
                 action_points: Some(t.int(r, "currentAP")?),
+                neg_ap: t.int_or(r, "negAP", 0)?,
+                order: Order {
+                    id: t.int_or(r, "OrderID", 0)?,
+                    expiry: t.int_or(r, "Turn", 0)?,
+                    probability: t.int_or(r, "Probability", 100)?,
+                    enemy_type: t.int_or(r, "EnemyUnitType", 65535)?,
+                },
+                objective_order: false,
+                overwatch: true,
             });
         }
         units.sort_by_key(|u| u.id);
@@ -208,6 +275,10 @@ impl Scenario {
                 reinforcement: true,
                 armor: None,
                 action_points: None,
+                neg_ap: 0,
+                order: Order::default(),
+                objective_order: t.flag_or(r, "order", false)?,
+                overwatch: true,
             });
         }
         reinforcements.sort_by_key(|u| u.id);
@@ -279,6 +350,28 @@ impl Scenario {
         }
         deployments.sort_by_key(|d| d.counter);
 
+        let mut order_targets = Vec::new();
+        let t = Records::read(db, "Unit Order ID List")?;
+        for r in 0..t.len() {
+            order_targets.push(OrderTarget {
+                counter: t.int(r, "Counter")?,
+                unit: t.int(r, "Unit ID")?,
+                target: Target::Id(t.int(r, "Id")?),
+            });
+        }
+        let t = Records::read(db, "Unit Order Pos List")?;
+        for r in 0..t.len() {
+            order_targets.push(OrderTarget {
+                counter: t.int(r, "Counter")?,
+                unit: t.int(r, "Unit ID")?,
+                target: Target::Position {
+                    x: t.int(r, "PosX")?,
+                    y: t.int(r, "PosY")?,
+                },
+            });
+        }
+        order_targets.sort_by_key(|o| (matches!(o.target, Target::Position { .. }), o.counter));
+
         let t = Records::read(db, "Scenario Info")?;
         let info = if t.is_empty() {
             ScenarioInfo::default()
@@ -289,6 +382,8 @@ impl Scenario {
                 description: t.text_or(0, "descriptionEnglish")?,
                 turns: t.int_or(0, "turn_qty", 0)?,
                 points: t.int_or(0, "One Off Deployment", 0)?,
+                next_unit_id: t.int_or(0, "NextID_Units", 0)?,
+                next_building_id: t.int_or(0, "NextID_Buildings", 0)?,
             }
         };
 
@@ -302,8 +397,16 @@ impl Scenario {
             ruins,
             mines,
             deployments,
+            order_targets,
             info,
         })
+    }
+
+    /// ID for a new unit: `NextID_Units`, or past the largest ID in use (the
+    /// original numbers deployed units that way without updating the field).
+    pub fn next_unit_id(&self) -> i64 {
+        let used = self.units.iter().map(|u| u.id + 1).max().unwrap_or(0);
+        used.max(self.info.next_unit_id)
     }
 
     pub fn contains(&self, x: i64, y: i64) -> bool {

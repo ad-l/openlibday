@@ -8,6 +8,8 @@ license.workspace = true
 
 [dependencies]
 libday-formats.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

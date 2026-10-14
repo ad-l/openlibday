@@ -2040,6 +2040,54 @@ centred on the 54x56 sprite cell); the unit advances
 animations, movement sounds and troopers hidden in forest are not yet
 reproduced.
 
+### Savegames
+
+Each original save slot is a directory `SAVEGAME\savegame.NN` holding an
+empty `<name>.dsc` (its file name is the display name), `GAMEINFO.MDB`,
+`COLONY.MDB` and `CITY.MDB`, plus `SCENARIO.MDB` **only when the game was
+saved during a battle**. In the shipped campaign saves, slots 01 (Scrap
+City, s1-7-1, turn 9) and 09 (Cat and Mouse, s3-11-2, turn 1) are battle
+saves; the rest are campaign-only.
+
+`SCENARIO.MDB` is a full scenario with the same schema as the stock maps,
+rewritten with the current state (*observed*, by diffing against the stock
+`.mdb`):
+
+- Destroyed terrain is stored by swapping the cell image to the burnt `X`
+  variant (for example `NORD000` -> `NORX000`); 149 cells differ in slot 01.
+- Destroyed units, buildings and roads are deleted; arrived reinforcements
+  leave `Reinforcement` and appear in `Units On Map` with new IDs past the
+  previous maximum. `Scenario Info.NextID_Units` is **not** updated.
+- Units keep `currentAR`/`currentAP` and their order fields. `Turn` and
+  `Probability` in `Units On Map` are AI order expiry/retention (they are
+  not arrival turns); `negAP` was always 0.
+- Buildings and walls carry their current AR (after the fresh-battle reset
+  described above).
+
+`GAMEINFO.MDB` holds the battle globals: `Tactic IO` (Current Player,
+Current Turn, Objective Turn, Last Turn), `Server Mode Info` (Difficulty,
+Turn Time), `Player Tactical` (Player ID, Deploy Res) and the tallies
+`Player Tactical Units Destroyed/Lost` and `Buildings Destroyed/Lost`
+(Player, Unit/Building Type, Number; player 0 rows included).
+
+Not saved by the original: per-unit overwatch, the elapsed turn timer and
+the selection. `Autofire`/`Overwatch` in `LIBDAY.INI` (next to
+`ShowMoveAnim` and `ScrollSpeed` in the executable's key strings) are default
+preferences, not per-battle state.
+
+openlibday's own format (`libday-data::battle`, `"format":
+"openlibday-battle"`, `"version": 1`) is JSON. It stores the source
+scenario (a stock `.mdb` name, or the original save's `SCENARIO.MDB` path),
+the clock, difficulty, turn time, autofire, per-player records, every
+dynamic layer in full (units including overwatch and orders, buildings,
+walls, roads, mines, ruins, surfaces, order targets) and only the terrain
+cells that differ from the source. Static tables (info, deployment zones,
+objectives, texts) come from the source. On import, the stock map is
+identified by title and size with the fewest terrain differences (at most
+a quarter of the cells), so converted saves do not depend on save slots
+that the original game may overwrite. Readers reject other formats and
+newer versions.
+
 ### What remains unknown for a replacement engine
 
 The current work establishes data import, substantial static rendering,
@@ -2055,8 +2103,9 @@ fresh-skirmish loading observations and selected lifecycle rules. It does
   colony/base layouts, SX-1-1 counterattacks and HQ mode requirements.
 - Native animations, effects, burn transformations, player-color remapping,
   draw-order edge cases and DBI metadata beyond the decoded fields.
-- Stored mapScreen preview encoding/regeneration, savegame fidelity and
-  which load paths reset versus preserve health/AP.
+- Stored mapScreen preview encoding/regeneration, campaign-state save
+  fields (`COLONY.MDB`, `CITY.MDB`) and which load paths reset versus
+  preserve health/AP.
 - Complete networking/session protocol, two-instance host/join and
   synchronization/determinism.
 - Genuine native-resolution viewport expansion, including surfaces,

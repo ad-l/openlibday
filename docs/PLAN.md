@@ -15,7 +15,8 @@ Status: **draft**. Implementation language and framework: **Rust + SDL3**
    block either (in particular, multiplayer needs a deterministic simulation).
 
 Non-goals for the first milestone: campaign map/economy/research, colonies and
-counterattacks, multiplayer, savegame compatibility with the original game.
+counterattacks, multiplayer, writing savegames in the original format
+(original battle saves are imported; ours are JSON).
 
 ## Ground rules
 
@@ -126,13 +127,13 @@ Each milestone ends with something runnable and with automated tests.
 | M2 | Map viewer | Render any skirmish map: terrain, buildings, roads/bridges, walls, decors, units, deployment zones; pan/zoom; matches the existing Python editor output | Low — **done**: `libday-view` scene + compositor, SDL viewer (`openlibday`), `libday map-scene`/`map-render`/`skirmishes`; draw list identical to the Tk editor canvas on all 47 skirmishes (`tools/modding/test_engine_parity.py`). Note: unit tech levels run 0..=10 in GLOBAL.MDB |
 | M3 | Animation and interface assets | FF container and Smacker decoding; unit idle/move/attack animations; UI art from interface Smacker files; palette cycling; WAV playback | FF/Smacker codecs done early (asset editor); UI art layout is undocumented |
 | M4 | Screen flow | Main menu, skirmish selector, technology allocation, deployment (budget, zones), battle shell, HUD, minimap | UI layout must be measured from the original — **battle HUD started**: sidebar/bottom bar from `1024X768.SMK` frames (`libday-view::ui`), minimap and MAP overview with per-player unit lists (`minimap`), GOAL dialog, resizable viewport (decorative right column of the sidebar cut), UI scale (default 2x) and `openlibday.ini` options; action buttons are not wired up yet |
-| M5 | Core simulation | Turns, action points, movement costs, pathfinding, occupancy, reinforcements, scheduled support events | **Movement started**: per-movement-type terrain access/costs, roads/bridges, blockers and mines, Dijkstra pathfinding on AP with overwatch reserve (`libday-sim::path`, recovered from LIBDAY.EXE); path preview and animated walking in the viewer. Turns, occupancy rules beyond 1x1 units, start/stop animations and sounds remain |
+| M5 | Core simulation | Turns, action points, movement costs, pathfinding, occupancy, reinforcements, scheduled support events | **Movement started**: per-movement-type terrain access/costs, roads/bridges, blockers and mines, Dijkstra pathfinding on AP with overwatch reserve (`libday-sim::path`, recovered from LIBDAY.EXE); path preview and animated walking in the viewer. Battle saves done early: `libday-data::battle` (versioned JSON: source scenario + turn clock + all dynamic layers + terrain diffs; import of original `savegame.NN` battle saves with stock-scenario identification), `F5`/`F9`, `--load`, `libday save-list/save-info/save-import`. Turns, occupancy rules beyond 1x1 units, start/stop animations and sounds remain |
 | M6 | Combat | Range, line of sight, accuracy, damage/armor, overwatch/autofire, destruction, wrecks, mines | Unknown formulas |
 | M7 | AI and objectives | Scripted AI orders, skirmish AI, objective presets, win/loss, turn limits | Unknown AI behavior; an initial AI can be ours rather than native |
 | M8 | Skirmish release | Sound, polish, settings, Linux and Android/iOS builds, touch controls | Mobile UI ergonomics |
 
 After M8: campaign (map, economy, research, alternate maps, colonies,
-counterattacks), save/load, then multiplayer (lockstep over the deterministic
+counterattacks) and their save state, then multiplayer (lockstep over the deterministic
 simulation). Multiplayer compatibility with the original executable is not a goal.
 
 ## Research track (runs alongside M3-M7)

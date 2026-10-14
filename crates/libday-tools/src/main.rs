@@ -100,6 +100,13 @@ enum Command {
     },
     /// List the skirmish maps of the skirmish selector.
     Skirmishes,
+    /// List the original savegame slots (`SAVEGAME\savegame.NN`).
+    SaveList,
+    /// Convert a battle save to an openlibday save file. `save` is an
+    /// original savegame directory, its slot number, or an openlibday save.
+    SaveImport { save: String, out: PathBuf },
+    /// Summarise a battle save (same `save` forms as save-import).
+    SaveInfo { save: String },
     /// Print a scenario map's ordered draw list as JSON.
     MapScene(MapArgs),
     /// Render a whole scenario map to a PNG at 1:1.
@@ -135,6 +142,17 @@ struct MapArgs {
 }
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// A save given as a slot number, an original savegame directory or a file.
+fn open_save(game: &GameData, save: &str) -> Result<libday_data::Battle> {
+    let path = match save.parse::<u32>() {
+        Ok(n) => game
+            .dir(libday_data::Dir::SaveGame)
+            .join(format!("savegame.{n:02}")),
+        Err(_) => PathBuf::from(save),
+    };
+    Ok(libday_data::Battle::open(game, &path)?)
+}
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
@@ -624,6 +642,57 @@ fn run(cli: Cli) -> Result<()> {
                     entry.size,
                     entry.points,
                     entry.title
+                );
+            }
+        }
+        Command::SaveList => {
+            for save in libday_data::battle::original_saves(&game(&cli.root)?) {
+                let kind = if save.battle { "battle" } else { "campaign" };
+                println!("{}  {kind:<8}  {}", save.dir.display(), save.name);
+            }
+        }
+        Command::SaveImport { save, out } => {
+            let game = game(&cli.root)?;
+            let battle = open_save(&game, &save)?;
+            battle.save(&game, &out)?;
+            println!("wrote {} (source {})", out.display(), battle.source);
+        }
+        Command::SaveInfo { save } => {
+            let game = game(&cli.root)?;
+            let battle = open_save(&game, &save)?;
+            let s = &battle.scenario;
+            let base = battle.source.load(&game)?;
+            let changed = (s.cells.iter().zip(&base.cells))
+                .filter(|(a, b)| a.terrain != b.terrain)
+                .count();
+            println!("name:       {}", battle.name);
+            println!("scenario:   {} ({})", s.info.title, battle.source);
+            println!(
+                "turn:       {} (player {})  difficulty {}  turn time {}",
+                battle.clock.turn, battle.clock.player, battle.difficulty, battle.turn_time
+            );
+            let pending = s.units.iter().filter(|u| u.reinforcement).count();
+            println!(
+                "units:      {} on the map, {pending} reinforcements pending",
+                s.units.len() - pending
+            );
+            println!(
+                "map:        {} buildings, {} walls, {} roads, {} mines, {changed} terrain cells changed",
+                s.buildings.len(),
+                s.walls.len(),
+                s.roads.len(),
+                s.mines.len()
+            );
+            for p in &battle.players {
+                let sum = |m: &std::collections::BTreeMap<i64, i64>| m.values().sum::<i64>();
+                println!(
+                    "player {}:   deploy {}  destroyed {} units / {} buildings  lost {} units / {} buildings",
+                    p.player,
+                    p.deploy_points,
+                    sum(&p.units_destroyed),
+                    sum(&p.buildings_destroyed),
+                    sum(&p.units_lost),
+                    sum(&p.buildings_lost)
                 );
             }
         }

@@ -7,6 +7,7 @@
 //! copied installation keeps working. File lookups are case-insensitive so
 //! the same data works on case-sensitive file systems.
 
+pub mod battle;
 pub mod defs;
 pub mod records;
 pub mod scenario;
@@ -19,6 +20,7 @@ use std::collections::BTreeMap;
 use libday_formats::{Database, Ini, JetError, Zip, ZipError};
 use thiserror::Error;
 
+pub use battle::Battle;
 pub use defs::Definitions;
 pub use scenario::{Scenario, SkirmishEntry};
 
@@ -40,6 +42,8 @@ pub enum DataError {
     Strings(String, libday_formats::pe::PeError),
     #[error("{table}: {message}")]
     Invalid { table: String, message: String },
+    #[error("savegame: {0}")]
+    Savegame(String),
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,

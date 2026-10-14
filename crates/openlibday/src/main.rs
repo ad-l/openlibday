@@ -6,18 +6,18 @@
 //! the original sidebar and bottom bar. The minimap, the MAP overview and the
 //! GOAL dialog work; the other buttons are not wired to game logic yet.
 //!
-//! Usage: `openlibday [--root DIR] [SCENARIO]`, where `SCENARIO` is a
-//! scenario database name such as `s1-2-1` or `s1-2-1.mdb` (default: the first skirmish).
+//! Usage: `openlibday [--root DIR] [--load SAVE] [SCENARIO]`, where `SCENARIO` is a
+//! scenario database name such as `s1-2-1` or `s1-2-1.mdb` (default: the first skirmish)
+//! and `SAVE` an openlibday save, an original savegame directory or slot number.
 
 mod hud;
 mod moves;
 mod settings;
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use libday_data::{Definitions, Dir, GameData, Scenario};
+use libday_data::{Battle, Definitions, Dir, GameData};
 use libday_formats::Dbi;
 use libday_view::minimap::{self, Entry, Marker};
 use libday_view::text::Fonts;
@@ -35,7 +35,10 @@ use hud::{Gfx, Result};
 const ZOOMS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
 const HELP: &str = "PgUp/PgDn map  wheel/+/- zoom  drag/arrows pan  Home recentre  \
                     G grid  D zones  U units  T terrain  [ ] reinforcements  \
-                    M map overview  O goal  I interface scale  Esc close/quit";
+                    M map overview  O goal  I interface scale  F5 quick save  F9 quick load  \
+                    Esc close/quit";
+/// Quick save file in the saves directory.
+const QUICK_SAVE: &str = "quick.json";
 /// Window-coordinate movement below which a press counts as a click.
 const CLICK_SLOP: f32 = 4.0;
 
@@ -43,6 +46,7 @@ struct Args {
     root: Option<String>,
     scenario: Option<String>,
     options: Option<PathBuf>,
+    load: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -50,17 +54,21 @@ fn parse_args() -> Result<Args> {
         root: None,
         scenario: None,
         options: None,
+        load: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--root" => args.root = Some(iter.next().ok_or("--root needs a directory")?),
             "--options" => args.options = Some(iter.next().ok_or("--options needs a file")?.into()),
+            "--load" => args.load = Some(iter.next().ok_or("--load needs a save")?),
             "-h" | "--help" => {
                 let file = settings::default_path()
                     .map_or_else(|| settings::FILE_NAME.into(), |p| p.display().to_string());
                 println!(
-                    "usage: openlibday [--root DIR] [--options FILE] [SCENARIO]\n\
+                    "usage: openlibday [--root DIR] [--options FILE] [--load SAVE] [SCENARIO]\n\
+                     SAVE: an openlibday save file, an original savegame directory, or\n\
+                     \x20     the number of an original savegame slot (SAVEGAME\\savegame.NN)\n\
                      options file: {file}\n{HELP}"
                 );
                 std::process::exit(0);
@@ -73,10 +81,11 @@ fn parse_args() -> Result<Args> {
     Ok(args)
 }
 
-/// The loaded map and its draw list.
+/// The battle in play and its draw list.
 struct Map {
+    /// Scenario database or save it was loaded from.
     file: String,
-    scenario: Scenario,
+    battle: Battle,
     scene: Scene,
 }
 
@@ -116,15 +125,12 @@ struct Viewer {
     press: Option<(f32, f32)>,
     minimap_drag: bool,
     hover: Option<(i64, i64)>,
-    /// Index into `map.scenario.units`.
+    /// Index into `map.battle.scenario.units`.
     selected: Option<usize>,
-    /// Units whose overwatch was switched off (on by default).
-    overwatch_off: HashSet<usize>,
     preview: Option<moves::Preview>,
     motion: Option<moves::Motion>,
     /// `ANMSUNIT.FF` (walk animations).
     anims: Option<Vec<u8>>,
-    auto_fire: bool,
     objectives: bool,
     /// Units and buildings on the minimap; owners with an overview list.
     markers: Vec<Marker>,
@@ -134,6 +140,10 @@ struct Viewer {
     scroll: usize,
     entry: Option<usize>,
     started: Instant,
+    /// Where F5/F9 save and load.
+    saves: Option<PathBuf>,
+    /// Last save/load result, shown in the title.
+    notice: Option<String>,
     error: Option<String>,
     /// Log events to stderr (`OPENLIBDAY_TRACE_EVENTS`).
     trace: bool,
@@ -142,19 +152,58 @@ struct Viewer {
 impl Viewer {
     fn load(&mut self, index: usize) {
         let file = self.maps[index].clone();
-        match self.game.load_scenario(&file) {
-            Ok(scenario) => {
+        match Battle::start(&self.game, &file) {
+            Ok(battle) => {
                 self.index = index;
-                self.map = Map {
-                    file,
-                    scene: Scene::default(),
-                    scenario,
-                };
-                self.options.arrival = self.show_units.then_some(0);
-                self.reset();
-                self.error = None;
+                self.show(file, battle);
             }
             Err(err) => self.error = Some(format!("{file}: {err}")),
+        }
+    }
+
+    fn show(&mut self, file: String, battle: Battle) {
+        self.map = Map {
+            file,
+            scene: Scene::default(),
+            battle,
+        };
+        self.options.arrival = self.show_units.then_some(0);
+        self.reset();
+        self.error = None;
+        self.notice = None;
+    }
+
+    fn quick_save_path(&self) -> std::result::Result<PathBuf, String> {
+        let dir = self.saves.as_ref().ok_or("no preferences directory")?;
+        Ok(dir.join(QUICK_SAVE))
+    }
+
+    fn quick_save(&mut self) {
+        let result = self.quick_save_path().and_then(|path| {
+            self.map
+                .battle
+                .save(&self.game, &path)
+                .map_err(|e| e.to_string())
+                .map(|()| path)
+        });
+        match result {
+            Ok(path) => self.notice = Some(format!("saved {}", path.display())),
+            Err(err) => self.error = Some(format!("save failed: {err}")),
+        }
+    }
+
+    fn quick_load(&mut self) {
+        let result = self.quick_save_path().and_then(|path| {
+            Battle::open(&self.game, &path)
+                .map_err(|e| e.to_string())
+                .map(|b| (path, b))
+        });
+        match result {
+            Ok((path, battle)) => {
+                self.show(path.display().to_string(), battle);
+                self.notice = Some(format!("loaded {}", path.display()));
+            }
+            Err(err) => self.error = Some(format!("load failed: {err}")),
         }
     }
 
@@ -162,13 +211,12 @@ impl Viewer {
     fn reset(&mut self) {
         self.rebuild();
         self.recentre();
-        self.markers = minimap::markers(&self.map.scenario, &self.defs);
-        self.players = minimap::players(&self.map.scenario, &self.markers);
+        self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
+        self.players = minimap::players(&self.map.battle.scenario, &self.markers);
         self.player = 0;
         self.scroll = 0;
         self.entry = None;
         self.selected = None;
-        self.overwatch_off.clear();
         self.preview = None;
         self.motion = None;
         self.options.hidden_unit = None;
@@ -177,8 +225,12 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
-        self.map.scene =
-            libday_view::build(&self.map.scenario, &self.defs, &self.art, &self.options);
+        self.map.scene = libday_view::build(
+            &self.map.battle.scenario,
+            &self.defs,
+            &self.art,
+            &self.options,
+        );
         self.generation += 1;
         for name in &self.map.scene.missing {
             eprintln!("{}: missing {name}", self.map.file);
@@ -186,7 +238,7 @@ impl Viewer {
     }
 
     fn recentre(&mut self) {
-        let (w, h) = map_pixels(self.map.scenario.size);
+        let (w, h) = map_pixels(self.map.battle.scenario.size);
         let v = self.layout().viewport();
         self.camera = (
             w as f32 / 2.0 - v.w as f32 / (2.0 * self.zoom),
@@ -214,7 +266,7 @@ impl Viewer {
     }
 
     fn max_arrival(&self) -> i64 {
-        let units = &self.map.scenario.units;
+        let units = &self.map.battle.scenario.units;
         units.iter().map(|u| u.arrival).max().unwrap_or(0)
     }
 
@@ -230,7 +282,7 @@ impl Viewer {
         if self.options.terrain_only {
             return None;
         }
-        self.map.scenario.units.iter().position(|u| {
+        self.map.battle.scenario.units.iter().position(|u| {
             let (w, h) = self
                 .defs
                 .unit(u.kind)
@@ -241,7 +293,7 @@ impl Viewer {
 
     /// Name, portrait image and the AP/AR lines of the selected unit.
     fn selected_unit(&self) -> Option<(String, String, String, String)> {
-        let unit = self.map.scenario.units.get(self.selected?)?;
+        let unit = self.map.battle.scenario.units.get(self.selected?)?;
         let kind = self
             .defs
             .units
@@ -260,7 +312,10 @@ impl Viewer {
     }
 
     fn centre_on_selected(&mut self) {
-        let Some(unit) = self.selected.and_then(|i| self.map.scenario.units.get(i)) else {
+        let Some(unit) = self
+            .selected
+            .and_then(|i| self.map.battle.scenario.units.get(i))
+        else {
             return;
         };
         let (w, h) = self
@@ -279,7 +334,7 @@ impl Viewer {
         match button {
             Button::Chat => false,
             Button::Overwatch => self.selected.is_some_and(|i| {
-                let unit = &self.map.scenario.units[i];
+                let unit = &self.map.battle.scenario.units[i];
                 self.defs.unit(unit.kind).is_some_and(|k| k.can_overwatch)
             }),
             Button::AutoFire => self.selected.is_some(),
@@ -297,7 +352,7 @@ impl Viewer {
             Button::Back | Button::Continue => self.screen = Screen::Battle,
             Button::Center => self.centre_on_selected(),
             Button::Overwatch => self.toggle_overwatch(),
-            Button::AutoFire => self.auto_fire = !self.auto_fire,
+            Button::AutoFire => self.map.battle.auto_fire ^= true,
             Button::Objectives => self.objectives = !self.objectives,
             Button::Swatch(slot) => {
                 self.player = slot;
@@ -322,18 +377,20 @@ impl Viewer {
     }
 
     fn title(&self) -> String {
-        let info = &self.map.scenario.info;
-        let size = self.map.scenario.size;
+        let battle = &self.map.battle;
+        let info = &battle.scenario.info;
+        let size = battle.scenario.size;
         let name = if info.title.is_empty() {
             "untitled"
         } else {
             &info.title
         };
         let mut title = format!(
-            "openlibday - {name} ({}, {size}x{size}, {}/{})  zoom {}%",
+            "openlibday - {name} ({}, {size}x{size}, {}/{})  turn {}  zoom {}%",
             self.map.file,
             self.index + 1,
             self.maps.len(),
+            battle.clock.turn,
             (self.zoom / self.density * 100.0).round(),
         );
         match self.options.arrival {
@@ -345,13 +402,13 @@ impl Viewer {
             title += "  terrain only";
         }
         if let Some((x, y)) = self.hover
-            && let Some(cell) = self.map.scenario.cell(x, y)
+            && let Some(cell) = self.map.battle.scenario.cell(x, y)
         {
             title += &format!("  [{x},{y}] {}", cell.terrain);
             let covers = |ox: i64, oy: i64, w: i64, h: i64| {
                 (ox..ox + w).contains(&x) && (oy..oy + h).contains(&y)
             };
-            let s = &self.map.scenario;
+            let s = &self.map.battle.scenario;
             if !self.options.terrain_only {
                 for b in &s.buildings {
                     if let Some(k) = self.defs.buildings.get(&b.kind)
@@ -374,6 +431,9 @@ impl Viewer {
         if let Some(p) = &self.preview {
             let cost: u32 = p.steps.iter().map(|s| s.cost).sum();
             title += &format!("  path {} steps, {cost} AP", p.steps.len());
+        }
+        if let Some(notice) = &self.notice {
+            title += &format!("  {notice}");
         }
         if let Some(err) = &self.error {
             title += &format!("  ERROR: {err}");
@@ -398,6 +458,8 @@ impl Viewer {
             Keycode::Minus | Keycode::KpMinus => self.zoom_step(-1, centre),
             Keycode::PageDown => self.load((self.index + 1) % count),
             Keycode::PageUp => self.load((self.index + count - 1) % count),
+            Keycode::F5 => self.quick_save(),
+            Keycode::F9 => self.quick_load(),
             Keycode::G => self.grid = !self.grid,
             Keycode::M => {
                 self.screen = match self.screen {
@@ -500,7 +562,7 @@ impl Viewer {
             && (y - py).abs() < CLICK_SLOP
         {
             let (mx, my) = self.to_map(ox as f32, oy as f32);
-            match tile_at(self.map.scenario.size, mx as f64, my as f64) {
+            match tile_at(self.map.battle.scenario.size, mx as f64, my as f64) {
                 Some((tx, ty)) => self.click_tile(tx, ty),
                 None => self.preview = None,
             }
@@ -531,7 +593,7 @@ impl Viewer {
         self.hover = on_map
             .then(|| {
                 let (mx, my) = self.to_map(ox as f32, oy as f32);
-                tile_at(self.map.scenario.size, mx as f64, my as f64)
+                tile_at(self.map.battle.scenario.size, mx as f64, my as f64)
             })
             .flatten();
     }
@@ -623,7 +685,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     let (ow, oh) = (v.w as f32, v.h as f32);
     canvas.set_clip_rect(sdl3::rect::Rect::new(v.x, v.y, v.w as u32, v.h as u32));
     let (zoom, (cx, cy)) = (viewer.zoom, viewer.camera);
-    let size = viewer.map.scenario.size;
+    let size = viewer.map.battle.scenario.size;
     let screen = |mx: i32, my: i32| ((mx as f32 - cx) * zoom, (my as f32 - cy) * zoom);
     let point = |(px, py): (i32, i32)| {
         let (x, y) = screen(px, py);
@@ -684,7 +746,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     }
     if let Some(unit) = viewer
         .selected
-        .and_then(|i| viewer.map.scenario.units.get(i))
+        .and_then(|i| viewer.map.battle.scenario.units.get(i))
     {
         let (w, h) = viewer
             .defs
@@ -730,7 +792,25 @@ fn main() -> Result {
         .into_iter()
         .map(|e| e.file_name)
         .collect();
-    let index = match &args.scenario {
+    let loaded = match &args.load {
+        Some(save) => {
+            let path = match save.parse::<u32>() {
+                Ok(n) => game.dir(Dir::SaveGame).join(format!("savegame.{n:02}")),
+                Err(_) => PathBuf::from(save),
+            };
+            let battle = Battle::open(&game, &path).map_err(|e| format!("{save}: {e}"))?;
+            Some((path.display().to_string(), battle))
+        }
+        None => None,
+    };
+    let scenario = match &loaded {
+        Some((_, battle)) => match &battle.source {
+            libday_data::battle::Source::Scenario(name) => Some(name.clone()),
+            libday_data::battle::Source::File(_) => None,
+        },
+        None => args.scenario.clone(),
+    };
+    let index = match &scenario {
         Some(name) => {
             let name = if name.to_ascii_lowercase().ends_with(".mdb") {
                 name.clone()
@@ -749,7 +829,10 @@ fn main() -> Result {
     if maps.is_empty() {
         return Err("no skirmish maps found (SCENS\\SKIRMISH.MDB is empty)".into());
     }
-    let scenario = game.load_scenario(&maps[index])?;
+    let (file, battle) = match loaded {
+        Some(loaded) => loaded,
+        None => (maps[index].clone(), Battle::start(&game, &maps[index])?),
+    };
 
     // SDL's default `french_numbers` maps AZERTY's number row to digits, which
     // would turn the '-' (zoom out) key into '6'.
@@ -797,8 +880,8 @@ fn main() -> Result {
         listbox,
         index,
         map: Map {
-            file: maps[index].clone(),
-            scenario,
+            file,
+            battle,
             scene: Scene::default(),
         },
         maps,
@@ -819,11 +902,9 @@ fn main() -> Result {
         minimap_drag: false,
         hover: None,
         selected: None,
-        overwatch_off: HashSet::new(),
         preview: None,
         motion: None,
         anims,
-        auto_fire: true,
         objectives: true,
         markers: Vec::new(),
         players: Vec::new(),
@@ -831,6 +912,11 @@ fn main() -> Result {
         scroll: 0,
         entry: None,
         started: Instant::now(),
+        saves: options_path
+            .as_deref()
+            .and_then(|p| p.parent())
+            .map(|dir| dir.join("saves")),
+        notice: None,
         error: None,
         trace: std::env::var_os("OPENLIBDAY_TRACE_EVENTS").is_some(),
     };

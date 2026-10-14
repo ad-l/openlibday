@@ -21,6 +21,9 @@ map) and GOAL dialog work; the other buttons are not wired up yet.
 Units move: a click previews the cheapest path in action points (dots,
 crossed beyond the unit's AP), a second click walks it with the original
 walk animations; overwatch keeps a shot's AP in reserve.
+Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
+battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
+converted.
 DBI sprites, Jet 3 databases, ZIP archives and PE string tables decode natively. The first goal is playable
 stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 
@@ -39,7 +42,11 @@ $env:LIBDAY_ROOT = 'F:\libday'      # your Liberation Day install directory
 cargo test --workspace              # data-gated tests skip without LIBDAY_ROOT
 cargo run -p openlibday             # map viewer (first skirmish)
 cargo run -p openlibday -- s3-4-1   # a specific skirmish (file name, with or without .mdb)
+cargo run -p openlibday -- --load 1          # original save SAVEGAME\savegame.01 (or a .json/dir path)
 cargo run -p libday-tools -- skirmishes
+cargo run -p libday-tools -- save-list       # original savegame slots (battle or campaign-only)
+cargo run -p libday-tools -- save-info 1     # summary of a slot number, directory or .json save
+cargo run -p libday-tools -- save-import 1 battle.json
 cargo run -p libday-tools -- map-render s1-2-1 -o map.png --grid
 cargo run -p libday-tools -- map-scene s1-2-1 --deployment   # draw list as JSON
 cargo run -p libday-tools -- dbi-list TERRAINS.DBI
@@ -50,7 +57,8 @@ Map viewer controls: mouse wheel or `+`/`-` zoom (anchored on the cursor),
 drag with any button or arrow keys to pan, `Home` recentre, `PgUp`/`PgDn`
 previous/next skirmish, `G` grid, `D` deployment zones, `U` units, `T` terrain
 only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
-`O` GOAL dialog, `I` cycle interface scale, `Esc` back to battle or quit.
+`O` GOAL dialog, `I` cycle interface scale, `F5` quick save, `F9` quick
+load, `Esc` back to battle or quit.
 Click a unit to select it; with a unit selected, click a tile to preview
 its path and click it again (or double click) to move. The OVERWATCH box
 toggles the reserve. Click the minimap to move the view. The title
@@ -62,7 +70,15 @@ read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
 or the file given with `--options FILE`. A commented default is created on
 first run; `openlibday --help` prints its location. The interface scale is
-lowered automatically when the window is too small for it.
+lowered automatically when the window is too small for it. Quick saves go to
+`saves\quick.json` in the same directory.
+
+A save stores the battle's source scenario (a stock `.mdb`, or the original
+save's own `SCENARIO.MDB` when it is not a stock map), the turn clock,
+difficulty, per-player deploy points and kill/loss tallies, every unit,
+building, wall, road, mine, ruin and surface with its current state, and the
+terrain cells that differ from the source (destroyed tiles). See
+"Savegames" in [tools/modding/README.md](tools/modding/README.md).
 
 | Crate | Purpose |
 |---|---|
