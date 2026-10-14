@@ -70,7 +70,9 @@ pub struct Unit {
     pub reinforcement: bool,
     pub armor: Option<i64>,
     pub action_points: Option<i64>,
-    /// `negAP` (always 0 in the stock scenarios and saves seen).
+    /// `negAP`: action points drained below 0 (player gas bomb, Tauran
+    /// paralyzer), at most the unit's maximum; withheld from the next turn's
+    /// restore. Always 0 in the stock scenarios and saves seen.
     pub neg_ap: i64,
     pub order: Order,
     /// Reinforcements only: `order`, an AI order derived from the objective.
@@ -78,6 +80,26 @@ pub struct Unit {
     /// Overwatch requested (effective only for types that can overwatch).
     /// Not stored by the original game; on for every unit at load.
     pub overwatch: bool,
+}
+
+impl Unit {
+    /// Removes `amount` action points; any shortfall below 0 becomes `negAP`,
+    /// capped at `max` so a unit is never paralysed for more than one turn.
+    pub fn drain_ap(&mut self, amount: i64, max: i64) {
+        let left = self.action_points.unwrap_or(0) - amount.max(0);
+        if left < 0 {
+            self.neg_ap = (self.neg_ap - left).min(max.max(0));
+        }
+        self.action_points = Some(left.max(0));
+    }
+
+    /// Turn-start restore: full `max` action points less `negAP`, which is
+    /// then cleared.
+    pub fn restore_ap(&mut self, max: i64) {
+        let max = max.max(0);
+        self.action_points = Some(max - self.neg_ap.clamp(0, max));
+        self.neg_ap = 0;
+    }
 }
 
 /// A target of a unit's AI order: another unit or building
@@ -480,5 +502,54 @@ pub fn difficulty_label(points: i64) -> &'static str {
         301..=500 => "Average",
         501..=1000 => "Hard",
         _ => "Very hard",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit(ap: i64) -> Unit {
+        Unit {
+            counter: 1,
+            id: 1,
+            kind: 1,
+            tech: 0,
+            owner: 1,
+            facing: 0,
+            x: 0,
+            y: 0,
+            arrival: 0,
+            reinforcement: false,
+            armor: None,
+            action_points: Some(ap),
+            neg_ap: 0,
+            order: Order::default(),
+            objective_order: false,
+            overwatch: true,
+        }
+    }
+
+    #[test]
+    fn negative_ap_carries_into_next_turn_once() {
+        let mut u = unit(40);
+        u.drain_ap(100, 250);
+        assert_eq!((u.action_points, u.neg_ap), (Some(0), 60));
+        u.restore_ap(250);
+        assert_eq!((u.action_points, u.neg_ap), (Some(190), 0));
+        u.restore_ap(250);
+        assert_eq!(u.action_points, Some(250));
+    }
+
+    #[test]
+    fn negative_ap_is_capped_at_maximum() {
+        let mut u = unit(10);
+        u.drain_ap(200, 120);
+        u.drain_ap(200, 120);
+        assert_eq!(u.neg_ap, 120);
+        u.restore_ap(120);
+        assert_eq!(u.action_points, Some(0));
+        u.restore_ap(120);
+        assert_eq!(u.action_points, Some(120));
     }
 }

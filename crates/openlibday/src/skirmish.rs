@@ -515,7 +515,7 @@ impl Viewer {
         *self.credits_mut() += reinf;
         for unit in &mut self.map.battle.scenario.units {
             if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
-                unit.action_points = Some(k.action_points);
+                unit.restore_ap(k.action_points);
             }
         }
         if matches!(self.screen, Screen::AiTurn) {

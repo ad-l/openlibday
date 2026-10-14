@@ -1139,7 +1139,11 @@ All numeric fields inspected here are ADODB longs; the separator named
 owners 0,1,2 were observed, and the editor supports 0..4.
 `Turn` is **AI-order expiry**, not a delayed arrival: Green Thaw unit
 101 has Turn 2 and still starts on the map. The AI planner clears an
-order when its Turn is less than the current native turn. Preserve `negAP`, separator,
+order when its Turn is less than the current native turn. `negAP` holds action
+points drained below 0 (player gas bomb, Tauran paralyzer); at the next turn
+the unit gets its maximum AP minus `negAP`, and `negAP` returns to 0. It is
+believed to be capped at the maximum AP, so paralysis lasts at most one turn
+(gameplay report, not yet traced in the executable). Preserve `negAP`, separator,
 OrderID, Turn, Probability and EnemyUnitType on ordinary property edits.
 New editor-created initial rows use defaults 0, true, 0, 0, 100 and 65535
 for those fields; these are editor creation defaults, not a full AI design.
