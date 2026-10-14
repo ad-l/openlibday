@@ -1,0 +1,24 @@
+# Original game data is copyrighted and must never be committed.
+# openlibday loads it from a user-supplied Liberation Day installation.
+/gamedata/
+*.MDB
+*.mdb
+*.DBI
+*.dbi
+*.SMK
+*.smk
+*.FF
+*.ZIP
+*.PAL
+*.WAV
+*.exe
+*.dll
+*.DLL
+
+# Local configuration, build output and test artifacts
+/build/
+/target/
+/out/
+/local/
+*.log
+*.dmp
