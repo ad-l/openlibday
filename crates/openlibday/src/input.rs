@@ -45,6 +45,7 @@ impl Viewer {
             (Screen::Report, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {
                 self.close_report()
             }
+            (Screen::Options { ask }, _) => self.menu_key(ask, key),
             (Screen::Skirmishes | Screen::Briefing | Screen::Confirm | Screen::Report, _) => {}
             _ => return None,
         }
@@ -55,7 +56,7 @@ impl Viewer {
         if let Some(running) = self.dialog_key(key) {
             return running;
         }
-        let pan = 64.0 / self.zoom * self.density;
+        let pan = self.settings.scroll.step() / self.zoom * self.density;
         let v = self.layout().viewport();
         let centre = (v.w as f32 / 2.0, v.h as f32 / 2.0);
         let count = self.maps.len();
@@ -161,6 +162,8 @@ impl Viewer {
         }
         match self.screen {
             Screen::Goal | Screen::Confirm | Screen::Report => {}
+            Screen::Options { ask: None } if left => self.menu_click(ox, oy),
+            Screen::Options { .. } => {}
             Screen::Skirmishes if left => {
                 let layout = self.layout();
                 if let Some(row) =
@@ -352,6 +355,7 @@ impl Viewer {
                         self.zoom_step(step, (ox as f32, oy as f32));
                     }
                     Screen::Deploy => self.deploy_scroll(-step as isize),
+                    Screen::Options { ask: None } => self.menu_scroll(-step as isize),
                     Screen::Skirmishes => {
                         let last = self.flow.catalog.len().saturating_sub(SKIRMISH_ROWS);
                         self.flow.scroll = self

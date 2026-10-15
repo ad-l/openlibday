@@ -272,6 +272,17 @@ impl Sound {
             feed.mixer.stop();
         }
     }
+
+    /// Changes the volume (0 to 100; 0 mutes).
+    pub fn set_volume(&mut self, volume: u32) {
+        self.volume = volume.min(100);
+        if self.volume == 0 {
+            self.stop();
+        }
+        if let Some(mut feed) = self.output.as_mut().and_then(|o| o.stream.lock()) {
+            feed.mixer.set_gain(self.volume as f32 / 100.0);
+        }
+    }
 }
 
 /// The output, opened on first use; `None` when muted or without sound.

@@ -19,6 +19,7 @@ mod clock;
 mod combat;
 mod hud;
 mod input;
+mod menu;
 mod mixer;
 mod moves;
 mod render;
@@ -211,6 +212,14 @@ struct Viewer {
     flow: Flow,
     /// Set by a button that closes the program.
     quit: bool,
+    /// The options as the OPTIONS dialog edits them, and the file they are
+    /// saved to (none in headless runs unless given).
+    settings: settings::Settings,
+    settings_path: Option<PathBuf>,
+    /// OPTIONS table scroll and focus.
+    menu: menu::Menu,
+    /// Fullscreen switch for the main loop to apply.
+    fullscreen: Option<bool>,
 }
 
 impl Viewer {
@@ -465,7 +474,11 @@ impl Viewer {
             Button::Left | Button::Right => !self.busy() && !self.cycle_units().is_empty(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
-            Button::Menu => self.screen != Screen::Goal,
+            Button::Menu
+            | Button::OptionsRestart
+            | Button::OptionsSave
+            | Button::OptionsQuit
+            | Button::OptionsBack => self.menu_enabled(button),
             Button::EndTurn => self.flow.phase == Phase::Free || self.can_end_turn(),
             Button::SkirmishUp => self.flow.pick > 0,
             Button::SkirmishDown => self.flow.pick + 1 < self.flow.catalog.len(),
@@ -526,6 +539,14 @@ impl Viewer {
             Button::DeployDown => self.deploy_scroll(1),
             Button::Army => self.screen = Screen::Tech { read_only: true },
             Button::DeployContinue => self.finish_deploy(),
+            Button::Menu
+            | Button::OptionsRestart
+            | Button::OptionsSave
+            | Button::OptionsQuit
+            | Button::OptionsBack => self.menu_activate(button),
+            Button::Yes | Button::No if matches!(self.screen, Screen::Options { .. }) => {
+                self.menu_activate(button)
+            }
             Button::Yes => self.start_battle(),
             Button::No => self.screen = Screen::Deploy,
             _ => {}
@@ -810,6 +831,7 @@ fn main() -> Result {
         }),
         started: Duration::ZERO,
         saves: options_path
+            .clone()
             .as_deref()
             .and_then(|p| p.parent())
             .map(|dir| dir.join("saves")),
@@ -818,6 +840,10 @@ fn main() -> Result {
         trace: std::env::var_os("OPENLIBDAY_TRACE_EVENTS").is_some(),
         flow: Flow::new(),
         quit: false,
+        settings,
+        settings_path: options_path,
+        menu: menu::Menu::default(),
+        fullscreen: None,
     };
     viewer.options.arrival = Some(0);
     viewer.reset();
@@ -868,6 +894,10 @@ fn main() -> Result {
         }
         if !running {
             break;
+        }
+        if let Some(on) = viewer.fullscreen.take() {
+            canvas.window_mut().set_fullscreen(on)?;
+            dirty = true;
         }
         let now = viewer.clock.since(viewer.started).as_secs();
         if now != second || viewer.animating() || moving {

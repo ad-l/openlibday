@@ -1,0 +1,72 @@
+# The OPTIONS dialog (MENU): settings table, RESTART SCENARIO, SAVE, QUIT.
+# Run: openlibday --headless --script scripts/menu.txt  (needs LIBDAY_ROOT)
+ai off
+skirmish s1-2-1
+key Return
+key Return
+key Return
+expect screen Deploy
+# During deployment only QUIT and BACK work.
+button Menu
+expect screen Options
+screenshot target/menu_deploy.png
+key Escape
+expect screen Deploy
+key Return
+key Y
+expect screen Battle
+button Menu
+expect screen Options
+# Settings change at once: keys move the focus and change the value.
+expect menu.values.Grid false
+key Down
+expect menu.focus Scale
+key Down
+key Down
+key Down
+expect menu.focus Grid
+key Space
+expect menu.values.Grid true
+key Down
+key Down
+expect menu.focus Volume
+key Left
+expect menu.volume 90
+key Right
+expect menu.volume 100
+option Scroll -1
+expect menu.scroll_speed slow
+option Scroll 5
+expect menu.scroll_speed fast
+# `ai off` (scripts): the selector shows OFF, then steps to the modes.
+expect menu.values.Ai OFF
+option Ai
+expect menu.values.Ai MODERN
+option Ai
+expect menu.values.Ai LEGACY
+screenshot target/menu.png
+# Clicks: a row toggles its check box; a selector's left end steps down.
+click 200 227
+expect menu.values.TerrainOnly true
+expect menu.focus TerrainOnly
+click 407 227
+expect menu.values.TerrainOnly false
+click 303 161
+expect menu.scroll_speed normal
+# QUIT asks first; NO returns to the dialog.
+button OptionsQuit
+expect screen Options
+expect menu.question Do you really want to quit the game?
+screenshot target/menu_quit.png
+button No
+expect menu.question Do you really want to quit the game?
+key Escape
+expect screen Battle
+# RESTART SCENARIO surrenders: the battle is lost.
+button Menu
+button OptionsRestart
+expect menu.question Do you really want to surrender?
+button Yes
+expect outcome lost
+expect screen Report
+echo menu test passed

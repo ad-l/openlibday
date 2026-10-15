@@ -18,6 +18,7 @@ use sdl3::video::{Window, WindowContext};
 
 use crate::Viewer;
 
+mod options;
 mod setup;
 
 /// Interface text size and line spacing, in original pixels.
@@ -889,6 +890,14 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             draw_battle_sidebar(canvas, gfx, viewer, scene, art)?;
             draw_report(canvas, gfx, viewer)?;
         }
+        Screen::Options { .. } => {
+            match viewer.home() {
+                Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
+                Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
+                _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
+            }
+            options::draw_options(canvas, gfx, viewer)?;
+        }
     }
     draw_bottom_bar(canvas, gfx, &layout)?;
     for button in [Button::Chat, Button::Menu] {
@@ -905,6 +914,9 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     }
     if viewer.screen == Screen::Confirm {
         setup::draw_confirm(canvas, gfx, viewer)?;
+    }
+    if let Screen::Options { ask: Some(_) } = viewer.screen {
+        options::draw_question(canvas, gfx, viewer)?;
     }
     Ok(())
 }

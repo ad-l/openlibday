@@ -36,6 +36,9 @@
 //! place I X Y         move unit I (state index) to map tile (X, Y)
 //! reactions on|off    whether overwatch spots moving units (default on)
 //! ai off|legacy|modern  how the computer player plays (default: settings)
+//! option NAME [STEP]    change an OPTIONS table setting (Scale, Fullscreen,
+//!                       Scroll, Grid, TerrainOnly, Volume, Ai) by STEP
+//!                       (default 1; check boxes toggle)
 //! quit                  end the program
 //! ```
 
@@ -90,6 +93,7 @@ pub enum Command {
     Reactions(bool),
     Ai(Option<crate::settings::AiMode>),
     Button(String),
+    Option(String, i32),
     Skirmish(String),
     Deploy(String),
     Centre(f64, f64),
@@ -198,6 +202,13 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             y: num(args.get(1))?,
         },
         "button" => Command::Button(text()?),
+        "option" => Command::Option(
+            args.first().ok_or("missing option")?.to_string(),
+            match args.get(1) {
+                Some(_) => num(args.get(1))?,
+                None => 1,
+            },
+        ),
         "skirmish" => Command::Skirmish(text()?),
         "deploy" => Command::Deploy(text()?),
         "centre" | "center" => Command::Centre(num(args.first())?, num(args.get(1))?),
@@ -326,6 +337,13 @@ impl Runner<'_, '_> {
                 let centre = ((r.x + r.w / 2) as f32, (r.y + r.h / 2) as f32);
                 click(viewer, centre, false);
             }
+            Command::Option(name, step) => {
+                let item = crate::menu::ITEMS
+                    .into_iter()
+                    .find(|i| !i.is_heading() && i.name().eq_ignore_ascii_case(name))
+                    .ok_or_else(|| format!("no option {name}"))?;
+                viewer.change_option(item, *step);
+            }
             Command::Skirmish(name) => {
                 let lower = name.to_ascii_lowercase();
                 let pick = viewer
@@ -443,6 +461,11 @@ impl Runner<'_, '_> {
                 viewer.rebuild();
             }
             Command::Quit => return Ok(false),
+        }
+        if let Some(on) = viewer.fullscreen.take()
+            && self.visible
+        {
+            self.canvas.window_mut().set_fullscreen(on)?;
         }
         Ok(!viewer.quit)
     }
@@ -711,6 +734,30 @@ pub fn state(viewer: &Viewer) -> Value {
         "objective": objective,
         "report": report,
         "players": players,
+        "menu": menu_state(viewer),
+    })
+}
+
+/// The OPTIONS table: `values.NAME` (true/false or the selector's text).
+fn menu_state(viewer: &Viewer) -> Value {
+    use crate::menu::{ITEMS, Value as Shown};
+    let values: serde_json::Map<String, Value> = ITEMS
+        .into_iter()
+        .filter_map(|item| {
+            let value = match viewer.option_value(item)? {
+                Shown::Check(on) => json!(on),
+                Shown::Choice(text, ..) => json!(text),
+            };
+            Some((item.name(), value))
+        })
+        .collect();
+    json!({
+        "values": values,
+        "scroll": viewer.menu.scroll,
+        "focus": viewer.menu.focus.map(|i| ITEMS[i].name()),
+        "question": viewer.menu.question,
+        "volume": viewer.settings.volume,
+        "scroll_speed": viewer.settings.scroll.name(),
     })
 }
 

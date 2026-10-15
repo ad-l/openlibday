@@ -85,6 +85,12 @@ pub mod frame {
     pub const GOAL_DIALOG: u16 = 633;
     pub const CONTINUE: u16 = 634;
     pub const OBJECTIVES: u16 = 638;
+    /// OPTIONS dialog (the bottom bar's MENU) and its buttons.
+    pub const OPTIONS_DIALOG: u16 = 648;
+    pub const OPTIONS_QUIT: u16 = 649;
+    pub const OPTIONS_BACK: u16 = 653;
+    pub const OPTIONS_SAVE: u16 = 661;
+    pub const OPTIONS_RESTART: u16 = 689;
     pub const MENU: u16 = 693;
     /// Small CONTINUE of the overview shown before deployment.
     pub const OVERVIEW_CONTINUE: u16 = 700;
@@ -131,6 +137,9 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (633, 633, 449, 268),
     (634, 637, 110, 17),
     (638, 643, 19, 19),
+    (648, 648, 403, 371),
+    (649, 664, 53, 17),
+    (689, 692, 110, 17),
     (693, 696, 53, 17),
     (700, 703, 53, 17),
     (841, 841, 364, 416),
@@ -336,6 +345,11 @@ pub enum Button {
     SkirmishContinue,
     // Battle report.
     ReportContinue,
+    // OPTIONS dialog.
+    OptionsRestart,
+    OptionsSave,
+    OptionsQuit,
+    OptionsBack,
 }
 
 /// Which panel set is on screen.
@@ -362,6 +376,19 @@ pub enum Screen {
     AiTurn,
     /// The battle is over: the battle report.
     Report,
+    /// The OPTIONS dialog (MENU), possibly asking to confirm a button.
+    Options {
+        ask: Option<Ask>,
+    },
+}
+
+/// A question the OPTIONS dialog asks before acting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    /// RESTART SCENARIO: "Do you really want to surrender?"
+    Restart,
+    /// QUIT: "Do you really want to quit the game?"
+    Quit,
 }
 
 impl Screen {
@@ -439,6 +466,10 @@ impl Button {
             Button::SkirmishBack => SKIRMISH_BACK,
             Button::SkirmishContinue => SKIRMISH_CONTINUE,
             Button::ReportContinue => REPORT_CONTINUE,
+            Button::OptionsRestart => OPTIONS_RESTART,
+            Button::OptionsSave => OPTIONS_SAVE,
+            Button::OptionsQuit => OPTIONS_QUIT,
+            Button::OptionsBack => OPTIONS_BACK,
         }
     }
 
@@ -521,6 +552,11 @@ impl Button {
             Button::SkirmishContinue => (252, 373),
             // Relative to the battle report.
             Button::ReportContinue => (300, 419),
+            // Relative to the OPTIONS dialog (measured on the original).
+            Button::OptionsRestart => (10, 340),
+            Button::OptionsSave => (132, 340),
+            Button::OptionsQuit => (198, 340),
+            Button::OptionsBack => (336, 340),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -579,6 +615,16 @@ pub const REPORT_TEXT: Rect = Rect::new(20, 20, 408, 430);
 /// text area (`0x45ded0`).
 pub const REPORT_HEADER_Y: i32 = 185;
 pub const REPORT_COLUMNS: [i32; 4] = [25, 115, 250, 360];
+/// OPTIONS dialog position over the map viewport (measured on the original).
+pub const OPTIONS_AT: (i32, i32) = (39, 41);
+/// The OPTIONS dialog's black options table, relative to the dialog: it
+/// covers the original's SOUNDS / MOVE ANIMATIONS / SCROLL SPEED boxes and
+/// CD PLAYER panel.
+pub const OPTIONS_TABLE: Rect = Rect::new(14, 40, 373, 286);
+/// Height of an options table row.
+pub const OPTIONS_ROW: i32 = 22;
+/// Rows the options table shows at once.
+pub const OPTIONS_ROWS: usize = (OPTIONS_TABLE.h / OPTIONS_ROW) as usize;
 /// Question dialog position over the map viewport.
 pub const QUESTION_AT: (i32, i32) = (50, 70);
 /// Question dialog text area, relative to the dialog.
@@ -724,6 +770,10 @@ impl Layout {
             | Button::SkirmishBack
             | Button::SkirmishContinue => self.s(native).offset_by(self.skirmish_dialog()),
             Button::ReportContinue => self.s(native).offset_by(self.report_dialog()),
+            Button::OptionsRestart
+            | Button::OptionsSave
+            | Button::OptionsQuit
+            | Button::OptionsBack => self.s(native).offset_by(self.options_dialog()),
             _ => self.in_sidebar(native),
         }
     }
@@ -747,6 +797,27 @@ impl Layout {
     /// A rectangle in battle report coordinates.
     pub fn in_report(&self, r: Rect) -> Rect {
         self.s(r).offset_by(self.report_dialog())
+    }
+
+    pub fn options_dialog(&self) -> Rect {
+        let (w, h) = crop_of(frame::OPTIONS_DIALOG).unwrap_or((0, 0));
+        self.s(Rect::new(OPTIONS_AT.0, OPTIONS_AT.1, w, h))
+    }
+
+    /// A rectangle in OPTIONS dialog coordinates.
+    pub fn in_options(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.options_dialog())
+    }
+
+    /// Row `i` (on screen) of the options table.
+    pub fn options_row(&self, i: usize) -> Rect {
+        let t = OPTIONS_TABLE;
+        self.in_options(Rect::new(
+            t.x,
+            t.y + 4 + i as i32 * OPTIONS_ROW,
+            t.w,
+            OPTIONS_ROW,
+        ))
     }
 
     pub fn tech_dialog(&self) -> Rect {
@@ -880,6 +951,13 @@ impl Layout {
             Screen::Confirm => buttons.extend([Button::Yes, Button::No]),
             Screen::AiTurn => buttons.extend([Button::Map, Button::Goal]),
             Screen::Report => buttons.push(Button::ReportContinue),
+            Screen::Options { ask: None } => buttons.extend([
+                Button::OptionsRestart,
+                Button::OptionsSave,
+                Button::OptionsQuit,
+                Button::OptionsBack,
+            ]),
+            Screen::Options { ask: Some(_) } => buttons.extend([Button::Yes, Button::No]),
         }
         if !matches!(
             screen,
@@ -888,6 +966,7 @@ impl Layout {
                 | Screen::Tech { .. }
                 | Screen::Confirm
                 | Screen::Report
+                | Screen::Options { ask: Some(_) }
         ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }
@@ -1067,6 +1146,24 @@ mod tests {
             Some(Button::Army)
         );
         assert_eq!(big.deploy_row(1).y, (204 + 39) * 2);
+    }
+
+    #[test]
+    fn options_dialog() {
+        let layout = Layout::new(1024, 768, 1);
+        assert_eq!(layout.options_dialog(), Rect::new(39, 41, 403, 371));
+        assert_eq!(
+            layout.hit(Screen::Options { ask: None }, 0, 39 + 200, 41 + 345),
+            Some(Button::OptionsQuit)
+        );
+        let ask = Screen::Options {
+            ask: Some(Ask::Quit),
+        };
+        assert_eq!(layout.hit(ask, 0, 39 + 200, 41 + 345), None);
+        assert!(!layout.buttons(ask, 0).contains(&Button::Menu));
+        let big = Layout::new(2048, 1536, 2);
+        assert_eq!(big.options_row(1).y, (41 + 40 + 4 + OPTIONS_ROW) * 2);
+        const { assert!(OPTIONS_ROWS >= 12) };
     }
 
     #[test]

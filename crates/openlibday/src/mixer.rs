@@ -42,6 +42,10 @@ impl Mixer {
         }
     }
 
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
+
     /// Starts a voice playing `samples` recorded at `rate`; `open` voices
     /// wait for [`Mixer::append`] until [`Mixer::close`]d.
     pub fn play(&mut self, samples: &[i16], rate: u32, open: bool) -> Option<VoiceId> {

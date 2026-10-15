@@ -167,6 +167,7 @@ skirmish from selection to turn 2,
 [scripts/mines.txt](scripts/mines.txt) a mine going off and a mine detector,
 [scripts/objectives.txt](scripts/objectives.txt) reinforcements, win and
 loss conditions and the battle report,
+[scripts/menu.txt](scripts/menu.txt) the OPTIONS dialog,
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
 **Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
 turns on it; all are run by
@@ -178,13 +179,19 @@ cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
 ```
 
 Options (interface scale, default 2x; initial window size; fullscreen;
-sound volume; AI mode, `modern` by default or `legacy` for the original's
+arrow-key scroll speed; sound volume; AI mode, `modern` by default or `legacy` for the original's
 quirks, see [docs/ai.md](docs/ai.md)) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
 or the file given with `--options FILE`. A commented default is created on
 first run; `openlibday --help` prints its location. The interface scale is
-lowered automatically when the window is too small for it. Quick saves go to
+lowered automatically when the window is too small for it. The bottom bar's
+MENU button opens the OPTIONS dialog: its table changes these settings at
+once and saves them (also the tile grid and terrain-only view, which are not
+saved), with the original's RESTART SCENARIO (surrender: the battle is
+lost), SAVE (a quick save), QUIT (both asked first) and BACK. Mouse clicks,
+the wheel, or Up/Down plus Left/Right/Space drive the table; scripts can use
+`option NAME [STEP]` and read `menu` in the state. Quick saves go to
 `saves\quick.json` in the same directory.
 
 A save stores the battle's source scenario (a stock `.mdb`, or the original
