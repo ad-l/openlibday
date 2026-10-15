@@ -838,16 +838,25 @@ fn draw_overview(
         y: rect.y as f32,
         tile: cell as f32,
     };
+    let owner = viewer.players.get(viewer.player).copied().unwrap_or(0);
+    canvas.set_blend_mode(BlendMode::Blend);
     if viewer.screen == Screen::Briefing {
-        canvas.set_blend_mode(BlendMode::Blend);
-        canvas.set_draw_color(Color::RGBA(255, 0, 0, 110));
+        let [r, g, b] = minimap::owner_colour(owner);
+        canvas.set_draw_color(Color::RGBA(r, g, b, 110));
         for d in &viewer.map.battle.scenario.deployments {
             if viewer.zone(d.x, d.y) {
                 canvas.fill_rect(square.tile_rect(d.x, d.y, 1, 1))?;
             }
         }
-        canvas.set_blend_mode(BlendMode::None);
     }
+    // The objective's area (capture, hold, defend...).
+    canvas.set_draw_color(Color::RGBA(255, 0, 0, 110));
+    if let Some(o) = &viewer.map.battle.scenario.objective {
+        for &(x, y) in &o.tiles {
+            canvas.fill_rect(square.tile_rect(x, y, 1, 1))?;
+        }
+    }
+    canvas.set_blend_mode(BlendMode::None);
     draw_markers(canvas, viewer, square, true)?;
     draw_bulbs(canvas, gfx, viewer, square, s)?;
 
@@ -858,7 +867,6 @@ fn draw_overview(
     for button in layout.buttons(viewer.screen, viewer.players.len()) {
         gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
     }
-    let owner = viewer.players.get(viewer.player).copied().unwrap_or(0);
     let r = layout.field(Field::PlayerName);
     gfx.text_in(
         canvas,

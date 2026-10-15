@@ -20,11 +20,18 @@ impl<'r> Gfx<'r> {
         self.sprites
             .entry((sheet, name.to_owned()))
             .or_insert_with(|| {
+                let (name, odd) = match name.strip_prefix(ODD) {
+                    Some(base) => (base, true),
+                    None => (name, false),
+                };
                 let (base, red) = match name.strip_prefix(RED) {
                     Some(base) => (base, true),
                     None => (name, false),
                 };
                 let (width, height, mut rgba) = art.rgba(sheet, base)?;
+                if odd {
+                    flip_stipple(width, &mut rgba);
+                }
                 if red {
                     for px in rgba.as_chunks_mut::<4>().0 {
                         (px[1], px[2]) = (0, 0);
@@ -45,6 +52,49 @@ impl<'r> Gfx<'r> {
 
 /// Sprite-name prefix for a sprite recoloured red.
 pub(crate) const RED: &str = "red:";
+
+/// Sprite-name prefix for a zone sprite with its checkerboard stipple moved
+/// by one pixel. Neighbouring tiles sit (27, 14) apart, an odd distance, so
+/// tiles with odd `x + y` take this one to keep the pattern seamless.
+pub(crate) const ODD: &str = "odd:";
+
+/// Name of zone sprite `name` for tile `(x, y)` (see [`ODD`]).
+pub(crate) fn zone_sprite(name: &str, x: i64, y: i64) -> std::borrow::Cow<'_, str> {
+    if (x + y).rem_euclid(2) == 1 {
+        format!("{ODD}{name}").into()
+    } else {
+        name.into()
+    }
+}
+
+/// Moves the checkerboard of the sprite's centre colour by one pixel: the
+/// stipple area is its pixels plus the transparent gaps between them.
+fn flip_stipple(width: usize, rgba: &mut [u8]) {
+    let height = rgba.len() / 4 / width;
+    let at = |x: usize, y: usize| 4 * (y * width + x);
+    let (cx, cy) = (width / 2, height * 3 / 4);
+    let Some(colour) = [(cx, cy), (cx - 1, cy), (cx, cy - 1)]
+        .into_iter()
+        .map(|(x, y)| at(x, y))
+        .find(|&i| rgba[i + 3] != 0)
+        .map(|i| [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]])
+    else {
+        return;
+    };
+    let src = rgba.to_vec();
+    let dot = |x: usize, y: usize| src[at(x, y)..at(x, y) + 4] == colour;
+    for y in 0..height {
+        for x in 0..width {
+            let i = at(x, y);
+            let gap =
+                src[i + 3] == 0 && ((x > 0 && dot(x - 1, y)) || (x + 1 < width && dot(x + 1, y)));
+            if dot(x, y) || gap {
+                let px = if dot(x, y) { [0; 4] } else { colour };
+                rgba[i..i + 4].copy_from_slice(&px);
+            }
+        }
+    }
+}
 
 /// Draws the map into the viewport.
 fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
@@ -107,10 +157,14 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Some(c) if c.1 == "CMOVE" => (Some(c), None),
         c => (None, c),
     };
-    let mut overlays: Vec<(i64, i64, &str)> = viewer
+    let watch: Vec<(i64, i64, std::borrow::Cow<str>)> = viewer
         .watch
         .iter()
-        .map(|((x, y), name)| (*x, *y, name.as_str()))
+        .map(|((x, y), name)| (*x, *y, zone_sprite(name, *x, *y)))
+        .collect();
+    let mut overlays: Vec<(i64, i64, &str)> = watch
+        .iter()
+        .map(|(x, y, name)| (*x, *y, name.as_ref()))
         .chain(hover_tiles.into_iter().map(|(x, y)| (x, y, "CSELC")))
         .chain(moves::path_dots(viewer))
         .chain(move_cursor.map(|((x, y), name)| (x, y, name)))
@@ -130,7 +184,12 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         if x1 < 0.0 || y1 < 0.0 || x0 > ow || y0 > oh {
             return Ok(());
         }
-        if let Some(texture) = gfx.sprite(&viewer.art, item.sheet, &item.sprite) {
+        let sprite = if item.layer == Layer::Deployment {
+            zone_sprite(&item.sprite, item.x, item.y)
+        } else {
+            item.sprite.as_str().into()
+        };
+        if let Some(texture) = gfx.sprite(&viewer.art, item.sheet, &sprite) {
             // Whole output pixels, so neighbouring tiles never leave seams.
             let (x0, y0, x1, y1) = (x0.floor(), y0.floor(), x1.floor(), y1.floor());
             canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
