@@ -314,6 +314,32 @@ impl Scenario {
         }
     }
 
+    /// Restores everything on the map to full strength when a fresh
+    /// scenario starts (`0x43f34f`, skipped for saved games), so the
+    /// placeholder `currentAR`/`currentAP` of the map tables never show:
+    /// units get their type's armour (`0x4340bd`) and action points less
+    /// `negAP`, which is cleared (`0x4341cb`); buildings (`0x42821b`) and
+    /// walls (`0x4384dc`) their type's armour.
+    pub fn restore(&mut self, defs: &crate::Definitions) {
+        for u in self.units.iter_mut().filter(|u| !u.reinforcement) {
+            if let Some(k) = defs.unit_tech(u.kind, u.tech) {
+                u.armor = Some(k.armor);
+                u.action_points = Some(k.action_points - u.neg_ap);
+                u.neg_ap = 0;
+            }
+        }
+        for b in &mut self.buildings {
+            if let Some(k) = defs.buildings.get(&b.kind) {
+                b.armor = k.armor;
+            }
+        }
+        for w in &mut self.walls {
+            if let Some(k) = defs.walls.get(&w.kind) {
+                w.armor = k.armor;
+            }
+        }
+    }
+
     pub fn load(db: &Database) -> Result<Self, DataError> {
         let t = Records::read(db, "Map")?;
         let size = t.len().isqrt();

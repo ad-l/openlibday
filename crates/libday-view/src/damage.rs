@@ -275,8 +275,9 @@ impl Resolver<'_> {
             return;
         }
         self.scenario.walls.remove(i);
+        // `0x43eb8c` → `0x438534`: only concrete (type 0) walls break.
         for w in &mut self.scenario.walls {
-            if (w.x - x).abs() + (w.y - y).abs() == 1 {
+            if (w.x - x).abs() + (w.y - y).abs() == 1 && w.kind == 0 {
                 w.broken = true;
             }
         }
@@ -745,7 +746,7 @@ mod tests {
         let d = defs();
         let mut s = scenario(8, "ARID000");
         for x in 2..5 {
-            s.walls.push(surface(1, x, 3, 60));
+            s.walls.push(surface(0, x, 3, 60));
         }
         resolve(&mut s, &d, &mut Rand::new(1), (3, 3), 30, 0, 1);
         assert_eq!(s.walls.len(), 3);
@@ -753,6 +754,15 @@ mod tests {
         resolve(&mut s, &d, &mut Rand::new(1), (3, 3), 30, 0, 1);
         assert_eq!(s.walls.len(), 2);
         assert!(s.walls.iter().all(|w| w.broken));
+
+        // Only concrete has broken frames.
+        let mut s = scenario(8, "ARID000");
+        for x in 2..5 {
+            s.walls.push(surface(1, x, 3, 60));
+        }
+        resolve(&mut s, &d, &mut Rand::new(1), (3, 3), 60, 0, 1);
+        assert_eq!(s.walls.len(), 2);
+        assert!(s.walls.iter().all(|w| !w.broken));
     }
 
     #[test]

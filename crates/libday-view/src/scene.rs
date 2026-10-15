@@ -165,7 +165,13 @@ fn road_sprite(
     format!("{image}{mode}{shape:03}")
 }
 
-fn wall_sprite(image: &str, shape: u8, broken: bool) -> String {
+/// `0x4385b2`: a broken wall's open ends become rubble (only concrete has
+/// those frames; `0x438534` only breaks concrete). The original also turns
+/// a lone pillar that was straight (6/7) at its previous update into 21/20,
+/// which neighbour-by-neighbour updates never produce. `0x438773`/`0x437b84`:
+/// at a third of its armour or less the wall is drawn from the `1xx`
+/// damaged row.
+fn wall_sprite(image: &str, shape: u8, broken: bool, damaged: bool) -> String {
     let shape = match (broken, shape) {
         (true, 8) => 19,
         (true, 9) => 18,
@@ -173,7 +179,12 @@ fn wall_sprite(image: &str, shape: u8, broken: bool) -> String {
         (true, 11) => 17,
         _ => shape,
     };
-    format!("{image}0{shape:02}")
+    format!("{image}{}{shape:02}", u8::from(damaged))
+}
+
+/// `0x438552`: `armor <= max * 0.33`.
+fn wall_damaged(armor: i64, max: i64) -> bool {
+    armor as f64 <= max as f64 * 0.33
 }
 
 fn alpha_prefix(name: &str) -> String {
@@ -246,7 +257,12 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 missing.push(format!("wall type {}", item.kind));
                 continue;
             };
-            let sprite = wall_sprite(&kind.image, connection(&walls, item), item.broken);
+            let sprite = wall_sprite(
+                &kind.image,
+                connection(&walls, item),
+                item.broken,
+                wall_damaged(item.armor, kind.armor),
+            );
             overlays
                 .entry((item.x, item.y))
                 .or_default()
@@ -397,4 +413,20 @@ pub fn deployment_sprites(scenario: &Scenario) -> Vec<(Key, String)> {
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wall_sprites() {
+        assert_eq!(wall_sprite("WALLC", 6, false, false), "WALLC006");
+        assert_eq!(wall_sprite("WALLC", 8, true, false), "WALLC019");
+        assert_eq!(wall_sprite("WALLC", 10, true, true), "WALLC116");
+        assert_eq!(wall_sprite("WALLL", 9, false, true), "WALLL109");
+        assert!(!wall_damaged(21, 60));
+        assert!(wall_damaged(19, 60));
+        assert!(wall_damaged(0, 60));
+    }
 }

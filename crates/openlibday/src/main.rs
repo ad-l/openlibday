@@ -215,7 +215,8 @@ impl Viewer {
     fn load(&mut self, index: usize) {
         let file = self.maps[index].clone();
         match Battle::start(&self.game, &file) {
-            Ok(battle) => {
+            Ok(mut battle) => {
+                battle.scenario.restore(&self.defs);
                 self.index = index;
                 self.show(file, battle);
             }
@@ -670,7 +671,11 @@ fn main() -> Result {
     }
     let (file, battle) = match loaded {
         Some(loaded) => loaded,
-        None => (maps[index].clone(), Battle::start(&game, &maps[index])?),
+        None => {
+            let mut battle = Battle::start(&game, &maps[index])?;
+            battle.scenario.restore(&defs);
+            (maps[index].clone(), battle)
+        }
     };
 
     // SDL's default `french_numbers` maps AZERTY's number row to digits, which

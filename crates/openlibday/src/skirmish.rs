@@ -191,6 +191,7 @@ impl Viewer {
                 return;
             }
         };
+        battle.scenario.restore(&self.defs);
         let humans = skirmish_players().iter().filter(|&&p| p != AI).count();
         battle.scenario.merge_players(humans);
         if let Some(i) = self
