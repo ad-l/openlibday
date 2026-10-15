@@ -13,7 +13,7 @@ targeting and animation are in `openlibday/src/automated.rs`.
 
 | Category | Types | Effect |
 |---|---|---|
-| 0 Destroy | Bomber, Gas, Nuke, Fighters, Gene Bomb | `damage` of `damageType` on everything within `damageArea`, friend and foe |
+| 0 Destroy | Bomber, Gas, Nuke, Fighters, Gene Bomb | `damage` + 1 on everything within `damageArea`, friend and foe, falling off as a weapon's. `damageType` `AR` destroys (armour); anything else (Gas: `AP`, 300 over 3x3) paralyses: action points are drained and the excess becomes `negAP`, withheld from the unit's next turn, buildings and walls unharmed (`0x4723eb`, string compare at `0x47246a`, then `0x418542`) |
 | 1 Repair | Armor, Medic, Movement | `armorInc` / `actionInc` restored to the player's units, falling off with Chebyshev distance, capped at the maximum |
 | 2 Build | Bridge | one bridge section (road type 1) on a bridge site, see [Bridges](#bridges) |
 | 3 Mine | Mine | reveals hidden mines within `mineDetectionRange` |
@@ -116,7 +116,7 @@ Building lays road type 1.
 ## Testing
 
 [scripts/automated.txt](../scripts/automated.txt) plays a transport, a mine
-detector and a bomber on *Opportunity Knocks*.
+detector, a gas bomb and a bomber on *Opportunity Knocks*.
 [scripts/bridge.txt](../scripts/bridge.txt) builds two sections of the
 unfinished bridge on *Recycle This!* and checks `automated.bridge_sites`
 (`[x, y, buildable]` in the state).

@@ -46,6 +46,19 @@ idle
 expect credits 90
 expect mines.0.seen true
 expect mines.1.seen false
+# Gas (40): 301 AP damage at (35, 17) over 3x3, friend and foe. The Pyro
+# Maniac one tile away takes 151: its 100 AP go and 51 more are withheld
+# from its next turn (negAP).
+grant 5
+credits 100
+support Gas
+tile 35 17
+idle
+expect credits 60
+expect sounds.-1 AUTOUNIT\HGAS01.SMK
+expect units.id=114.ap 0
+expect units.id=114.neg_ap 51
+expect units.id=114.armor 10
 # Bomber (150): area damage kills the Pyro Maniac and Footmen around (35, 17).
 grant 4
 credits 500

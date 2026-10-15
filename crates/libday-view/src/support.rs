@@ -863,6 +863,27 @@ mod tests {
     }
 
     #[test]
+    fn gas_paralyses_friend_and_foe_without_harm() {
+        let d = defs();
+        let mut s = scenario();
+        s.units.push(unit(1, 1, 0, 8, 8));
+        s.units.push(unit(2, 1, 1, 9, 9));
+        s.units.push(unit(3, 1, 0, 10, 8));
+        // Gas (typeID 5): 300 "AP" damage over 3x3; anything but "AR"
+        // paralyses (0x47246a).
+        let gas = support(0, &[(0, "40"), (1, "300"), (2, "AP"), (4, "3")]);
+        let legs = execute(&s, &d, &mut Rand::new(1), &gas, 1, (8, 8), None);
+        let u = &legs[0].scenario.units;
+        // 301 at the centre, 151 one tile away: the AP go, the rest is
+        // withheld from the next turn (at most a turn's worth).
+        assert_eq!((u[0].action_points, u[0].neg_ap), (Some(0), 100));
+        assert_eq!((u[1].action_points, u[1].neg_ap), (Some(0), 51));
+        assert!(u[..2].iter().all(|u| u.armor.is_none()));
+        // Outside the 3x3.
+        assert_eq!((u[2].action_points, u[2].neg_ap), (None, 0));
+    }
+
+    #[test]
     fn mine_sweep_reveals_within_scaled_range() {
         let d = defs();
         let mut s = scenario();
