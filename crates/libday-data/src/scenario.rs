@@ -258,6 +258,22 @@ pub struct ScenarioInfo {
     /// Automated (building) types shown on the technology screen (`One Off
     /// Automated Available`).
     pub available_automated: Vec<i64>,
+    /// `AftermathEnglish`: the campaign's victory text.
+    pub aftermath: String,
+}
+
+/// The scenario goal (`Objective`, `Objectives ID List`, `Objectives Pos
+/// List`); see `crate::objective` for how each kind is judged.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Objective {
+    /// `ObjectifId`: 0 destroy, 1 hold, 2 escort, 3 protect, 4 intercept,
+    /// 5 keep alive, 6 destroy all except.
+    pub kind: i64,
+    /// `TurnNumber`: turns to hold the tiles (hold).
+    pub turn_number: i64,
+    /// Unit or building IDs.
+    pub ids: Vec<i64>,
+    pub tiles: Vec<(i64, i64)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -275,6 +291,7 @@ pub struct Scenario {
     pub deployments: Vec<Deployment>,
     /// AI order targets: `Unit Order ID List`, then `Unit Order Pos List`.
     pub order_targets: Vec<OrderTarget>,
+    pub objective: Option<Objective>,
     pub info: ScenarioInfo,
 }
 
@@ -539,8 +556,10 @@ impl Scenario {
                 reinf_res: t.int_or(0, "ReinfRes", 0)?,
                 available_units: available(db, "One Off Units Available"),
                 available_automated: available(db, "One Off Automated Available"),
+                aftermath: t.text_or(0, "AftermathEnglish")?,
             }
         };
+        let objective = load_objective(db)?;
 
         Ok(Self {
             size,
@@ -553,6 +572,7 @@ impl Scenario {
             mines,
             deployments,
             order_targets,
+            objective,
             info,
         })
     }
@@ -586,6 +606,38 @@ fn available(db: &Database, table: &str) -> Vec<i64> {
         .collect();
     rows.sort_unstable();
     rows.into_iter().map(|(_, e)| e).collect()
+}
+
+/// The `Objective` row and its ID and tile lists, `None` without a row.
+fn load_objective(db: &Database) -> Result<Option<Objective>, DataError> {
+    let Ok(t) = Records::read(db, "Objective") else {
+        return Ok(None);
+    };
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let mut objective = Objective {
+        kind: t.int(0, "ObjectifId")?,
+        turn_number: t.int_or(0, "TurnNumber", 0)?,
+        ..Objective::default()
+    };
+    if let Ok(t) = Records::read(db, "Objectives ID List") {
+        let mut rows = Vec::with_capacity(t.len());
+        for r in 0..t.len() {
+            rows.push((t.int(r, "Counter")?, t.int(r, "Id")?));
+        }
+        rows.sort_unstable();
+        objective.ids = rows.into_iter().map(|(_, id)| id).collect();
+    }
+    if let Ok(t) = Records::read(db, "Objectives Pos List") {
+        let mut rows = Vec::with_capacity(t.len());
+        for r in 0..t.len() {
+            rows.push((t.int(r, "Counter")?, t.int(r, "PosX")?, t.int(r, "PosY")?));
+        }
+        rows.sort_unstable();
+        objective.tiles = rows.into_iter().map(|(_, x, y)| (x, y)).collect();
+    }
+    Ok(Some(objective))
 }
 
 /// An entry of the skirmish selector catalog (`SCENS\SKIRMISH.MDB`).

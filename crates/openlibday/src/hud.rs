@@ -824,6 +824,47 @@ fn draw_goal(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Res
     Ok(())
 }
 
+/// The battle report (`0x45ded0`): title and outcome centred, then the
+/// player's statistics under the column headings.
+fn draw_report(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let layout = viewer.layout();
+    let (s, fonts) = (layout.scale, &viewer.fonts);
+    let px = TEXT_PX * s as f32;
+    let dialog = layout.report_dialog();
+    gfx.frame(canvas, frame::REPORT_DIALOG, dialog.x, dialog.y, s)?;
+    gfx.button(
+        canvas,
+        viewer,
+        &layout,
+        Button::ReportContinue,
+        State::Normal,
+        false,
+    )?;
+    let Some(report) = &viewer.flow.report else {
+        return Ok(());
+    };
+    let r = layout.in_report(ui::REPORT_TEXT);
+    let line = GOAL_LINE * s;
+    for (i, text) in [&report.title, &report.message].into_iter().enumerate() {
+        let row = Rect::new(r.x, r.y + 2 * i as i32 * line, r.w, line);
+        gfx.text_in(canvas, fonts, text, px, WHITE, row, 0.5, 0)?;
+    }
+    let top = dialog.y + ui::REPORT_HEADER_Y * s;
+    let rows = std::iter::once((top, &report.headers)).chain(
+        report
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| (top + (2 + i as i32) * line, row)),
+    );
+    for (y, row) in rows {
+        for (text, x) in row.iter().zip(ui::REPORT_COLUMNS) {
+            gfx.text(canvas, fonts, text, px, WHITE, r.x + x * s, y)?;
+        }
+    }
+    Ok(())
+}
+
 /// Draws the whole interface over the (already drawn) map.
 pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
     let layout = viewer.layout();
@@ -843,6 +884,10 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
                 _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
             }
             draw_goal(canvas, gfx, viewer)?;
+        }
+        Screen::Report => {
+            draw_battle_sidebar(canvas, gfx, viewer, scene, art)?;
+            draw_report(canvas, gfx, viewer)?;
         }
     }
     draw_bottom_bar(canvas, gfx, &layout)?;

@@ -590,6 +590,7 @@ mod tests {
                 has_ruin: true,
                 explosion: Some((1, 25)),
                 ai_category: 9,
+                cost: 0,
             },
         );
         for id in ["UHRUI233"]
@@ -626,6 +627,7 @@ mod tests {
             mines: Vec::new(),
             deployments: Vec::new(),
             order_targets: Vec::new(),
+            objective: None,
             info: ScenarioInfo::default(),
         }
     }

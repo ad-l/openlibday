@@ -71,7 +71,11 @@ pub struct Shot {
     pub total: usize,
     /// The shooter's artwork, for its projectile.
     pub image: String,
+    /// The animation colour (see [`shot::animation_owner`]).
     pub owner: i64,
+    /// The player the damage is credited to: the shooter's or the mine's
+    /// owner.
+    pub attacker: i64,
     /// `ANMSUNIT.FF` animation of the impact.
     pub impact_name: String,
     /// Frame the damage shows: once the impact has played.
@@ -364,6 +368,7 @@ impl Viewer {
             return;
         };
         let at = (u.x, u.y);
+        let attacker = u.owner;
         // Units without facings still have eight fire animations (the
         // OutPost's turret turns), so every shooter faces its target.
         let facing = facing_toward(at, aim);
@@ -490,6 +495,7 @@ impl Viewer {
             total,
             image,
             owner,
+            attacker,
             impact_name,
             hit,
             damage,
@@ -573,6 +579,7 @@ impl Viewer {
             total: impact_len + blast,
             image: kind.image.clone(),
             owner,
+            attacker: owner,
             impact_name,
             hit: impact_len,
             damage,
@@ -594,8 +601,9 @@ impl Viewer {
             if f.frame(now) < f.hit {
                 break;
             }
+            let attacker = f.attacker;
             if let Some(result) = f.result.take() {
-                self.map.battle.scenario = *result;
+                self.swap_in(*result, attacker);
                 self.rebuild();
             }
         }
@@ -719,6 +727,13 @@ impl Viewer {
         }
     }
 
+    /// Makes `result` the current scenario, counting what `attacker`
+    /// destroyed in the battle statistics.
+    fn swap_in(&mut self, result: Scenario, attacker: i64) {
+        let before = std::mem::replace(&mut self.map.battle.scenario, result);
+        self.map.battle.tally(&before, attacker);
+    }
+
     /// Shows the damage: swaps in the damaged scenario, keeping the unit
     /// indices pointing at the same (surviving) units.
     fn apply_hit(&mut self) {
@@ -728,7 +743,11 @@ impl Viewer {
         let Some(result) = s.result.take() else {
             return;
         };
-        self.map.battle.scenario = *result;
+        let attacker = s.attacker;
+        self.swap_in(*result, attacker);
+        let Some(s) = &mut self.shot else {
+            return;
+        };
         let removed = std::mem::take(&mut s.removed_units);
         let removed_buildings = std::mem::take(&mut s.removed_buildings);
         match remap_target(s.target, &removed, &removed_buildings) {
@@ -872,6 +891,7 @@ mod tests {
             total: 13,
             image: String::new(),
             owner: 1,
+            attacker: 1,
             impact_name: String::new(),
             hit: 13,
             damage: 0,

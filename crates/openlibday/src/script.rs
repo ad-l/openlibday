@@ -107,6 +107,10 @@ pub enum Command {
         y: i64,
         seen: bool,
     },
+    /// The win / lose cheats: the battle ends with this outcome.
+    Force(libday_data::objective::Outcome),
+    /// Removes the unit or building with this id as if destroyed.
+    Kill(i64),
     Quit,
 }
 
@@ -219,6 +223,9 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             y: num(args.get(3))?,
             seen: args.get(4).is_some_and(|a| *a == "seen"),
         },
+        "win" => Command::Force(libday_data::objective::Outcome::Won),
+        "lose" => Command::Force(libday_data::objective::Outcome::Lost),
+        "kill" => Command::Kill(num(args.first())?),
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
@@ -412,6 +419,29 @@ impl Runner<'_, '_> {
                 });
                 viewer.rebuild();
             }
+            Command::Force(outcome) => viewer.flow.forced = Some(*outcome),
+            Command::Kill(id) => {
+                let before = viewer.map.battle.scenario.clone();
+                let s = &mut viewer.map.battle.scenario;
+                let owner =
+                    if let Some(i) = s.units.iter().position(|u| u.id == *id && u.arrival == 0) {
+                        s.units.remove(i).owner
+                    } else if let Some(i) = s.buildings.iter().position(|b| b.id == *id) {
+                        s.buildings.remove(i).owner
+                    } else {
+                        return Err(format!("no unit or building {id}").into());
+                    };
+                let attacker = if owner == crate::skirmish::PLAYER {
+                    crate::skirmish::AI
+                } else {
+                    crate::skirmish::PLAYER
+                };
+                viewer.map.battle.tally(&before, attacker);
+                viewer.selected = None;
+                viewer.preview = None;
+                viewer.lock = None;
+                viewer.rebuild();
+            }
             Command::Quit => return Ok(false),
         }
         Ok(!viewer.quit)
@@ -421,7 +451,7 @@ impl Runner<'_, '_> {
     fn step(&mut self, viewer: &mut Viewer) -> Result {
         viewer.clock.advance(self.frame);
         viewer.tick();
-        viewer.ai_tick();
+        viewer.battle_tick();
         self.show(viewer)?;
         if self.visible {
             std::thread::sleep(self.frame);
@@ -539,6 +569,8 @@ pub fn state(viewer: &Viewer) -> Value {
                 "neg_ap": u.neg_ap,
                 "armor": u.armor.or(kind.map(|k| k.armor)),
                 "arrival": u.arrival,
+                "order": u.order.id,
+                "targets": scenario.order_targets.iter().filter(|t| t.unit == u.id).count(),
                 "overwatch": u.overwatch,
             })
         })
@@ -620,6 +652,20 @@ pub fn state(viewer: &Viewer) -> Value {
         .filter(|d| viewer.zone(d.x, d.y))
         .map(|d| json!([d.x, d.y]))
         .collect();
+    let objective = scenario
+        .objective
+        .as_ref()
+        .map(|o| json!({"kind": o.kind, "turn_number": o.turn_number}));
+    let report = viewer
+        .flow
+        .report
+        .as_ref()
+        .map(|r| json!({"title": r.title, "message": r.message, "rows": r.rows}));
+    let players: Vec<Value> = battle
+        .players
+        .iter()
+        .map(|p| json!({"player": p.player, "totals": p.totals(), "rank": p.rank(&viewer.defs)}))
+        .collect();
     json!({
         "time_ms": viewer.clock.now().as_millis() as u64,
         "screen": variant(&viewer.screen),
@@ -661,6 +707,10 @@ pub fn state(viewer: &Viewer) -> Value {
             .map(|row| row.iter().map(|c| c.terrain.as_str()).collect::<Vec<_>>())
             .collect::<Vec<_>>(),
         "sounds": viewer.sound.log,
+        "outcome": viewer.flow.outcome,
+        "objective": objective,
+        "report": report,
+        "players": players,
     })
 }
 

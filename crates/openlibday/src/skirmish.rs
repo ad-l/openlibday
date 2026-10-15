@@ -6,7 +6,8 @@ use std::time::Duration;
 use libday_data::Battle;
 use libday_data::battle::PlayerRecord;
 use libday_data::defs::UnitType;
-use libday_data::scenario::{Order, SkirmishEntry, Unit};
+use libday_data::objective::{self, Outcome};
+use libday_data::scenario::{Order, OrderTarget, SkirmishEntry, Target, Unit};
 use libday_view::movement::{self, Access};
 use libday_view::ui::{
     AUTO_COLUMNS, AUTO_ROWS, DEPLOY_ROWS, SKIRMISH_ROWS, Screen, TECH_COLUMNS, TECH_ROWS,
@@ -39,6 +40,8 @@ pub enum Phase {
     Player,
     /// The AI's turn.
     Ai,
+    /// The battle is won or lost: the battle report.
+    Over,
 }
 
 /// The army being prepared for a skirmish.
@@ -75,6 +78,12 @@ pub struct Flow {
     pub message: Option<String>,
     /// Clock time the AI's turn ends.
     pub ai_until: Option<Duration>,
+    /// Outcome imposed by the win / lose cheats.
+    pub forced: Option<Outcome>,
+    /// How the battle ended, once it has.
+    pub outcome: Option<Outcome>,
+    /// The battle report's text, once the battle is over.
+    pub report: Option<Report>,
 }
 
 impl Flow {
@@ -87,6 +96,9 @@ impl Flow {
             setup: None,
             message: None,
             ai_until: None,
+            forced: None,
+            outcome: None,
+            report: None,
         }
     }
 }
@@ -97,6 +109,7 @@ impl Viewer {
         match self.flow.phase {
             Phase::Deploy => Screen::Deploy,
             Phase::Ai => Screen::AiTurn,
+            Phase::Over => Screen::Report,
             _ => Screen::Battle,
         }
     }
@@ -636,8 +649,256 @@ impl Viewer {
             "{}'s turn has begun",
             libday_view::minimap::player_name(PLAYER)
         ));
+        self.arrive_reinforcements();
         true
     }
+
+    /// The turn flow, then the objective: returns whether anything changed.
+    pub(crate) fn battle_tick(&mut self) -> bool {
+        let turned = self.ai_tick();
+        self.judge() || turned
+    }
+
+    /// Reinforcements due by now enter the map (`0x416576`, after the AI's
+    /// phase): each on its own tile, or later once that is free.
+    fn arrive_reinforcements(&mut self) {
+        let turn = self.map.battle.clock.turn;
+        let due: Vec<usize> = self
+            .map
+            .battle
+            .scenario
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(_, u)| u.reinforcement && u.arrival > 0 && u.arrival <= turn)
+            .map(|(i, _)| i)
+            .collect();
+        let mut arrived = Vec::new();
+        for i in due {
+            let s = &self.map.battle.scenario;
+            let u = &s.units[i];
+            let Some(k) = self.defs.unit(u.kind) else {
+                continue;
+            };
+            if !self.reinforcement_fits(u.id, (u.x, u.y), (k.width, k.height)) {
+                continue;
+            }
+            let size = s.size as i64;
+            let (armor, ap, facings, name) = (k.armor, k.action_points, k.facings, k.name.clone());
+            let u = &mut self.map.battle.scenario.units[i];
+            u.arrival = 0;
+            u.owner = AI;
+            u.tech = 0;
+            u.armor = Some(armor);
+            u.action_points = Some(ap);
+            u.neg_ap = 0;
+            if facings {
+                u.facing = libday_data::scenario::deploy_facing(size, u.x, u.y);
+            }
+            let (id, ordered) = (u.id, u.objective_order);
+            if ordered {
+                self.objective_order(id);
+            }
+            arrived.push(name);
+        }
+        if let Some(name) = arrived.last() {
+            self.flow.message = Some(format!("Enemy reinforcement {name} has arrived"));
+            self.rebuild();
+        }
+    }
+
+    /// Whether a reinforcement `id` of footprint `(w, h)` can enter on
+    /// `(x, y)` (`0x4405d4`): on the map, its id unused, no unit or
+    /// building in the way.
+    fn reinforcement_fits(&self, id: i64, (x, y): (i64, i64), (w, h): (i64, i64)) -> bool {
+        let s = &self.map.battle.scenario;
+        let size = s.size as i64;
+        if x < 0 || y < 0 || x + w > size || y + h > size {
+            return false;
+        }
+        let overlaps = |(bx, by, bw, bh): (i64, i64, i64, i64)| {
+            bx < x + w && x < bx + bw && by < y + h && y < by + bh
+        };
+        let units = s.units.iter().filter(|u| u.arrival == 0).any(|u| {
+            let (uw, uh) = self
+                .defs
+                .unit(u.kind)
+                .map_or((1, 1), |k| (k.width, k.height));
+            u.id == id || overlaps((u.x, u.y, uw, uh))
+        });
+        let buildings = s.buildings.iter().any(|b| {
+            let (bw, bh) = self
+                .defs
+                .buildings
+                .get(&b.kind)
+                .map_or((1, 1), |k| (k.width, k.height));
+            b.id == id || overlaps((b.x, b.y, bw, bh))
+        });
+        !units && !buildings
+    }
+
+    /// Gives arrived reinforcement `id` the order serving the scenario's
+    /// objective, with its targets (`0x416576`).
+    fn objective_order(&mut self, id: i64) {
+        let s = &mut self.map.battle.scenario;
+        let Some(o) = &s.objective else {
+            return;
+        };
+        let ids = || o.ids.iter().map(|&i| Target::Id(i)).collect::<Vec<_>>();
+        let tiles = || {
+            o.tiles
+                .iter()
+                .map(|&(x, y)| Target::Position { x, y })
+                .collect::<Vec<_>>()
+        };
+        use objective::kind;
+        let (order, targets) = match o.kind {
+            kind::DESTROY if o.ids.is_empty() => (5, tiles()),
+            kind::DESTROY | kind::INTERCEPT => (3, ids()),
+            kind::HOLD | kind::PROTECT => (5, tiles()),
+            kind::ESCORT | kind::KEEP => (6, ids()),
+            _ => return,
+        };
+        let base = s.order_targets.iter().map(|t| t.counter).max().unwrap_or(0);
+        s.order_targets.retain(|t| t.unit != id);
+        for (counter, target) in (base + 1..).zip(targets) {
+            s.order_targets.push(OrderTarget {
+                counter,
+                unit: id,
+                target,
+            });
+        }
+        if let Some(u) = s.units.iter_mut().find(|u| u.id == id) {
+            u.order.id = order;
+            u.order.expiry = 99;
+            u.order.probability = 100;
+        }
+    }
+
+    /// The original's turn counter, which advances when the AI's phase
+    /// begins.
+    fn objective_turn(&self) -> i64 {
+        let turn = self.map.battle.clock.turn;
+        if self.flow.phase == Phase::Ai {
+            turn + 1
+        } else {
+            turn
+        }
+    }
+
+    /// Judges the objective while the battle is on and nothing plays,
+    /// ending the battle on an outcome; returns whether it ended.
+    pub(crate) fn judge(&mut self) -> bool {
+        if !matches!(self.flow.phase, Phase::Player | Phase::Ai) || self.busy() {
+            return false;
+        }
+        let turn = self.objective_turn();
+        let none = libday_data::scenario::Objective {
+            kind: -1,
+            ..Default::default()
+        };
+        let battle = &mut self.map.battle;
+        let o = battle.scenario.objective.as_ref().unwrap_or(&none);
+        let outcome = objective::check(
+            o,
+            &battle.scenario,
+            &self.defs,
+            &mut battle.clock,
+            turn,
+            self.flow.forced,
+        );
+        match outcome {
+            Some(o) => {
+                self.end_battle(o);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The battle is over: the battle report shows.
+    pub(crate) fn end_battle(&mut self, outcome: Outcome) {
+        self.flow.phase = Phase::Over;
+        self.flow.outcome = Some(outcome);
+        self.flow.ai_until = None;
+        self.brain = None;
+        self.selected = None;
+        self.preview = None;
+        self.lock = None;
+        self.fire_mode = None;
+        self.flow.report = Some(self.report(outcome));
+        self.screen = Screen::Report;
+    }
+
+    /// The battle report's text (`0x45ded0`).
+    fn report(&self, outcome: Outcome) -> Report {
+        let strings = self.game.strings().unwrap_or_default();
+        let s = |id: u32, fallback: &str| {
+            strings
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| fallback.to_owned())
+        };
+        let count =
+            |id: u32, fallback: &str, n: i64| s(id, fallback).replace("%1!d!", &n.to_string());
+        let record = self
+            .map
+            .battle
+            .players
+            .iter()
+            .find(|p| p.player == PLAYER)
+            .cloned()
+            .unwrap_or_default();
+        let [ud, ul, bd, bl] = record.totals();
+        let units = |n| count(0x204, "%1!d! Units", n);
+        let buildings = |n| count(0x205, "%1!d! Buildings", n);
+        Report {
+            title: s(0x201, "BATTLE REPORT"),
+            message: match outcome {
+                Outcome::Won => s(0x207, "Congratulations ! You have defeated the enemy."),
+                Outcome::Lost => s(
+                    0x208,
+                    "You have failed this scenario. You will need to try again.",
+                ),
+            },
+            headers: [
+                s(0xb4, "PLAYER"),
+                s(0x200, "DESTROYED"),
+                s(0x203, "LOST"),
+                s(0x202, "RANK"),
+            ],
+            rows: [
+                [
+                    libday_view::minimap::player_name(PLAYER),
+                    units(ud),
+                    units(ul),
+                    record.rank(&self.defs).to_string(),
+                ],
+                [String::new(), buildings(bd), buildings(bl), String::new()],
+            ],
+        }
+    }
+
+    /// CONTINUE on the battle report: back to the skirmish selector.
+    pub(crate) fn close_report(&mut self) {
+        self.flow.outcome = None;
+        self.flow.forced = None;
+        self.flow.report = None;
+        if let Err(e) = self.open_selector() {
+            eprintln!("{e}");
+            self.quit = true;
+        }
+    }
+}
+
+/// The battle report's text.
+pub struct Report {
+    pub title: String,
+    pub message: String,
+    /// PLAYER, DESTROYED, LOST, RANK.
+    pub headers: [String; 4],
+    /// The player's units row (with the rank) and buildings row.
+    pub rows: [[String; 4]; 2],
 }
 
 /// A freshly deployed unit on `(x, y)` of a `size`-tile map, facing the

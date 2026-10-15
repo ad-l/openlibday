@@ -509,6 +509,7 @@ impl Viewer {
             Button::SkirmishDown => self.pick_step(1),
             Button::SkirmishBack => self.quit = true,
             Button::SkirmishContinue => self.choose_skirmish(),
+            Button::ReportContinue => self.close_report(),
             Button::TechLeft => self.tech_step(-1),
             Button::TechRight => self.tech_step(1),
             Button::TechUp => self.tech_step(-Self::TECH_ROW),
@@ -849,7 +850,7 @@ fn main() -> Result {
         // The frame after a walk or shot ends shows the unit standing again.
         dirty |= moving != was_moving;
         was_moving = moving;
-        dirty |= viewer.ai_tick();
+        dirty |= viewer.battle_tick();
         let wait = if moving || viewer.flow.ai_until.is_some() {
             15
         } else if viewer.animating() {

@@ -51,7 +51,7 @@ impl TerrainType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BuildingType {
     pub id: i64,
     pub name: String,
@@ -77,6 +77,8 @@ pub struct BuildingType {
     pub explosion: Option<(usize, usize)>,
     /// `AIcategory`: column of the AI priority table it is scored by.
     pub ai_category: i64,
+    /// `Cost`: what destroying one is worth in the battle ranking.
+    pub cost: i64,
 }
 
 impl BuildingType {
@@ -92,7 +94,7 @@ impl BuildingType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UnitType {
     pub id: i64,
     pub tech: i64,
@@ -370,6 +372,7 @@ impl Definitions {
                     _ => None,
                 },
                 ai_category: t.int_or(r, "AIcategory", 0)?,
+                cost: t.int_or(r, "Cost", 0)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));

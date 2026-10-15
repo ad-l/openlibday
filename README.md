@@ -155,12 +155,18 @@ animation and interface sounds started),
 `mine KIND OWNER X Y` (lay an armed mine hidden from all but its owner),
 `inspect X Y` (hold the right button on a tile), `place I X Y` (move unit
 I there), `reactions on|off` (whether overwatch spots moving units),
-`ai off|legacy|modern` (how the computer player plays), `echo TEXT`,
-`quit`. A failed `expect` or command exits with
+`ai off|legacy|modern` (how the computer player plays), `win` / `lose`
+(end the battle with that outcome, like the original's cheats), `kill ID`
+(remove a unit or building as if destroyed by the other side), `echo TEXT`,
+`quit`. The state also holds the `outcome`, `objective`, battle `report` and
+each player's `totals` (units destroyed, units lost, buildings destroyed,
+buildings lost) and `rank`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
 skirmish from selection to turn 2,
 [scripts/combat.txt](scripts/combat.txt) two attacks and
 [scripts/mines.txt](scripts/mines.txt) a mine going off and a mine detector,
+[scripts/objectives.txt](scripts/objectives.txt) reinforcements, win and
+loss conditions and the battle report,
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
 **Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
 turns on it; all are run by

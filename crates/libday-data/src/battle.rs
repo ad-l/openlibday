@@ -106,6 +106,46 @@ pub struct PlayerRecord {
     pub buildings_lost: BTreeMap<i64, i64>,
 }
 
+impl PlayerRecord {
+    /// The battle report's rank (`0x415746`): twice the cost of the units
+    /// destroyed less that of the units lost, plus the cost of the
+    /// buildings destroyed less that of the buildings lost. Unit costs are
+    /// at technology level 0, as in the original.
+    pub fn rank(&self, defs: &crate::Definitions) -> i64 {
+        let units: i64 = defs
+            .units
+            .iter()
+            .filter(|((_, tech), _)| *tech == 0)
+            .map(|(&(id, _), k)| {
+                let d = self.units_destroyed.get(&id).copied().unwrap_or(0);
+                let l = self.units_lost.get(&id).copied().unwrap_or(0);
+                (2 * d - l) * k.cost
+            })
+            .sum();
+        let buildings: i64 = defs
+            .buildings
+            .iter()
+            .map(|(id, k)| {
+                let d = self.buildings_destroyed.get(id).copied().unwrap_or(0);
+                let l = self.buildings_lost.get(id).copied().unwrap_or(0);
+                (d - l) * k.cost
+            })
+            .sum();
+        units + buildings
+    }
+
+    /// Total units destroyed, units lost, buildings destroyed and lost.
+    pub fn totals(&self) -> [i64; 4] {
+        let sum = |m: &BTreeMap<i64, i64>| m.values().sum();
+        [
+            sum(&self.units_destroyed),
+            sum(&self.units_lost),
+            sum(&self.buildings_destroyed),
+            sum(&self.buildings_lost),
+        ]
+    }
+}
+
 /// A scenario in play.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Battle {
@@ -143,6 +183,71 @@ impl Battle {
         let source = Source::Scenario(name.to_owned());
         let scenario = source.load(game)?;
         Ok(Self::new(source, scenario))
+    }
+
+    /// Player `player`'s record, created on first use.
+    pub fn record_mut(&mut self, player: i64) -> &mut PlayerRecord {
+        let i = match self.players.iter().position(|p| p.player == player) {
+            Some(i) => i,
+            None => {
+                self.players.push(PlayerRecord {
+                    player,
+                    ..PlayerRecord::default()
+                });
+                self.players.len() - 1
+            }
+        };
+        &mut self.players[i]
+    }
+
+    /// Counts what an attack by player `attacker` destroyed: the units
+    /// on the map and the buildings of `before` missing from the current
+    /// scenario are lost to their owners and, unless they were the
+    /// attacker's own, destroyed by the attacker.
+    pub fn tally(&mut self, before: &Scenario, attacker: i64) {
+        let units: Vec<(i64, i64)> = before
+            .units
+            .iter()
+            .filter(|u| u.arrival == 0)
+            .filter(|u| {
+                !self
+                    .scenario
+                    .units
+                    .iter()
+                    .any(|n| n.id == u.id && n.arrival == 0)
+            })
+            .map(|u| (u.kind, u.owner))
+            .collect();
+        let buildings: Vec<(i64, i64)> = before
+            .buildings
+            .iter()
+            .filter(|b| !self.scenario.buildings.iter().any(|n| n.id == b.id))
+            .map(|b| (b.kind, b.owner))
+            .collect();
+        for (kind, owner) in units {
+            *self.record_mut(owner).units_lost.entry(kind).or_default() += 1;
+            if owner != attacker {
+                *self
+                    .record_mut(attacker)
+                    .units_destroyed
+                    .entry(kind)
+                    .or_default() += 1;
+            }
+        }
+        for (kind, owner) in buildings {
+            *self
+                .record_mut(owner)
+                .buildings_lost
+                .entry(kind)
+                .or_default() += 1;
+            if owner != attacker {
+                *self
+                    .record_mut(attacker)
+                    .buildings_destroyed
+                    .entry(kind)
+                    .or_default() += 1;
+            }
+        }
     }
 
     /// Serializes against `base`, the scenario loaded from [`Battle::source`].

@@ -42,7 +42,10 @@ impl Viewer {
                 self.start_battle()
             }
             (Screen::Confirm, Keycode::Escape | Keycode::N) => self.screen = Screen::Deploy,
-            (Screen::Skirmishes | Screen::Briefing | Screen::Confirm, _) => {}
+            (Screen::Report, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {
+                self.close_report()
+            }
+            (Screen::Skirmishes | Screen::Briefing | Screen::Confirm | Screen::Report, _) => {}
             _ => return None,
         }
         Some(true)
@@ -157,7 +160,7 @@ impl Viewer {
             return;
         }
         match self.screen {
-            Screen::Goal | Screen::Confirm => {}
+            Screen::Goal | Screen::Confirm | Screen::Report => {}
             Screen::Skirmishes if left => {
                 let layout = self.layout();
                 if let Some(row) =

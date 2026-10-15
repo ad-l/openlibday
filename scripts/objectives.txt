@@ -1,0 +1,123 @@
+# Objectives, reinforcements and the battle report (docs/objectives.md).
+# Run: openlibday --headless --script scripts/objectives.txt  (needs LIBDAY_ROOT)
+ai off
+# s1-2-1 (Destroy units 118 and 119 within 10 turns): reinforcements arrive
+# with an escort order on the objective, then time runs out.
+skirmish s1-2-1
+key Return
+key Return
+key Return
+key Return
+key Y
+expect objective.kind 0
+expect units.id=126.arrival 4
+button EndTurn
+idle
+button EndTurn
+idle
+expect units.id=126.arrival 4
+button EndTurn
+idle
+expect turn 4
+expect units.id=126.arrival 0
+expect units.id=126.order 3
+expect units.id=126.targets 2
+expect units.id=127.arrival 6
+button EndTurn
+idle
+button EndTurn
+idle
+expect turn 6
+expect units.id=127.order 3
+expect units.id=130.arrival 0
+button EndTurn
+idle
+button EndTurn
+idle
+button EndTurn
+idle
+button EndTurn
+idle
+expect turn 10
+expect phase Player
+button EndTurn
+idle
+expect phase Over
+expect screen Report
+expect outcome lost
+expect report.message You have failed this scenario. You will need to try again.
+key O
+key M
+expect screen Report
+key Escape
+expect screen Skirmishes
+# Destroying both objective units wins, and the kills are tallied.
+skirmish s1-2-1
+key Return
+key Return
+key Return
+key Return
+key Y
+expect outcome null
+kill 118
+wait 2
+expect phase Player
+kill 119
+wait 2
+expect screen Report
+expect outcome won
+expect report.rows.0.1 2 Units
+expect players.0.totals.0 2
+expect players.0.rank 120
+button ReportContinue
+# s3-3-1 (Escort): losing every escorted unit loses the battle.
+skirmish s3-3-1
+key Return
+key Return
+key Return
+key Return
+key Y
+expect objective.kind 2
+kill 183
+wait 2
+expect outcome null
+kill 182
+wait 2
+expect outcome lost
+button ReportContinue
+# s2-9-1 (Keep): losing the building loses the battle.
+skirmish s2-9-1
+key Return
+key Return
+key Return
+key Return
+key Y
+expect objective.kind 5
+kill 1000001
+wait 2
+expect outcome lost
+expect players.0.totals.2 1
+button ReportContinue
+# The cheats.
+skirmish s1-6-1
+key Return
+key Return
+key Return
+key Return
+key Y
+win
+wait 1
+expect outcome won
+button ReportContinue
+skirmish s1-6-1
+key Return
+key Return
+key Return
+key Return
+key Y
+lose
+wait 1
+expect outcome lost
+button ReportContinue
+expect screen Skirmishes
+echo objectives test passed

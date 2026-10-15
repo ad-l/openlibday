@@ -79,6 +79,9 @@ pub mod frame {
     pub const NO: u16 = 482;
     pub const BOTTOM_BAR: u16 = 498;
     pub const CHAT: u16 = 499;
+    /// Battle report shown when a battle is over, and its CONTINUE.
+    pub const REPORT_DIALOG: u16 = 365;
+    pub const REPORT_CONTINUE: u16 = 366;
     pub const GOAL_DIALOG: u16 = 633;
     pub const CONTINUE: u16 = 634;
     pub const OBJECTIVES: u16 = 638;
@@ -119,6 +122,8 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (290, 293, 53, 17),
     (298, 301, 53, 17),
     (310, 310, SIDEBAR_W, SIDEBAR_H),
+    (365, 365, 448, 480),
+    (366, 369, 110, 17),
     (477, 477, 254, 144),
     (478, 489, 53, 17),
     (498, 498, BOTTOM_W, BOTTOM_H),
@@ -329,6 +334,8 @@ pub enum Button {
     SkirmishDown,
     SkirmishBack,
     SkirmishContinue,
+    // Battle report.
+    ReportContinue,
 }
 
 /// Which panel set is on screen.
@@ -353,6 +360,8 @@ pub enum Screen {
     Confirm,
     /// Another player's (the AI's) turn.
     AiTurn,
+    /// The battle is over: the battle report.
+    Report,
 }
 
 impl Screen {
@@ -429,6 +438,7 @@ impl Button {
             Button::SkirmishDown => SKIRMISH_DOWN,
             Button::SkirmishBack => SKIRMISH_BACK,
             Button::SkirmishContinue => SKIRMISH_CONTINUE,
+            Button::ReportContinue => REPORT_CONTINUE,
         }
     }
 
@@ -509,6 +519,8 @@ impl Button {
             Button::SkirmishDown => (267, 189),
             Button::SkirmishBack => (12, 373),
             Button::SkirmishContinue => (252, 373),
+            // Relative to the battle report.
+            Button::ReportContinue => (300, 419),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -559,6 +571,14 @@ pub const LIST_ROW: i32 = 15;
 pub const LIST_ROWS: usize = (331 / LIST_ROW) as usize;
 /// Goal dialog position over the map viewport.
 pub const GOAL_AT: (i32, i32) = (40, 40);
+/// Battle report position over the map viewport (measured on the original).
+pub const REPORT_AT: (i32, i32) = (44, 1);
+/// Battle report text area (the dialog inset by 20, 20, 20, 30).
+pub const REPORT_TEXT: Rect = Rect::new(20, 20, 408, 430);
+/// Battle report: top of the column headings and their x offsets in the
+/// text area (`0x45ded0`).
+pub const REPORT_HEADER_Y: i32 = 185;
+pub const REPORT_COLUMNS: [i32; 4] = [25, 115, 250, 360];
 /// Question dialog position over the map viewport.
 pub const QUESTION_AT: (i32, i32) = (50, 70);
 /// Question dialog text area, relative to the dialog.
@@ -703,6 +723,7 @@ impl Layout {
             | Button::SkirmishDown
             | Button::SkirmishBack
             | Button::SkirmishContinue => self.s(native).offset_by(self.skirmish_dialog()),
+            Button::ReportContinue => self.s(native).offset_by(self.report_dialog()),
             _ => self.in_sidebar(native),
         }
     }
@@ -716,6 +737,16 @@ impl Layout {
 
     pub fn skirmish_dialog(&self) -> Rect {
         self.centred(frame::SKIRMISH_DIALOG)
+    }
+
+    pub fn report_dialog(&self) -> Rect {
+        let (w, h) = crop_of(frame::REPORT_DIALOG).unwrap_or((0, 0));
+        self.s(Rect::new(REPORT_AT.0, REPORT_AT.1, w, h))
+    }
+
+    /// A rectangle in battle report coordinates.
+    pub fn in_report(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.report_dialog())
     }
 
     pub fn tech_dialog(&self) -> Rect {
@@ -848,10 +879,15 @@ impl Layout {
             Screen::Deploy => buttons.extend(DEPLOY_BUTTONS),
             Screen::Confirm => buttons.extend([Button::Yes, Button::No]),
             Screen::AiTurn => buttons.extend([Button::Map, Button::Goal]),
+            Screen::Report => buttons.push(Button::ReportContinue),
         }
         if !matches!(
             screen,
-            Screen::Goal | Screen::Skirmishes | Screen::Tech { .. } | Screen::Confirm
+            Screen::Goal
+                | Screen::Skirmishes
+                | Screen::Tech { .. }
+                | Screen::Confirm
+                | Screen::Report
         ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }

@@ -10,6 +10,7 @@
 pub mod battle;
 pub mod campaign;
 pub mod defs;
+pub mod objective;
 pub mod records;
 pub mod scenario;
 

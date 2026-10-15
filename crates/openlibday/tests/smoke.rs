@@ -37,6 +37,11 @@ fn mines_script() {
 }
 
 #[test]
+fn objectives_script() {
+    play("scripts/objectives.txt", "objectives test passed");
+}
+
+#[test]
 fn testing_ground_script() {
     // Only present once tools/modding/make_testing_ground.py --install has run.
     let installed = std::env::var_os("LIBDAY_ROOT").is_some_and(|root| {

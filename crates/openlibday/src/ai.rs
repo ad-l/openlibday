@@ -601,6 +601,10 @@ impl Viewer {
             if self.ai_step(&mut brain) {
                 return Some(true);
             }
+            // The objective is judged after every AI step.
+            if self.judge() {
+                return Some(true);
+            }
         }
         self.brain = Some(brain);
         Some(acted)
