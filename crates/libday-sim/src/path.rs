@@ -255,6 +255,66 @@ impl MoveGrid {
         out
     }
 
+    /// Changes the access to tile `(x, y)` (off the map: ignored).
+    pub fn set(&mut self, x: i32, y: i32, access: Access) {
+        if let Some(i) = self.index(x, y) {
+            self.cells[i].0 = access;
+        }
+    }
+
+    /// Closes every tile outside `x0..=x1`, `y0..=y1`.
+    pub fn restrict(&mut self, (x0, y0): (i32, i32), (x1, y1): (i32, i32)) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if !(x0..=x1).contains(&x) || !(y0..=y1).contains(&y) {
+                    self.set(x, y, Access::None);
+                }
+            }
+        }
+    }
+
+    /// Cheapest paths from `from` to every tile, for many [`Flood::path`]
+    /// queries; each gives the same path as [`MoveGrid::find_path`].
+    pub fn flood(&self, from: (i32, i32)) -> Flood<'_> {
+        let n = self.cells.len();
+        let mut prev = vec![usize::MAX; n];
+        let start = self.index(from.0, from.1);
+        if let Some(start) = start {
+            let mut dist = vec![u32::MAX; n];
+            let mut heap = BinaryHeap::new();
+            let mut order = 0u32;
+            dist[start] = 0;
+            heap.push(Reverse((0u32, 0u16, order, start)));
+            while let Some(Reverse((d, s, _, i))) = heap.pop() {
+                if d > dist[i] || usize::from(s) >= MAX_STEPS {
+                    continue;
+                }
+                let (x, y) = ((i as i32) % self.width, (i as i32) / self.width);
+                for (dx, dy) in DIRS {
+                    let Some(j) = self.index(x + dx, y + dy) else {
+                        continue;
+                    };
+                    let (access, cost) = self.cells[j];
+                    if access == Access::None {
+                        continue;
+                    }
+                    let nd = d + cost + u32::from(dx != 0 && dy != 0);
+                    if nd < dist[j] {
+                        dist[j] = nd;
+                        prev[j] = i;
+                        order += 1;
+                        heap.push(Reverse((nd, s + 1, order, j)));
+                    }
+                }
+            }
+        }
+        Flood {
+            grid: self,
+            start,
+            prev,
+        }
+    }
+
     /// Cheapest path from `from` to `to` (excluding `from`), or `None`
     /// when `to` is unreachable or not a tile the unit may stop on.
     pub fn find_path(&self, from: (i32, i32), to: (i32, i32)) -> Option<Vec<Step>> {
@@ -310,6 +370,43 @@ impl MoveGrid {
             let (x, y) = ((at as i32) % self.width, (at as i32) / self.width);
             let (px, py) = ((p as i32) % self.width, (p as i32) / self.width);
             let (access, cost) = self.cells[at];
+            path.push(Step {
+                x,
+                y,
+                facing: facing(x - px, y - py).unwrap_or(0),
+                cost,
+                stop: access == Access::Stop,
+            });
+            at = p;
+        }
+        path.reverse();
+        Some(path)
+    }
+}
+
+/// Cheapest paths from one tile ([`MoveGrid::flood`]).
+pub struct Flood<'a> {
+    grid: &'a MoveGrid,
+    start: Option<usize>,
+    prev: Vec<usize>,
+}
+
+impl Flood<'_> {
+    /// The path to `to` (excluding the start), as [`MoveGrid::find_path`].
+    pub fn path(&self, to: (i32, i32)) -> Option<Vec<Step>> {
+        let g = self.grid;
+        let start = self.start?;
+        let goal = g.index(to.0, to.1)?;
+        if start == goal || g.cells[goal].0 != Access::Stop || self.prev[goal] == usize::MAX {
+            return None;
+        }
+        let mut path = Vec::new();
+        let mut at = goal;
+        while at != start {
+            let p = self.prev[at];
+            let (x, y) = ((at as i32) % g.width, (at as i32) / g.width);
+            let (px, py) = ((p as i32) % g.width, (p as i32) / g.width);
+            let (access, cost) = g.cells[at];
             path.push(Step {
                 x,
                 y,
@@ -415,6 +512,39 @@ mod tests {
 
     fn cost(path: &[Step]) -> u32 {
         path.iter().map(|s| s.cost).sum()
+    }
+
+    #[test]
+    fn flood_paths_match_find_path() {
+        let mut g = grid(
+            &[
+                "....T....^...",
+                ".rrrrrrr.^...",
+                ".U...~~~.^.m.",
+                ".....~=~.....",
+                "..TT.~~~..pp.",
+                ".....U.......",
+            ],
+            Movement::Ground,
+        );
+        for m in [Movement::Ground, Movement::Air] {
+            if m == Movement::Air {
+                g = grid(&["..^^^..", ".U^.^..", "..^^^..", "......."], m);
+            }
+            for from in [(0, 0), (3, 3), (6, 5)] {
+                let flood = g.flood(from);
+                for y in 0..g.height {
+                    for x in 0..g.width {
+                        assert_eq!(flood.path((x, y)), g.find_path(from, (x, y)));
+                    }
+                }
+            }
+        }
+        g.restrict((1, 0), (5, 2));
+        assert_eq!(g.get(0, 0).0, Access::None);
+        assert_eq!(g.get(5, 2).0, Access::Stop);
+        g.set(3, 0, Access::None);
+        assert_eq!(g.find_path((3, 3), (3, 0)), None);
     }
 
     #[test]

@@ -213,39 +213,55 @@ impl Viewer {
         };
         let budget = move_budget(ap.max(0) as u32, self.reserve(p.unit));
         let (n, spent) = executable_steps(&p.steps, budget);
-        let unit = &self.map.battle.scenario.units[p.unit];
-        let Some(kind) = self.defs.unit_tech(unit.kind, unit.tech) else {
-            return;
+        let mut steps = p.steps;
+        steps.truncate(n);
+        self.start_walk(p.unit, steps, ap - i64::from(spent));
+    }
+
+    /// Walks unit `unit` along `steps`, ending with `final_ap` AP; returns
+    /// whether anything started (a walk, or reaction fire at its start).
+    pub(crate) fn start_walk(
+        &mut self,
+        unit_index: usize,
+        steps: Vec<Step>,
+        final_ap: i64,
+    ) -> bool {
+        let Some(unit) = self.map.battle.scenario.units.get(unit_index) else {
+            return false;
         };
-        if n == 0 {
-            return;
+        let Some(kind) = self.defs.unit_tech(unit.kind, unit.tech) else {
+            return false;
+        };
+        if steps.is_empty() {
+            return false;
         }
         // Already covered by overwatch: shot at without moving.
-        if self.reactions && overwatch::spotted(&self.map.battle.scenario, &self.defs, p.unit) {
-            self.start_reaction(p.unit);
-            return;
+        if self.reactions && overwatch::spotted(&self.map.battle.scenario, &self.defs, unit_index) {
+            self.start_reaction(unit_index);
+            return true;
         }
         let now = self.clock.now();
         let size = self.map.battle.scenario.size;
         let start = (unit.x, unit.y);
         let pix_speed = kind.move_pix_speed.clamp(1, 1000) as i32;
-        let steps = p.steps[..n].to_vec();
         let colour = self.anims.as_deref().map_or(unit.owner, |ff| {
             shot::animation_owner(ff, &kind.image, unit.owner)
         });
+        let facing = i64::from(steps[0].facing);
         self.motion = Some(Motion {
-            unit: p.unit,
+            unit: unit_index,
             positions: walk_queue(size, start, &steps, pix_speed),
             steps,
             done: 0,
             from: start,
             started: now,
-            final_ap: ap - i64::from(spent),
+            final_ap,
             colour,
         });
-        self.map.battle.scenario.units[p.unit].facing = i64::from(p.steps[0].facing);
-        self.options.hidden_unit = Some(p.unit);
+        self.map.battle.scenario.units[unit_index].facing = facing;
+        self.options.hidden_unit = Some(unit_index);
         self.rebuild();
+        true
     }
 
     /// Advances the walking or shooting unit and plays the sound of what is

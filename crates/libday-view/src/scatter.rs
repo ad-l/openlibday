@@ -128,6 +128,9 @@ mod tests {
             jammer,
             hit,
             shot: Default::default(),
+            ai_category: 0,
+            is_convoy: false,
+            is_ai_target: false,
         }
     }
 

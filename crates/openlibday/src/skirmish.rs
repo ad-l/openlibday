@@ -594,20 +594,36 @@ impl Viewer {
             libday_view::minimap::player_name(AI)
         ));
         self.flow.ai_until = Some(self.started + AI_TURN);
+        for unit in &mut self.map.battle.scenario.units {
+            if unit.owner != PLAYER
+                && let Some(k) = self.defs.unit_tech(unit.kind, unit.tech)
+            {
+                unit.restore_ap(k.action_points);
+            }
+        }
+        self.brain = self.ai_mode.map(crate::ai::Brain::new);
     }
 
-    /// Ends the AI's turn once its time is up; returns whether it did.
+    /// Plays the AI's turn, then ends it once its time is up and nothing
+    /// is playing; returns whether anything changed.
     pub(crate) fn ai_tick(&mut self) -> bool {
-        match self.flow.ai_until {
-            Some(until) if self.clock.now() >= until => {}
-            _ => return false,
+        let Some(until) = self.flow.ai_until else {
+            return false;
+        };
+        if let Some(acted) = self.run_brain() {
+            return acted;
+        }
+        if self.busy() || self.clock.now() < until {
+            return false;
         }
         self.flow.ai_until = None;
         self.map.battle.clock.turn += 1;
         let reinf = self.map.battle.scenario.info.reinf_res;
         *self.credits_mut() += reinf;
         for unit in &mut self.map.battle.scenario.units {
-            if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
+            if unit.owner == PLAYER
+                && let Some(k) = self.defs.unit_tech(unit.kind, unit.tech)
+            {
                 unit.restore_ap(k.action_points);
             }
         }

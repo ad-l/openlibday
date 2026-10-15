@@ -14,6 +14,7 @@
 //! and `FILE` a list of commands to run (see `script.rs`); `--headless` runs
 //! it without a window, at `--size` (default 1024x768).
 
+mod ai;
 mod clock;
 mod combat;
 mod hud;
@@ -174,6 +175,9 @@ struct Viewer {
     reaction: Option<combat::Reaction>,
     /// Overwatch spots moving units (scripts may turn it off).
     reactions: bool,
+    /// The AI turn in progress, and how the AI plays (`None`: it passes).
+    brain: Option<ai::Brain>,
+    ai_mode: Option<settings::AiMode>,
     /// The unit the FIRE button armed for a single shot at any tile.
     fire_mode: Option<usize>,
     /// `ANMSUNIT.FF` (unit animations).
@@ -289,6 +293,7 @@ impl Viewer {
         self.motion = None;
         self.shot = None;
         self.reaction = None;
+        self.brain = None;
         self.options.hidden_unit = None;
         self.hover = None;
         self.started = self.clock.now();
@@ -763,6 +768,8 @@ fn main() -> Result {
         shot: None,
         reaction: None,
         reactions: true,
+        brain: None,
+        ai_mode: Some(settings.ai),
         fire_mode: None,
         anims,
         sound: sound::Sound::new(
@@ -834,7 +841,7 @@ fn main() -> Result {
         dirty |= moving != was_moving;
         was_moving = moving;
         dirty |= viewer.ai_tick();
-        let wait = if moving {
+        let wait = if moving || viewer.flow.ai_until.is_some() {
             15
         } else if viewer.animating() {
             100

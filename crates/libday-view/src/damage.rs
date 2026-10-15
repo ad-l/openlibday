@@ -526,6 +526,9 @@ mod tests {
             jammer: 100,
             hit: [100; 3],
             shot: Default::default(),
+            ai_category: 0,
+            is_convoy: false,
+            is_ai_target: false,
         }
     }
 
@@ -583,6 +586,7 @@ mod tests {
                 destructible: true,
                 has_ruin: true,
                 explosion: Some((1, 25)),
+                ai_category: 9,
             },
         );
         for id in ["UHRUI233"]

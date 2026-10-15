@@ -35,6 +35,7 @@
 //!                       OWNER
 //! place I X Y         move unit I (state index) to map tile (X, Y)
 //! reactions on|off    whether overwatch spots moving units (default on)
+//! ai off|legacy|modern  how the computer player plays (default: settings)
 //! quit                  end the program
 //! ```
 
@@ -87,6 +88,7 @@ pub enum Command {
     },
     Place(usize, i64, i64),
     Reactions(bool),
+    Ai(Option<crate::settings::AiMode>),
     Button(String),
     Skirmish(String),
     Deploy(String),
@@ -173,6 +175,13 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             Some(&"on") => true,
             Some(&"off") => false,
             _ => return Err("expected on or off".into()),
+        }),
+        "ai" => Command::Ai(match args.first() {
+            Some(&"off") => None,
+            Some(m) => {
+                Some(crate::settings::AiMode::parse(m).ok_or("expected off, legacy or modern")?)
+            }
+            None => return Err("expected off, legacy or modern".into()),
         }),
         "place" => Command::Place(num(args.first())?, num(args.get(1))?, num(args.get(2))?),
         "inspect" => Command::Inspect {
@@ -277,6 +286,7 @@ impl Runner<'_, '_> {
                 tile_point(viewer, *x, *y)?;
             }
             Command::Reactions(on) => viewer.reactions = *on,
+            Command::Ai(mode) => viewer.ai_mode = *mode,
             Command::Place(i, x, y) => {
                 let unit = viewer
                     .map

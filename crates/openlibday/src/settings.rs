@@ -31,6 +31,11 @@ fullscreen = false
 [sound]
 ; Volume of the animation sounds: 0 (off) to 100.
 volume = 100
+
+[ai]
+; Computer player: modern (the original's behaviour with its bugs fixed) or
+; legacy (faithful to the original, bugs included).
+mode = modern
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +47,27 @@ pub struct Settings {
     pub fullscreen: bool,
     /// 0 (off) to 100.
     pub volume: u32,
+    pub ai: AiMode,
+}
+
+/// How faithfully the computer player follows the original.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AiMode {
+    /// The original's behaviour with its bugs fixed.
+    #[default]
+    Modern,
+    /// Faithful to the original, bugs included.
+    Legacy,
+}
+
+impl AiMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "modern" => Some(Self::Modern),
+            "legacy" => Some(Self::Legacy),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Settings {
@@ -52,6 +78,7 @@ impl Default for Settings {
             height: 0,
             fullscreen: false,
             volume: 100,
+            ai: AiMode::Modern,
         }
     }
 }
@@ -90,6 +117,9 @@ impl Settings {
             parse_in(v, 0, 100)
                 .map(|n| settings.volume = n as u32)
                 .is_some()
+        });
+        read("ai", "mode", &mut |v| {
+            AiMode::parse(v).map(|m| settings.ai = m).is_some()
         });
         (settings, warnings)
     }
@@ -150,7 +180,7 @@ mod tests {
     #[test]
     fn values_and_invalid_values() {
         let (s, warnings) = Settings::parse(
-            "[Interface]\nScale = 1\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n",
+            "[Interface]\nScale = 1\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n[ai]\nmode = Legacy\n",
         );
         assert_eq!(
             s,
@@ -160,6 +190,7 @@ mod tests {
                 height: 0,
                 fullscreen: true,
                 volume: 100,
+                ai: AiMode::Legacy,
             }
         );
         assert_eq!(warnings.len(), 1);

@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use libday_data::{Definitions, Scenario};
 use libday_formats::{Mff, Smacker};
 pub use libday_sim::path::{
-    Access, MoveGrid, Movement, Step, Tile, affordable_steps, executable_steps, move_budget,
+    Access, DIRS, Flood, MoveGrid, Movement, Step, Tile, affordable_steps, executable_steps,
+    move_budget,
 };
 
 use crate::Image;

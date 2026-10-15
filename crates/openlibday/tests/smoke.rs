@@ -49,4 +49,5 @@ fn testing_ground_script() {
         return;
     }
     play("scripts/testing_ground.txt", "testing ground test passed");
+    play("scripts/ai.txt", "ai test passed");
 }

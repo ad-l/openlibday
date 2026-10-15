@@ -1,0 +1,34 @@
+# The computer player (docs/ai.md) on the Testing Ground.
+# Run: openlibday --headless --script scripts/ai.txt  (needs LIBDAY_ROOT and
+# the generator installed)
+ai modern
+skirmish Testing Ground
+key Return
+key Return
+key Return
+key Y
+expect units.77.id 209
+expect units.29.x 72
+# A Main Tank parked near the AI base: the unordered AI units close in and
+# destroy it, the towers fire from where they stand.
+place 77 66 32
+button EndTurn
+expect phase Ai
+idle 20000
+expect phase Player
+expect turn 2
+expect units.77.id 210
+expect units.29.x 71
+expect units.29.y 27
+# The original's rules play another turn.
+ai legacy
+button EndTurn
+idle 20000
+expect phase Player
+expect turn 3
+# Turned off, the AI passes.
+ai off
+button EndTurn
+idle
+expect turn 4
+echo ai test passed

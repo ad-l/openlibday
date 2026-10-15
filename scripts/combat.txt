@@ -2,6 +2,8 @@
 # Run: openlibday --headless --script scripts/combat.txt  (needs LIBDAY_ROOT)
 # Overwatch is tested in testing_ground.txt; here it would cut the walks short.
 reactions off
+# These checks need the computer player to pass its turns.
+ai off
 skirmish Opportunity Knocks
 key Return
 key Return

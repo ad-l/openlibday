@@ -483,14 +483,32 @@ The AI can buy supports in three ways:
 
 ## 7. openlibday implementation notes
 
-- `crates/openlibday/src/ai.rs` holds the brain state.
-- Each frame of the AI phase, it advances one step, but only while no move
-  or shot animation is playing. Moves and shots go through the same code
-  paths as the player's, so walking, scatter, damage, mines and reaction fire
-  all behave identically.
+- `crates/openlibday/src/ai.rs` holds the brain. Each frame of the AI phase
+  it runs brain steps (one execute call each) until a walk or shot starts,
+  then waits for it to finish; the outcome (where the unit stopped, whether
+  the target survived) is resolved on the action's next call. Moves and
+  shots go through the same code paths as the player's, so walking,
+  scatter, damage, mines and reaction fire all behave identically. The AI
+  turn lasts at least 1500 ms and ends once the brain is done.
+- Two modes, chosen with `[ai] mode = modern|legacy` in `openlibday.ini`
+  (scripts: `ai off|legacy|modern`):
+  - **legacy** keeps the original's quirks: the ±20-tile planning window
+    (and its stray `rand()`), the origin charged in path costs and the
+    overshooting AP cut (`0x42d73c`), the swapped building candidate tiles,
+    the 2×2 mine candidates, mines of any owner, the self-compare in the
+    base comparator, the double counter of a delegated escort, the
+    `+1` zone, and goto paths precomputed with tile claims;
+  - **modern** (default) plans on the whole map, cuts paths with the
+    engine's own rule, uses the four tiles around a building and the 3×3
+    around a mine, ignores its own and disarmed mines, and computes each
+    goto path when the unit moves.
+- AP: the AI's units get their AP back when its turn starts, the player's
+  when the player's turn starts (the original restores everything at the
+  turn change).
 - The C runtime `rand()` stream is not reproduced bit-for-bit. The AI uses
-  the game's random source in the same places: probability rolls, stage 3,
-  the shuffle, and the teleport facing.
-- Supports (stages 2, 3, 6 and 7) depend on automated units, which are not
-  implemented yet. They are documented here but left out for now.
-- Not reproduced: the 4000 ms time slices.
+  the game's random source for the order probability rolls (each AI turn).
+- Not emulated: supports and transport requests (stages 2, 3, 6 and 7; need
+  automated units), the counter-attack, the seven-sweep limit, the teleport
+  single-step path, the 4000 ms time slices, and the centre walk on a stale
+  grid when the unit has under 4 AP.
+- `scripts/ai.txt` plays modern, legacy and off turns on the Testing Ground.

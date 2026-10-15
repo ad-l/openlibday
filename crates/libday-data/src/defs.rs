@@ -75,6 +75,8 @@ pub struct BuildingType {
     /// `ExplosionAnimation_Begin` and `_Qty`: frames of
     /// `BUILDING\{image}.SMK` played when destroyed.
     pub explosion: Option<(usize, usize)>,
+    /// `AIcategory`: column of the AI priority table it is scored by.
+    pub ai_category: i64,
 }
 
 impl BuildingType {
@@ -146,6 +148,12 @@ pub struct UnitType {
     /// roughly) of a shot landing on the aimed tile in each range band.
     pub hit: [i64; 3],
     pub shot: ShotAnimation,
+    /// `AIcategory`: row and column of the AI priority table.
+    pub ai_category: i64,
+    /// `isConvoy` and `isAITarget`: an AI-owned human unit whose two
+    /// flags differ is a target for the AI (escorted convoys).
+    pub is_convoy: bool,
+    pub is_ai_target: bool,
 }
 
 /// Which shot animations a unit type has (`Shoot*Animation_Begin` != -1)
@@ -233,7 +241,13 @@ pub struct Definitions {
     pub automated: BTreeMap<i64, AutomatedType>,
     /// `Ranges`: distance bands for the hit chances.
     pub ranges: RangeBands,
+    /// `AI Priority`: `[source][target]` AI category weights (missing
+    /// cells are 0).
+    pub ai_priority: [[i64; AI_CATEGORIES]; AI_CATEGORIES],
 }
+
+/// Rows and columns of the AI priority table (`AI Category Lookup`).
+pub const AI_CATEGORIES: usize = 12;
 
 /// Distance bands for [`UnitType::hit`]: up to `short` tiles is short
 /// range, up to `medium` medium, farther long.
@@ -349,6 +363,7 @@ impl Definitions {
                     }
                     _ => None,
                 },
+                ai_category: t.int_or(r, "AIcategory", 0)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));
@@ -406,6 +421,9 @@ impl Definitions {
                     pix_speed: t.int_or(r, "ShootProjectileAnimation_PixSpeed", 20)?,
                     curve: t.int_or(r, "ShootProjectileAnimation_Curve", 0)?,
                 },
+                ai_category: t.int_or(r, "AIcategory", 0)?,
+                is_convoy: t.flag_or(r, "isConvoy", false)?,
+                is_ai_target: t.flag_or(r, "isAITarget", false)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));
@@ -468,6 +486,17 @@ impl Definitions {
                 short: t.int_or(0, "Short", 3)?,
                 medium: t.int_or(0, "Medium", 6)?,
             };
+        }
+        if let Ok(t) = Records::read(global, "AI Priority") {
+            for r in 0..t.len() {
+                let (s, c) = (t.int_or(r, "AiSource", -1)?, t.int_or(r, "AiTarget", -1)?);
+                if let (Ok(s), Ok(c)) = (usize::try_from(s), usize::try_from(c))
+                    && s < AI_CATEGORIES
+                    && c < AI_CATEGORIES
+                {
+                    defs.ai_priority[s][c] = t.int_or(r, "Priority", 0)?;
+                }
+            }
         }
         if let Ok(t) = Records::read(global, "Automated Units") {
             for r in 0..t.len() {

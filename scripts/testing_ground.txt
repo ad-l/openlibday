@@ -3,6 +3,8 @@
 # every alien unit and building for the AI.
 # Run: openlibday --headless --script scripts/testing_ground.txt  (needs LIBDAY_ROOT
 # and the generator installed)
+# These checks need the computer player to pass its turns.
+ai off
 skirmish Testing Ground
 expect screen Skirmishes
 key Return

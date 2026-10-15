@@ -155,15 +155,16 @@ animation and interface sounds started),
 `mine KIND OWNER X Y` (lay an armed mine hidden from all but its owner),
 `inspect X Y` (hold the right button on a tile), `place I X Y` (move unit
 I there), `reactions on|off` (whether overwatch spots moving units),
-`echo TEXT`,
+`ai off|legacy|modern` (how the computer player plays), `echo TEXT`,
 `quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
 skirmish from selection to turn 2,
 [scripts/combat.txt](scripts/combat.txt) two attacks and
 [scripts/mines.txt](scripts/mines.txt) a mine going off and a mine detector,
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
-**Testing Ground** sandbox; all are run by
-`cargo test` when `LIBDAY_ROOT` is set (the last only once
+**Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
+turns on it; all are run by
+`cargo test` when `LIBDAY_ROOT` is set (the last two only once
 `tools/modding/make_testing_ground.py --install` has run):
 
 ```powershell
@@ -171,7 +172,8 @@ cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
 ```
 
 Options (interface scale, default 2x; initial window size; fullscreen;
-sound volume) are
+sound volume; AI mode, `modern` by default or `legacy` for the original's
+quirks, see [docs/ai.md](docs/ai.md)) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
 or the file given with `--options FILE`. A commented default is created on
