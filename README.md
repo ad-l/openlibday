@@ -48,6 +48,12 @@ with it) and bare ground and forest burn, while water, mountains and pits
 do not. Destroyed units and buildings play their explosions and leave
 their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
 footprint).
+Mines follow the original's moves: enemy mines are hidden until found. A
+unit walking onto an armed mine that affects it stops there and the mine
+explodes (`MINE\*.SMK`) with the mine type's damage, revealing the mines on
+the tiles around it; ground units and troopers set off any mine, grav units
+only grav mines, boats none. Mine detectors (`MineDetectionRange`) stop as
+soon as a hidden mine comes within range and reveal it.
 Animations play their sound (the Smacker audio track of each walk, shot,
 impact and explosion animation, one chunk per shown frame). Sounds are mixed
 in software (any number at once, each resampled from its own rate) into one
@@ -121,11 +127,15 @@ phase, turn, selection, hover cursor and fire check code, path preview,
 motion, target lock, shot timeline, deploy zone, every unit and the latest
 animation and interface sounds started),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
-`units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1), `echo TEXT`,
+`units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1),
+`mine KIND OWNER X Y` (lay an armed mine hidden from all but its owner),
+`echo TEXT`,
 `quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
-skirmish from selection to turn 2 and
-[scripts/combat.txt](scripts/combat.txt) two attacks; both are run by
+skirmish from selection to turn 2,
+[scripts/combat.txt](scripts/combat.txt) two attacks and
+[scripts/mines.txt](scripts/mines.txt) a mine going off and a mine detector;
+all are run by
 `cargo test` when `LIBDAY_ROOT` is set:
 
 ```powershell

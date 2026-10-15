@@ -213,6 +213,7 @@ pub struct MineType {
     pub image: String,
     pub damage_base: i64,
     pub damage_random: i64,
+    pub damage_type: i64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -446,6 +447,7 @@ impl Definitions {
                 image: t.text(r, "ImageID")?.to_ascii_uppercase(),
                 damage_base: t.int_or(r, "damageBase", 0)?,
                 damage_random: t.int_or(r, "damageRandom", 0)?,
+                damage_type: t.int_or(r, "damageType", 0)?,
             };
             insert_unique(&mut defs.mines, &t.table, item.id, item)?;
         }

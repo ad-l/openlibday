@@ -1,4 +1,4 @@
-//! Plays `scripts/smoke.txt` and `scripts/combat.txt` headless. Skipped when
+//! Plays the `scripts/*.txt` test scripts headless. Skipped when
 //! `LIBDAY_ROOT` is not set.
 
 use std::path::Path;
@@ -29,4 +29,9 @@ fn smoke_script() {
 #[test]
 fn combat_script() {
     play("scripts/combat.txt", "combat test passed");
+}
+
+#[test]
+fn mines_script() {
+    play("scripts/mines.txt", "mines test passed");
 }

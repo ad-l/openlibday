@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use libday_view::fire::{self, Fire};
+use libday_view::mines;
 use libday_view::movement::{
     self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
@@ -262,7 +263,7 @@ impl Viewer {
             if let Some(frame) = s.impact(f) {
                 out.push(Playing {
                     slot: 2,
-                    name: shot::animation_name(&s.image, s.owner, Anim::Impact, 0),
+                    name: s.impact_name.clone(),
                     started: s.started,
                     frame,
                 });
@@ -281,38 +282,72 @@ impl Viewer {
 
     /// Advances the walking or shooting unit; returns whether one is busy.
     fn advance(&mut self) -> bool {
-        let Some(m) = &mut self.motion else {
+        let Some(m) = &self.motion else {
             return self.tick_shot();
         };
         let shown =
             (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
         // Steps whose positions have all been shown are walked.
         let walked = m.positions.get(shown).map_or(m.steps.len(), |&(_, s)| s);
-        while m.done < walked {
+        while let Some(m) = &mut self.motion
+            && m.done < walked
+        {
             let step = m.steps[m.done];
             let to = (i64::from(step.x), i64::from(step.y));
-            let unit = &mut self.map.battle.scenario.units[m.unit];
+            m.from = to;
+            m.done += 1;
+            let (i, done, final_ap) = (m.unit, m.done, m.final_ap);
+            let last = done == m.steps.len();
+            let next = m.steps.get(done).map(|s| i64::from(s.facing));
+            let unit = &mut self.map.battle.scenario.units[i];
             (unit.x, unit.y) = to;
             if let Some(ap) = &mut unit.action_points {
                 *ap -= i64::from(step.cost);
             } else if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
                 unit.action_points = Some(k.action_points - i64::from(step.cost));
             }
-            m.from = to;
-            m.done += 1;
-            if m.done == m.steps.len() {
-                let (i, ap) = (m.unit, m.final_ap);
-                self.motion = None;
-                self.map.battle.scenario.units[i].action_points = Some(ap.max(0));
-                self.options.hidden_unit = None;
-                self.rebuild();
-                self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-                self.arrived();
-                return self.shot.is_some();
+            let owner = unit.owner;
+            // A detector stops on sighting a hidden mine; else an armed
+            // mine on the tile may go off. Either ends the walk there.
+            let scenario = &self.map.battle.scenario;
+            let detected = mines::detected(scenario, &self.defs, i, to);
+            let mine = if detected.is_empty() {
+                mines::trigger(scenario, &self.defs, i, to, !last)
+            } else {
+                None
+            };
+            for &k in &detected {
+                self.map.battle.scenario.mines[k].reveal_to(owner);
             }
-            unit.facing = i64::from(m.steps[m.done].facing);
+            if last || !detected.is_empty() || mine.is_some() {
+                let ap = last.then_some(final_ap);
+                return self.stop(i, ap, !last || mine.is_some(), mine);
+            }
+            if let Some(facing) = next {
+                self.map.battle.scenario.units[i].facing = facing;
+            }
         }
         true
+    }
+
+    /// Ends the walk of unit `i` (with `ap` left, if given): it shoots its
+    /// locked target, unless `interrupted`, or sets off mine `mine`.
+    fn stop(&mut self, i: usize, ap: Option<i64>, interrupted: bool, mine: Option<usize>) -> bool {
+        self.motion = None;
+        if let Some(ap) = ap {
+            self.map.battle.scenario.units[i].action_points = Some(ap.max(0));
+        }
+        self.options.hidden_unit = None;
+        self.rebuild();
+        self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
+        if interrupted {
+            self.lock = None;
+        }
+        match mine {
+            Some(k) => self.start_mine(i, k),
+            None => self.arrived(),
+        }
+        self.shot.is_some()
     }
 
     /// The walking unit's centre (map pixels), facing, animation frame
@@ -514,10 +549,9 @@ pub fn draw_shot_effects(
         draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
     }
     if let Some(frame) = s.impact(f) {
-        let name = shot::animation_name(&s.image, s.owner, Anim::Impact, 0);
         let size = viewer.map.battle.scenario.size;
         let at = tile_center(size, s.lands.0, s.lands.1);
-        draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
+        draw_animation(canvas, gfx, viewer, &s.impact_name, frame, at, screen)?;
     }
     for (e, frame) in s.explosions(f) {
         draw_animation(canvas, gfx, viewer, &e.name, frame, e.centre, screen)?;

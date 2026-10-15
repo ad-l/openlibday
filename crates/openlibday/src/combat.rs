@@ -11,6 +11,7 @@ use std::time::Duration;
 use libday_data::scenario::{Ruin, Scenario, facing_toward};
 use libday_view::damage::{self, Destroyed};
 use libday_view::fire::{self, Checker, Fire, Target};
+use libday_view::mines;
 use libday_view::minimap;
 use libday_view::movement::{self, WALK_POSITION_MS, affordable_steps};
 use libday_view::scatter;
@@ -51,9 +52,11 @@ pub struct Shot {
     pub impact_start: usize,
     pub impact_len: usize,
     pub total: usize,
-    /// The shooter's artwork, for its projectile and impact.
+    /// The shooter's artwork, for its projectile.
     pub image: String,
     pub owner: i64,
+    /// `ANMSUNIT.FF` animation of the impact.
+    pub impact_name: String,
     /// Frame the damage shows: once the impact has played.
     pub hit: usize,
     pub damage: i64,
@@ -369,6 +372,7 @@ impl Viewer {
         let damage = damage::roll(&mut self.rng, kind.damage_base, kind.damage_random);
         let (damage_type, area) = (kind.damage_type, kind.damage_area);
         let (image, owner) = (kind.image.clone(), u.owner);
+        let impact_name = shot::animation_name(&image, owner, Anim::Impact, 0);
         let cost = kind.shoot_action_points.max(0);
         let ap = u.action_points.unwrap_or(kind.action_points);
         let u = &mut self.map.battle.scenario.units[unit];
@@ -421,6 +425,7 @@ impl Viewer {
             total,
             image,
             owner,
+            impact_name,
             hit,
             damage,
             result: Some(Box::new(result)),
@@ -445,6 +450,72 @@ impl Viewer {
         if lock.pending {
             self.start_shot(lock.unit, lock.target, !lock.once, false);
         }
+    }
+
+    /// Mine `mine` goes off under unit `unit` (`0x41aca5`): its explosion
+    /// plays on the tile, which takes the mine type's damage like a shot
+    /// (destroying the mine), and the mines around are revealed to the
+    /// unit's owner.
+    pub(crate) fn start_mine(&mut self, unit: usize, mine: usize) {
+        let scenario = &self.map.battle.scenario;
+        let (Some(m), Some(u)) = (scenario.mines.get(mine), scenario.units.get(unit)) else {
+            return;
+        };
+        let Some(kind) = self.defs.mines.get(&m.kind) else {
+            return;
+        };
+        let (at, owner, mover) = ((m.x, m.y), m.owner, u.owner);
+        let impact_name = format!("MINE\\{}.SMK", kind.image.to_ascii_uppercase());
+        let impact_len = self
+            .anims
+            .as_deref()
+            .and_then(|ff| shot::animation_length(ff, &impact_name))
+            .unwrap_or(0);
+        let damage = damage::roll(&mut self.rng, kind.damage_base, kind.damage_random);
+        let mut result = scenario.clone();
+        let outcome = damage::resolve(
+            &mut result,
+            &self.defs,
+            &mut self.rng,
+            at,
+            damage,
+            kind.damage_type,
+            1,
+        );
+        mines::reveal_around(&mut result.mines, at, mover);
+        let explosions: Vec<Explosion> = outcome
+            .destroyed
+            .iter()
+            .filter_map(|d| self.explosion(d))
+            .collect();
+        let blast = explosions.iter().map(|e| e.len).max().unwrap_or(0);
+        self.shot = Some(Shot {
+            unit,
+            target: Target::Tile(at.0, at.1),
+            aim: at,
+            lands: at,
+            started: self.clock.now(),
+            begin: 0,
+            shoot: 0,
+            end: 0,
+            launch: 0,
+            path: Vec::new(),
+            projectile_len: 0,
+            impact_start: 0,
+            impact_len,
+            total: impact_len + blast,
+            image: kind.image.clone(),
+            owner,
+            impact_name,
+            hit: impact_len,
+            damage,
+            result: Some(Box::new(result)),
+            removed_units: outcome.removed_units,
+            removed_buildings: outcome.removed_buildings,
+            explosions,
+            repeat: false,
+            ruins: outcome.ruins,
+        });
     }
 
     /// Advances the shot; returns whether one is playing.
@@ -618,6 +689,7 @@ mod tests {
             total: 13,
             image: String::new(),
             owner: 1,
+            impact_name: String::new(),
             hit: 13,
             damage: 0,
             result: None,

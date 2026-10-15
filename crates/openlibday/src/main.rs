@@ -287,6 +287,8 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        // In a battle the player sees only the mines they know about.
+        self.options.viewer = (!matches!(self.flow.phase, Phase::Free)).then_some(skirmish::PLAYER);
         self.map.scene = libday_view::build(
             &self.map.battle.scenario,
             &self.defs,

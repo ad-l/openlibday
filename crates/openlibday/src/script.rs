@@ -30,6 +30,8 @@
 //!                       last) is VALUE
 //! echo TEXT             print TEXT
 //! seed N                reseed the game's rand() (scripts start at 1)
+//! mine KIND OWNER X Y    lay an armed mine of type KIND, hidden from all but
+//!                       OWNER
 //! quit                  end the program
 //! ```
 
@@ -58,10 +60,24 @@ pub enum Command {
     Wait(u32),
     Idle(u32),
     Key(String),
-    Click { x: i32, y: i32, right: bool },
-    Move { x: i32, y: i32 },
-    Tile { x: i64, y: i64, right: bool },
-    Hover { x: i64, y: i64 },
+    Click {
+        x: i32,
+        y: i32,
+        right: bool,
+    },
+    Move {
+        x: i32,
+        y: i32,
+    },
+    Tile {
+        x: i64,
+        y: i64,
+        right: bool,
+    },
+    Hover {
+        x: i64,
+        y: i64,
+    },
     Button(String),
     Skirmish(String),
     Deploy(String),
@@ -73,6 +89,12 @@ pub enum Command {
     Expect(String, String),
     Echo(String),
     Seed(u32),
+    Mine {
+        kind: i64,
+        owner: i64,
+        x: i64,
+        y: i64,
+    },
     Quit,
 }
 
@@ -161,6 +183,12 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         }
         "echo" => Command::Echo(rest.into()),
         "seed" => Command::Seed(num(args.first())?),
+        "mine" => Command::Mine {
+            kind: num(args.first())?,
+            owner: num(args.get(1))?,
+            x: num(args.get(2))?,
+            y: num(args.get(3))?,
+        },
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
@@ -315,6 +343,21 @@ impl Runner<'_, '_> {
             }
             Command::Echo(text) => println!("{text}"),
             Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
+            &Command::Mine { kind, owner, x, y } => {
+                let mines = &mut viewer.map.battle.scenario.mines;
+                let counter = mines.iter().map(|m| m.counter + 1).max().unwrap_or(1);
+                mines.push(libday_data::scenario::Mine {
+                    counter,
+                    kind,
+                    owner,
+                    x,
+                    y,
+                    armed: true,
+                    hidden_ai: owner != 0,
+                    hidden: std::array::from_fn(|p| p as i64 + 1 != owner),
+                });
+                viewer.rebuild();
+            }
             Command::Quit => return Ok(false),
         }
         Ok(!viewer.quit)
@@ -497,6 +540,11 @@ pub fn state(viewer: &Viewer) -> Value {
         .iter()
         .map(|b| json!({"kind": b.kind, "owner": b.owner, "x": b.x, "y": b.y, "armor": b.armor}))
         .collect();
+    let mines: Vec<Value> = scenario
+        .mines
+        .iter()
+        .map(|m| json!({"kind": m.kind, "owner": m.owner, "x": m.x, "y": m.y, "seen": !m.hidden_to(crate::skirmish::PLAYER)}))
+        .collect();
     let ruins: Vec<Value> = scenario
         .ruins
         .iter()
@@ -544,6 +592,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "units": units,
         "buildings": buildings,
         "ruins": ruins,
+        "mines": mines,
         "sounds": viewer.sound.log,
     })
 }

@@ -1,0 +1,57 @@
+# Mines: hidden enemy mines go off under units walking over them, mine
+# detectors stop when they sense one.
+# Run: openlibday --headless --script scripts/mines.txt  (needs LIBDAY_ROOT)
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Grenadier
+tile 44 18
+deploy Beast Wagon
+tile 44 20
+key Return
+key Y
+# Enemy mines, hidden from the player.
+mine 0 0 42 20
+mine 0 0 41 21
+mine 0 0 40 22
+mine 0 0 41 15
+expect mines.0.seen false
+# The path runs straight over the mine the player does not know about.
+tile 44 20
+tile 41 20
+expect preview.steps.1.0 42
+expect preview.steps.1.1 20
+tile 41 20
+# The Beast Wagon stops on the mine, which blows up under it.
+wait 20
+expect motion null
+expect shot.lands.0 42
+expect shot.lands.1 20
+expect shot.begin 0
+idle 2000
+expect shot null
+expect sounds.-2 MINE\MINE.SMK
+# 26-35 damage is too much for its 25 armour: it is destroyed and leaves
+# a wreck. The mine is gone, the one next to it is revealed, the one two
+# tiles away stays hidden.
+expect units.-1.name Grenadier
+expect ruins.0.0 UBRUI135
+expect ruins.0.1 42
+expect ruins.0.2 20
+expect mines.0.x 41
+expect mines.0.seen true
+expect mines.1.x 40
+expect mines.1.seen false
+# The Grenadier detects mines one tile around: it stops on (42, 16) when
+# the mine on (41, 15) comes in range and reveals it.
+tile 44 18
+tile 41 16
+expect preview.steps.-1.0 41
+tile 41 16
+idle 2000
+expect units.-1.x 42
+expect units.-1.y 16
+expect units.-1.ap 80
+expect mines.2.seen true
+echo mines test passed

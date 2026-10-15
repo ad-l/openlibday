@@ -154,6 +154,26 @@ pub struct Mine {
     pub hidden: [bool; 4],
 }
 
+impl Mine {
+    /// Hidden from `player` (0 = the AI, 1-4 the humans), as `0x42c134`.
+    pub fn hidden_to(&self, player: i64) -> bool {
+        match player {
+            0 => self.hidden_ai,
+            p => self.hidden.get(p as usize - 1).copied().unwrap_or(true),
+        }
+    }
+
+    /// Reveals the mine to `player` as `0x42c153` does: the AI alone, or
+    /// every human player at once.
+    pub fn reveal_to(&mut self, player: i64) {
+        if player == 0 {
+            self.hidden_ai = false;
+        } else {
+            self.hidden = [false; 4];
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Deployment {
     pub counter: i64,

@@ -99,11 +99,7 @@ pub fn move_grid(scenario: &Scenario, defs: &Definitions, mover: usize) -> Optio
         }
     }
     for m in &scenario.mines {
-        let hidden = match unit.owner {
-            0 => m.hidden_ai,
-            p => m.hidden.get(p as usize - 1).copied().unwrap_or(true),
-        };
-        if m.armed && !hidden {
+        if m.armed && !m.hidden_to(unit.owner) {
             let tile = tiles.entry((m.x, m.y)).or_default();
             tile.mine = Some(tile.mine.map_or(m.kind as u8, |k| k.max(m.kind as u8)));
         }

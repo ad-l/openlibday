@@ -59,6 +59,9 @@ pub struct Options {
     /// Index into `scenario.units` left out of the scene (a unit being
     /// animated separately).
     pub hidden_unit: Option<usize>,
+    /// Player whose view is shown: mines hidden from them are left out
+    /// (`None`: everything).
+    pub viewer: Option<i64>,
 }
 
 impl Default for Options {
@@ -69,6 +72,7 @@ impl Default for Options {
             terrain_only: false,
             ground: "BORE000".to_owned(),
             hidden_unit: None,
+            viewer: None,
         }
     }
 }
@@ -249,6 +253,9 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 .push((Layer::Wall, Sheet::Walls, sprite));
         }
         for item in &scenario.mines {
+            if options.viewer.is_some_and(|p| item.hidden_to(p)) {
+                continue;
+            }
             let Some(kind) = defs.mines.get(&item.kind) else {
                 missing.push(format!("mine type {}", item.kind));
                 continue;
