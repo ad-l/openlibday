@@ -14,6 +14,7 @@ use libday_view::fire::{self, Checker, Fire, Target};
 use libday_view::mines;
 use libday_view::minimap;
 use libday_view::movement::{self, WALK_POSITION_MS, affordable_steps};
+use libday_view::overwatch;
 use libday_view::scatter;
 use libday_view::shot::{self, Anim};
 use libday_view::tile_center;
@@ -30,6 +31,17 @@ pub struct Lock {
     /// Locked in fire mode: a single shot. Otherwise the unit keeps
     /// shooting while it can.
     pub once: bool,
+}
+
+/// Reaction fire at a unit spotted moving ([`overwatch`]): rounds in which
+/// every hostile unit that can fire at it on overwatch shoots once, while
+/// one did and it stands.
+pub struct Reaction {
+    pub target: usize,
+    /// Units still to consider this round, last first.
+    pub queue: Vec<usize>,
+    /// Someone fired this round.
+    pub fired: bool,
 }
 
 /// A shot being animated, timed in frames of [`WALK_POSITION_MS`].
@@ -146,7 +158,7 @@ fn distance(a: (i64, i64), b: (i64, i64)) -> i64 {
 impl Viewer {
     /// A unit is walking or shooting: orders and selection wait.
     pub(crate) fn busy(&self) -> bool {
-        self.motion.is_some() || self.shot.is_some()
+        self.motion.is_some() || self.shot.is_some() || self.reaction.is_some()
     }
 
     /// Fire mode (the FIRE button) is on for the selected unit.
@@ -342,11 +354,16 @@ impl Viewer {
         let projectile_len = len(Anim::Projectile, anim.projectile);
         let impact_len = len(Anim::Impact, anim.impact);
         let launch = begin + (anim.proj_begin.max(0) as usize).min(shoot.saturating_sub(1));
-        // The side whose turn it is: the shooter's, until reaction fire.
+        // The side whose turn it is: the shooter's, or under reaction fire
+        // the moving unit's.
+        let side = match &self.reaction {
+            Some(r) => scenario.units.get(r.target).map_or(u.owner, |t| t.owner),
+            None => u.owner,
+        };
         let evader = self
             .unit_at(aim.0, aim.1)
             .map(|v| &scenario.units[v])
-            .filter(|v| v.owner == u.owner)
+            .filter(|v| v.owner == side)
             .and_then(|v| self.defs.unit_tech(v.kind, v.tech));
         let lands = scatter::land(
             &mut self.rng,
@@ -554,9 +571,50 @@ impl Viewer {
                 self.start_shot(s.unit, s.target, true, true);
                 return self.shot.is_some();
             }
-            return false;
+            return self.next_reaction();
         }
         true
+    }
+
+    /// Unit `target` was spotted moving: reaction fire starts.
+    pub(crate) fn start_reaction(&mut self, target: usize) {
+        self.lock = None;
+        self.reaction = Some(Reaction {
+            target,
+            queue: Vec::new(),
+            fired: true,
+        });
+        self.next_reaction();
+    }
+
+    /// Starts the next reaction shot (`0x41a46b`); returns whether one is
+    /// playing, ending the reaction fire otherwise.
+    fn next_reaction(&mut self) -> bool {
+        let units = self.map.battle.scenario.units.len();
+        loop {
+            let Some(r) = &mut self.reaction else {
+                return false;
+            };
+            let target = r.target;
+            let Some(shooter) = r.queue.pop() else {
+                if !r.fired || target >= units {
+                    self.reaction = None;
+                    return false;
+                }
+                r.fired = false;
+                r.queue = (0..units).rev().collect();
+                continue;
+            };
+            if overwatch::reacts(&self.map.battle.scenario, &self.defs, shooter, target) {
+                self.start_shot(shooter, Target::Unit(target), false, false);
+                if self.shot.is_some() {
+                    if let Some(r) = &mut self.reaction {
+                        r.fired = true;
+                    }
+                    return true;
+                }
+            }
+        }
     }
 
     /// Shows the damage: swaps in the damaged scenario, keeping the unit
@@ -587,6 +645,17 @@ impl Viewer {
             None => {
                 (s.begin, s.shoot, s.end) = (0, 0, 0);
                 s.repeat = false;
+            }
+        }
+        if let Some(r) = &mut self.reaction {
+            r.queue = r
+                .queue
+                .iter()
+                .filter_map(|&i| damage::remap(i, &removed))
+                .collect();
+            match damage::remap(r.target, &removed) {
+                Some(t) => r.target = t,
+                None => self.reaction = None,
             }
         }
         self.selected = remap(self.selected);

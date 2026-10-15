@@ -220,7 +220,7 @@ impl Viewer {
                     if button == MouseButton::Right
                         && let Some(i) = self.unit_under(ox, oy)
                     {
-                        self.info = Some(i);
+                        self.inspect(i);
                         return;
                     }
                     self.drag = Some((x, y));
@@ -256,6 +256,28 @@ impl Viewer {
         self.drag = None;
         self.minimap_drag = false;
         self.info = None;
+        self.watch.clear();
+    }
+
+    /// Shows unit `i`'s info while the right button is held and, for an
+    /// enemy ready to fire on overwatch, the tiles it covers (a convenience
+    /// the original lacks).
+    pub(crate) fn inspect(&mut self, i: usize) {
+        self.info = Some(i);
+        let scenario = &self.map.battle.scenario;
+        let enemy = scenario
+            .units
+            .get(i)
+            .is_some_and(|u| self.options.viewer.is_none_or(|v| u.owner != v));
+        self.watch = if enemy {
+            let tiles = libday_view::overwatch::zone(scenario, &self.defs, i);
+            libday_view::scene::zone_sprites(&tiles, 2)
+                .into_iter()
+                .map(|(at, name)| (at, format!("{}{name}", crate::render::RED)))
+                .collect()
+        } else {
+            Vec::new()
+        };
     }
 
     pub(crate) fn mouse_motion(&mut self, x: f32, y: f32) {

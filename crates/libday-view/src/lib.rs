@@ -11,6 +11,7 @@ pub mod fire;
 pub mod mines;
 pub mod minimap;
 pub mod movement;
+pub mod overwatch;
 pub mod scatter;
 pub mod scene;
 pub mod shot;

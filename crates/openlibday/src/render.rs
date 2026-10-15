@@ -11,12 +11,23 @@ use crate::hud::{self, Gfx, Result};
 use crate::moves;
 
 impl<'r> Gfx<'r> {
+    /// Sprite `name` of `sheet`; a [`RED`]-prefixed name is the sprite in
+    /// red (from a yellow one).
     pub(crate) fn sprite(&mut self, art: &Art, sheet: Sheet, name: &str) -> Option<&Texture<'r>> {
         let creator = self.creator();
         self.sprites
             .entry((sheet, name.to_owned()))
             .or_insert_with(|| {
-                let (width, height, rgba) = art.rgba(sheet, name)?;
+                let (base, red) = match name.strip_prefix(RED) {
+                    Some(base) => (base, true),
+                    None => (name, false),
+                };
+                let (width, height, mut rgba) = art.rgba(sheet, base)?;
+                if red {
+                    for px in rgba.as_chunks_mut::<4>().0 {
+                        (px[1], px[2]) = (0, 0);
+                    }
+                }
                 hud::texture(
                     creator,
                     &libday_view::Image {
@@ -29,6 +40,9 @@ impl<'r> Gfx<'r> {
             .as_ref()
     }
 }
+
+/// Sprite-name prefix for a sprite recoloured red.
+pub(crate) const RED: &str = "red:";
 
 /// Draws the map into the viewport.
 fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
@@ -89,9 +103,11 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Some(c) if c.1 == "CMOVE" => (Some(c), None),
         c => (None, c),
     };
-    let mut overlays: Vec<(i64, i64, &str)> = hover_tiles
-        .into_iter()
-        .map(|(x, y)| (x, y, "CSELC"))
+    let mut overlays: Vec<(i64, i64, &str)> = viewer
+        .watch
+        .iter()
+        .map(|((x, y), name)| (*x, *y, name.as_str()))
+        .chain(hover_tiles.into_iter().map(|(x, y)| (x, y, "CSELC")))
         .chain(moves::path_dots(viewer))
         .chain(move_cursor.map(|((x, y), name)| (x, y, name)))
         .collect();

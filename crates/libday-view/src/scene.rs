@@ -1,6 +1,6 @@
 //! The ordered draw list of a scenario map.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use libday_data::Definitions;
 use libday_data::defs::terrain_kind;
@@ -346,6 +346,25 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
         items,
         missing,
     }
+}
+
+/// Zone markers for `tiles` in deployment-zone style `DEPL{player}NN`,
+/// edged where a neighbour is outside the zone.
+pub fn zone_sprites(tiles: &BTreeSet<Key>, player: i64) -> Vec<(Key, String)> {
+    tiles
+        .iter()
+        .map(|&(x, y)| {
+            let mask = NEIGHBORS
+                .iter()
+                .filter(|(dx, dy, _)| tiles.contains(&(x + dx, y + dy)))
+                .map(|(_, _, bit)| bit)
+                .sum::<usize>();
+            (
+                (x, y),
+                format!("DEPL{player}{:02}", DEPLOYMENT_SPRITES[mask]),
+            )
+        })
+        .collect()
 }
 
 /// Starting-zone markers, sorted by tile `(x, y)`.

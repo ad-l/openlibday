@@ -160,6 +160,8 @@ struct Viewer {
     minimap_drag: bool,
     /// Unit whose info replaces the minimap while the right button is held.
     info: Option<usize>,
+    /// Overwatch zone of the inspected enemy (`info`): tiles and markers.
+    watch: Vec<((i64, i64), String)>,
     hover: Option<(i64, i64)>,
     /// Index into `map.battle.scenario.units`.
     selected: Option<usize>,
@@ -168,6 +170,10 @@ struct Viewer {
     /// Enemy locked as the selected unit's target, and a shot playing.
     lock: Option<combat::Lock>,
     shot: Option<combat::Shot>,
+    /// Reaction fire at a unit spotted moving.
+    reaction: Option<combat::Reaction>,
+    /// Overwatch spots moving units (scripts may turn it off).
+    reactions: bool,
     /// The unit the FIRE button armed for a single shot at any tile.
     fire_mode: Option<usize>,
     /// `ANMSUNIT.FF` (unit animations).
@@ -276,11 +282,13 @@ impl Viewer {
         self.entry = None;
         self.selected = None;
         self.info = None;
+        self.watch.clear();
         self.preview = None;
         self.lock = None;
         self.fire_mode = None;
         self.motion = None;
         self.shot = None;
+        self.reaction = None;
         self.options.hidden_unit = None;
         self.hover = None;
         self.started = self.clock.now();
@@ -746,12 +754,15 @@ fn main() -> Result {
         press: None,
         minimap_drag: false,
         info: None,
+        watch: Vec::new(),
         hover: None,
         selected: None,
         preview: None,
         motion: None,
         lock: None,
         shot: None,
+        reaction: None,
+        reactions: true,
         fire_mode: None,
         anims,
         sound: sound::Sound::new(

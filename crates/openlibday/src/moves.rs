@@ -9,6 +9,7 @@ use libday_view::mines;
 use libday_view::movement::{
     self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
+use libday_view::overwatch;
 use libday_view::shot::{self, Anim};
 use libday_view::{SPRITE_ANCHOR_Y, SPRITE_W, Sheet, tile_center};
 use sdl3::render::{Canvas, FRect};
@@ -39,6 +40,19 @@ struct Walker {
     frame: usize,
     /// Tile whose depth the unit is drawn at.
     depth: (i64, i64),
+}
+
+/// How a walk ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum End {
+    /// At the destination: a locked target is shot.
+    Arrived,
+    /// Short of it, on sighting a mine.
+    Interrupted,
+    /// On mine `k`, which goes off.
+    Mine(usize),
+    /// Spotted by overwatch: reaction fire.
+    Spotted,
 }
 
 /// A unit walking along a path.
@@ -206,6 +220,11 @@ impl Viewer {
         if n == 0 {
             return;
         }
+        // Already covered by overwatch: shot at without moving.
+        if self.reactions && overwatch::spotted(&self.map.battle.scenario, &self.defs, p.unit) {
+            self.start_reaction(p.unit);
+            return;
+        }
         let now = self.clock.now();
         let size = self.map.battle.scenario.size;
         let start = (unit.x, unit.y);
@@ -313,9 +332,15 @@ impl Viewer {
                 unit.action_points = Some(k.action_points - i64::from(step.cost));
             }
             let owner = unit.owner;
+            let ap = last.then_some(final_ap);
+            // Spotted by a hostile unit on overwatch, the walk ends there
+            // under reaction fire, before mines are looked at.
+            let scenario = &self.map.battle.scenario;
+            if self.reactions && overwatch::spotted(scenario, &self.defs, i) {
+                return self.stop(i, ap, End::Spotted);
+            }
             // A detector stops on sighting a hidden mine; else an armed
             // mine on the tile may go off. Either ends the walk there.
-            let scenario = &self.map.battle.scenario;
             let detected = mines::detected(scenario, &self.defs, i, to);
             let mine = if detected.is_empty() {
                 mines::trigger(scenario, &self.defs, i, to, !last)
@@ -325,9 +350,14 @@ impl Viewer {
             for &k in &detected {
                 self.map.battle.scenario.mines[k].reveal_to(owner);
             }
-            if last || !detected.is_empty() || mine.is_some() {
-                let ap = last.then_some(final_ap);
-                return self.stop(i, ap, !last || mine.is_some(), mine);
+            let end = match mine {
+                Some(k) => Some(End::Mine(k)),
+                None if !detected.is_empty() && !last => Some(End::Interrupted),
+                None if last => Some(End::Arrived),
+                None => None,
+            };
+            if let Some(end) = end {
+                return self.stop(i, ap, end);
             }
             if let Some(facing) = next {
                 self.map.battle.scenario.units[i].facing = facing;
@@ -337,8 +367,8 @@ impl Viewer {
     }
 
     /// Ends the walk of unit `i` (with `ap` left, if given): it shoots its
-    /// locked target, unless `interrupted`, or sets off mine `mine`.
-    fn stop(&mut self, i: usize, ap: Option<i64>, interrupted: bool, mine: Option<usize>) -> bool {
+    /// locked target if it arrived.
+    fn stop(&mut self, i: usize, ap: Option<i64>, end: End) -> bool {
         self.motion = None;
         if let Some(ap) = ap {
             self.map.battle.scenario.units[i].action_points = Some(ap.max(0));
@@ -346,14 +376,15 @@ impl Viewer {
         self.options.hidden_unit = None;
         self.rebuild();
         self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-        if interrupted {
+        if end != End::Arrived {
             self.lock = None;
         }
-        match mine {
-            Some(k) => self.start_mine(i, k),
-            None => self.arrived(),
+        match end {
+            End::Mine(k) => self.start_mine(i, k),
+            End::Spotted => self.start_reaction(i),
+            End::Arrived | End::Interrupted => self.arrived(),
         }
-        self.shot.is_some()
+        self.busy()
     }
 
     /// The walking unit's centre (map pixels), facing, animation frame

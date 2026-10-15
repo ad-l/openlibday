@@ -17,6 +17,7 @@
 //! move X Y              move the mouse to output pixel (X, Y)
 //! tile X Y [right]      click map tile (X, Y), recentring if it is off screen
 //! hover X Y             move the mouse over map tile (X, Y)
+//! inspect X Y         hold the right button on map tile (X, Y)
 //! button NAME           click an interface button (EndTurn, TechContinue...)
 //! skirmish NAME|N       pick a skirmish by file, title or list number
 //! deploy NAME           pick a unit type in the deployment list
@@ -32,6 +33,8 @@
 //! seed N                reseed the game's rand() (scripts start at 1)
 //! mine KIND OWNER X Y    lay an armed mine of type KIND, hidden from all but
 //!                       OWNER
+//! place I X Y         move unit I (state index) to map tile (X, Y)
+//! reactions on|off    whether overwatch spots moving units (default on)
 //! quit                  end the program
 //! ```
 
@@ -78,6 +81,12 @@ pub enum Command {
         x: i64,
         y: i64,
     },
+    Inspect {
+        x: i64,
+        y: i64,
+    },
+    Place(usize, i64, i64),
+    Reactions(bool),
     Button(String),
     Skirmish(String),
     Deploy(String),
@@ -159,6 +168,16 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             x: num(args.first())?,
             y: num(args.get(1))?,
             right: right(2)?,
+        },
+        "reactions" => Command::Reactions(match args.first() {
+            Some(&"on") => true,
+            Some(&"off") => false,
+            _ => return Err("expected on or off".into()),
+        }),
+        "place" => Command::Place(num(args.first())?, num(args.get(1))?, num(args.get(2))?),
+        "inspect" => Command::Inspect {
+            x: num(args.first())?,
+            y: num(args.get(1))?,
         },
         "hover" => Command::Hover {
             x: num(args.first())?,
@@ -256,6 +275,23 @@ impl Runner<'_, '_> {
             }
             Command::Hover { x, y } => {
                 tile_point(viewer, *x, *y)?;
+            }
+            Command::Reactions(on) => viewer.reactions = *on,
+            Command::Place(i, x, y) => {
+                let unit = viewer
+                    .map
+                    .battle
+                    .scenario
+                    .units
+                    .get_mut(*i)
+                    .ok_or("no such unit")?;
+                (unit.x, unit.y) = (*x, *y);
+                viewer.rebuild();
+            }
+            Command::Inspect { x, y } => {
+                let (px, py) = tile_point(viewer, *x, *y)?;
+                let d = viewer.density;
+                viewer.mouse_down(MouseButton::Right, px / d, py / d);
             }
             Command::Button(name) => {
                 let layout = viewer.layout();
@@ -588,6 +624,9 @@ pub fn state(viewer: &Viewer) -> Value {
         "motion": motion,
         "lock": lock,
         "shot": shot,
+        "reaction": viewer.reaction.as_ref().map(|r| r.target),
+        "info": viewer.info,
+        "watch": viewer.watch.iter().map(|((x, y), _)| [*x, *y]).collect::<Vec<_>>(),
         "zone": zone,
         "units": units,
         "buildings": buildings,

@@ -44,4 +44,26 @@ button EndTurn
 idle
 expect turn 2
 expect phase Player
+# Overwatch: holding the right button on an enemy ready to fire on
+# overwatch shows the tiles it covers.
+inspect 72 26
+expect info 29
+tile 72 26
+expect info null
+expect watch []
+# A Main Tank walking toward the AI base is spotted by the Light Tank at
+# (72, 26) on its first step: the walk ends there and the Light Tank fires
+# while it has a shot's AP left.
+place 77 62 30
+tile 62 30
+expect selected 77
+tile 69 29
+tile 69 29
+idle 5000
+expect reaction null
+expect units.77.x 63
+expect units.77.y 30
+expect units.77.ap 190
+expect units.29.ap 10
+expect sounds.-1 TLTK\P0\TLTK0I0.SMK
 echo testing ground test passed

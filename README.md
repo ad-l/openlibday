@@ -56,6 +56,18 @@ explodes (`MINE\*.SMK`) with the mine type's damage, revealing the mines on
 the tiles around it; ground units and troopers set off any mine, grav units
 only grav mines, boats none. Mine detectors (`MineDetectionRange`) stop as
 soon as a hidden mine comes within range and reveal it.
+Overwatch and reaction fire follow the original's move order (`0x419e07`):
+the walk is checked tile by tile from where the unit stands, and it is
+spotted on a tile when a hostile unit whose type `canOverwatch`, with a
+shot's AP left, has a clear shot at it there (stealth units, `Jammer` 0,
+never are). The walk ends on that tile (before its mines are looked at; a
+unit spotted where it stands does not move) and every such unit fires once,
+in unit order, in rounds while one did and the target stands (`0x41a46b`).
+There is no overwatch accuracy penalty: the moving unit, of the side whose
+turn it is, evades by its `Jammer`. Only moves trigger it, and the per-unit
+OVERWATCH toggle only keeps a shot's AP in reserve. As a convenience the
+original lacks, holding the right button on an enemy ready to fire on
+overwatch highlights the tiles it covers (in range and line of sight) in red.
 Animations play their sound (the Smacker audio track of each walk, shot,
 impact and explosion animation, one chunk per shown frame). Sounds are mixed
 in software (any number at once, each resampled from its own rate) into one
@@ -116,7 +128,8 @@ Click a unit to select it (click it again to turn it clockwise); with a unit sel
 its path and click it again (or double click) to move; click an enemy to
 target it and again to attack. The OVERWATCH box
 toggles the reserve. Hold the right button on a unit to show its AR, AP,
-range, overwatch, owner and capability icons in the minimap well. Click the minimap to move the view. The title
+range, overwatch, owner and capability icons in the minimap well (and, for an
+enemy ready to fire on overwatch, the tiles it covers). Click the minimap to move the view. The title
 bar shows the hovered tile's terrain, building and unit. Set
 `OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
 
@@ -138,6 +151,8 @@ animation and interface sounds started),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
 `units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1),
 `mine KIND OWNER X Y` (lay an armed mine hidden from all but its owner),
+`inspect X Y` (hold the right button on a tile), `place I X Y` (move unit
+I there), `reactions on|off` (whether overwatch spots moving units),
 `echo TEXT`,
 `quit`. A failed `expect` or command exits with
 an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
