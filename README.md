@@ -49,8 +49,9 @@ do not. Destroyed units and buildings play their explosions and leave
 their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
 footprint).
 Animations play their sound (the Smacker audio track of each walk, shot,
-impact and explosion animation, one chunk per shown frame, mixed through
-SDL3 audio streams). Interface effects come from `SOUNDS\*.WAV`: selecting a
+impact and explosion animation, one chunk per shown frame). Sounds are mixed
+in software (any number at once, each resampled from its own rate) into one
+SDL3 audio stream. Interface effects come from `SOUNDS\*.WAV`: selecting a
 unit, deploying, recalling and refused deployments (with the original
 messages).
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and

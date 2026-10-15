@@ -18,6 +18,7 @@ mod clock;
 mod combat;
 mod hud;
 mod input;
+mod mixer;
 mod moves;
 mod render;
 mod script;
