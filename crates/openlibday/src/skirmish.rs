@@ -548,6 +548,7 @@ impl Viewer {
             .position(|u| u.owner == PLAYER && u.arrival == 0);
         self.preview = None;
         self.lock = None;
+        self.fire_mode = None;
         self.started = self.clock.now();
         self.centre_on_selected();
     }
@@ -566,6 +567,7 @@ impl Viewer {
         self.selected = None;
         self.preview = None;
         self.lock = None;
+        self.fire_mode = None;
         self.started = self.clock.now();
         self.flow.message = Some(format!(
             "{}'s turn has begun",

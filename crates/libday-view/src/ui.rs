@@ -437,7 +437,7 @@ impl Button {
     pub fn is_toggle(self) -> bool {
         matches!(
             self,
-            Button::Overwatch | Button::AutoFire | Button::Objectives
+            Button::Overwatch | Button::AutoFire | Button::Fire | Button::Objectives
         )
     }
 

@@ -1,6 +1,8 @@
 //! Attacks: clicking an enemy locks it as the target (with a path into
 //! firing position when the unit cannot hit it from where it stands), a
-//! second click moves there and shoots. The shot plays the shooter's
+//! second click moves there and shoots, again and again while it can. In
+//! fire mode (the FIRE button) any tile can be locked, for a single shot.
+//! The shot plays the shooter's
 //! raise/fire/lower animations, the projectile's flight when it has one,
 //! and the impact at the target.
 
@@ -24,6 +26,9 @@ pub struct Lock {
     pub target: Target,
     /// Set once confirmed: the unit is moving into position, then shoots.
     pub pending: bool,
+    /// Locked in fire mode: a single shot. Otherwise the unit keeps
+    /// shooting while it can.
+    pub once: bool,
 }
 
 /// A shot being animated, timed in frames of [`WALK_POSITION_MS`].
@@ -55,7 +60,10 @@ pub struct Shot {
     /// The scenario after the damage, swapped in at `hit`.
     pub result: Option<Box<Scenario>>,
     pub removed_units: Vec<usize>,
+    pub removed_buildings: Vec<usize>,
     pub explosions: Vec<Explosion>,
+    /// Shoot again once over, while the target stands and AP lasts.
+    pub repeat: bool,
     /// Wreckage, added once the shot is over.
     pub ruins: Vec<Ruin>,
 }
@@ -128,8 +136,55 @@ impl Viewer {
         self.motion.is_some() || self.shot.is_some()
     }
 
+    /// Fire mode (the FIRE button) is on for the selected unit.
+    pub(crate) fn fire_mode_on(&self) -> bool {
+        self.fire_mode.is_some() && self.fire_mode == self.selected
+    }
+
+    /// Whether the FIRE button can be used: the selected unit is ours, on
+    /// the map and armed.
+    pub(crate) fn can_fire_mode(&self) -> bool {
+        self.selected.is_some_and(|i| {
+            self.controllable(i)
+                && self.map.battle.scenario.units[i].arrival == 0
+                && self.kind_of(i).is_some_and(|k| k.has_weapon)
+        })
+    }
+
+    pub(crate) fn toggle_fire_mode(&mut self) {
+        if self.fire_mode_on() {
+            self.fire_mode = None;
+        } else if self.can_fire_mode() {
+            self.fire_mode = self.selected;
+        }
+        self.lock = None;
+        self.preview = None;
+    }
+
+    /// What the selected unit targets on tile `(x, y)`: an enemy unit or
+    /// building, or in fire mode anything there but itself (the bare
+    /// ground included).
+    pub(crate) fn target_at(&self, x: i64, y: i64) -> Option<Target> {
+        let sel = self.selected.filter(|&s| self.controllable(s))?;
+        if !self.fire_mode_on() {
+            return self.enemy_at(x, y);
+        }
+        let size = self.map.battle.scenario.size as i64;
+        if !(0..size).contains(&x) || !(0..size).contains(&y) {
+            return None;
+        }
+        match self.unit_at(x, y) {
+            Some(u) if u == sel => None,
+            Some(u) => Some(Target::Unit(u)),
+            None => Some(
+                self.building_at(x, y)
+                    .map_or(Target::Tile(x, y), Target::Building),
+            ),
+        }
+    }
+
     /// Enemy unit or building on tile `(x, y)` for the selected unit.
-    pub(crate) fn enemy_at(&self, x: i64, y: i64) -> Option<Target> {
+    fn enemy_at(&self, x: i64, y: i64) -> Option<Target> {
         let sel = self.selected.filter(|&s| self.controllable(s))?;
         let scenario = &self.map.battle.scenario;
         let owner = scenario.units[sel].owner;
@@ -158,6 +213,11 @@ impl Viewer {
             && lock.unit == sel
             && lock.target == target
         {
+            // Confirming a fire-mode lock spends the fire mode.
+            let once = lock.once;
+            if once {
+                self.fire_mode = None;
+            }
             match &self.preview {
                 Some(p) if p.unit == sel => {
                     lock.pending = true;
@@ -166,7 +226,7 @@ impl Viewer {
                         self.lock = None;
                     }
                 }
-                _ => self.start_shot(sel, target),
+                _ => self.start_shot(sel, target, !once),
             }
             return;
         }
@@ -186,6 +246,7 @@ impl Viewer {
             unit: sel,
             target,
             pending: false,
+            once: self.fire_mode_on(),
         });
     }
 
@@ -224,8 +285,9 @@ impl Viewer {
         fallback
     }
 
-    /// Starts unit `unit` shooting at `target` if it can from where it is.
-    pub(crate) fn start_shot(&mut self, unit: usize, target: Target) {
+    /// Starts unit `unit` shooting at `target` if it can from where it is;
+    /// with `repeat` it shoots again after, while it can.
+    pub(crate) fn start_shot(&mut self, unit: usize, target: Target, repeat: bool) {
         self.lock = None;
         self.preview = None;
         let scenario = &self.map.battle.scenario;
@@ -335,7 +397,9 @@ impl Viewer {
             damage,
             result: Some(Box::new(result)),
             removed_units: outcome.removed_units,
+            removed_buildings: outcome.removed_buildings,
             explosions,
+            repeat,
             ruins: outcome.ruins,
         };
         if shot.animating_shooter() {
@@ -351,7 +415,7 @@ impl Viewer {
             return;
         };
         if lock.pending {
-            self.start_shot(lock.unit, lock.target);
+            self.start_shot(lock.unit, lock.target, !lock.once);
         }
     }
 
@@ -373,11 +437,22 @@ impl Viewer {
             self.rebuild();
         }
         if f >= total {
-            if let Some(s) = self.shot.take()
-                && !s.ruins.is_empty()
-            {
+            let Some(s) = self.shot.take() else {
+                return false;
+            };
+            if !s.ruins.is_empty() {
                 self.map.battle.scenario.ruins.extend(s.ruins);
                 self.rebuild();
+            }
+            // Lock and fire keeps shooting while the shot is clear.
+            if s.repeat
+                && matches!(
+                    fire::check(&self.map.battle.scenario, &self.defs, s.unit, s.target),
+                    Some(Fire::Clear(_))
+                )
+            {
+                self.start_shot(s.unit, s.target, true);
+                return self.shot.is_some();
             }
             return false;
         }
@@ -395,6 +470,17 @@ impl Viewer {
         };
         self.map.battle.scenario = *result;
         let removed = std::mem::take(&mut s.removed_units);
+        let removed_buildings = std::mem::take(&mut s.removed_buildings);
+        let target = match s.target {
+            Target::Unit(i) => damage::remap(i, &removed).map(Target::Unit),
+            Target::Building(i) => damage::remap(i, &removed_buildings).map(Target::Building),
+            t @ Target::Tile(..) => Some(t),
+        };
+        match target {
+            Some(t) => s.target = t,
+            // Destroyed: nothing left to shoot at.
+            None => s.repeat = false,
+        }
         if removed.is_empty() && s.explosions.is_empty() {
             self.rebuild();
             return;
@@ -403,9 +489,13 @@ impl Viewer {
         match damage::remap(s.unit, &removed) {
             Some(u) => s.unit = u,
             // Caught in its own blast: no more shooter to animate.
-            None => (s.begin, s.shoot, s.end) = (0, 0, 0),
+            None => {
+                (s.begin, s.shoot, s.end) = (0, 0, 0);
+                s.repeat = false;
+            }
         }
         self.selected = remap(self.selected);
+        self.fire_mode = remap(self.fire_mode);
         self.info = remap(self.info);
         self.options.hidden_unit = remap(self.options.hidden_unit);
         self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
@@ -475,6 +565,7 @@ impl Viewer {
                     .map_or((1, 1), |k| (k.width, k.height));
                 (b.x, b.y, wh)
             }
+            Target::Tile(x, y) => (x, y, (1, 1)),
         };
         (0..h)
             .flat_map(|dy| (0..w).map(move |dx| (x + dx, y + dy)))
@@ -508,6 +599,8 @@ mod tests {
             damage: 0,
             result: None,
             removed_units: Vec::new(),
+            removed_buildings: Vec::new(),
+            repeat: false,
             explosions: vec![Explosion {
                 name: String::new(),
                 first: 1,

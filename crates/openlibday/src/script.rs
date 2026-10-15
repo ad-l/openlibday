@@ -467,6 +467,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "unit": l.unit,
             "target": format!("{:?}", l.target),
             "pending": l.pending,
+            "once": l.once,
         })
     });
     let shot = viewer.shot.as_ref().map(|s| {
@@ -486,6 +487,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "total": s.total,
             "hit": s.hit,
             "damage": s.damage,
+            "repeat": s.repeat,
             "explosions": s.explosions.iter().map(|e| json!([e.name, e.first, e.len])).collect::<Vec<_>>(),
             "ruins": s.ruins.iter().map(|r| json!([r.id, r.x, r.y])).collect::<Vec<_>>(),
         })
@@ -531,6 +533,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "hover": viewer.hover.map(|(x, y)| [x, y]),
         "cursor": viewer.battle_cursor().map(|(_, name)| name),
         "fire": viewer.hover_fire().map(|f| f.code()),
+        "fire_mode": viewer.fire_mode_on(),
         "zoom": viewer.zoom / viewer.density,
         "camera": [viewer.camera.0, viewer.camera.1],
         "preview": preview,

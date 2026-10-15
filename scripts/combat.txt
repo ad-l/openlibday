@@ -76,4 +76,35 @@ expect units.9.armor 5
 expect units.-2.x 39
 expect units.-2.ap 20
 expect cursor CINVA
+# Next turn. FIRE arms a single shot at anything, bare ground included.
+button EndTurn
+idle 3000
+tile 35 25
+button Fire
+expect fire_mode true
+hover 36 22
+expect cursor CTARG
+tile 36 22
+expect lock.target Tile(36, 22)
+expect lock.once true
+tile 36 22
+expect fire_mode false
+wait 5
+expect shot.target Tile(36, 22)
+expect shot.repeat false
+idle 3000
+expect shot null
+expect units.27.ap 195
+# Lock and fire keeps shooting while it can: the Pack Freak takes two
+# shots and is destroyed.
+tile 30 26
+tile 30 26
+wait 5
+expect shot.repeat true
+expect units.27.ap 140
+idle 8000
+expect shot null
+expect units.-1.index 26
+expect units.-1.name Beast Wagon
+expect units.-1.ap 85
 echo combat test passed

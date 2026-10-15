@@ -13,6 +13,8 @@ pub enum Target {
     Unit(usize),
     /// Index into `scenario.buildings`.
     Building(usize),
+    /// A map tile, fired at in fire mode.
+    Tile(i64, i64),
 }
 
 #[derive(Clone, Copy)]
@@ -86,6 +88,7 @@ impl<'a> Checker<'a> {
                 let k = defs.buildings.get(&b.kind)?;
                 footprint(b.x, b.y, k.width, k.height)
             }
+            Target::Tile(x, y) => footprint(x, y, 1, 1),
         };
         let mut blockers: BTreeMap<(i32, i32), Blocker> = BTreeMap::new();
         for (i, u) in scenario.units.iter().enumerate() {

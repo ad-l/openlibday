@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use libday_view::fire::{self, Fire, Target};
+use libday_view::fire::{self, Fire};
 use libday_view::movement::{
     self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
@@ -143,7 +143,7 @@ impl Viewer {
         if self.busy() {
             return;
         }
-        if let Some(target) = self.enemy_at(x, y) {
+        if let Some(target) = self.target_at(x, y) {
             self.click_target(target);
             return;
         }
@@ -155,6 +155,7 @@ impl Viewer {
             (_, Some(u)) if self.controllable(u) => {
                 if self.selected != Some(u) {
                     self.preview = None;
+                    self.fire_mode = None;
                 }
                 self.selected = Some(u);
             }
@@ -328,7 +329,8 @@ impl Viewer {
     /// the original picks it (`0x4519cf`): `CMOVE` where it can walk this
     /// turn, and over an enemy unit or building `CTARG` when a shot is
     /// possible, `CINVA` when the unit lacks the AP to shoot and `CMVSH`
-    /// otherwise (out of range or line of sight: move closer). Own units
+    /// otherwise (out of range or line of sight: move closer). In fire
+    /// mode any tile but the shooter's is a target. Own units otherwise
     /// get the selection grid, drawn separately.
     pub(crate) fn battle_cursor(&self) -> Option<((i64, i64), &'static str)> {
         if self.busy() || !matches!(self.screen, libday_view::ui::Screen::Battle) {
@@ -340,24 +342,16 @@ impl Viewer {
         if scenario.units[sel].arrival != 0 {
             return None;
         }
-        let target = match self.unit_at(x, y) {
-            Some(u) if self.controllable(u) => return None,
-            Some(u) if scenario.units[u].owner != scenario.units[sel].owner => {
-                Some(Target::Unit(u))
-            }
-            Some(_) => return None,
-            None => self.building_at(x, y).and_then(|b| {
-                let owner = scenario.buildings[b].owner;
-                (owner != 0 && owner != scenario.units[sel].owner).then_some(Target::Building(b))
-            }),
-        };
+        let target = self.target_at(x, y);
         let name = match target {
             Some(_) => match self.hover_fire()? {
                 Fire::Clear(_) => "CTARG",
                 Fire::NoActionPoints => "CINVA",
                 _ => "CMVSH",
             },
-            None if self.building_at(x, y).is_some() => return None,
+            None if self.unit_at(x, y).is_some() || self.building_at(x, y).is_some() => {
+                return None;
+            }
             None => {
                 let p = self.plan(sel, (x, y))?;
                 (!p.steps.is_empty() && p.affordable == p.steps.len()).then_some("CMOVE")?
@@ -366,25 +360,12 @@ impl Viewer {
         Some(((x, y), name))
     }
 
-    /// Result of the selected unit firing at the hovered enemy, if any.
+    /// Result of the selected unit firing at the hovered target, if any.
     pub(crate) fn hover_fire(&self) -> Option<Fire> {
         let (x, y) = self.hover?;
         let sel = self.selected.filter(|&s| self.controllable(s))?;
-        let scenario = &self.map.battle.scenario;
-        let owner = scenario.units[sel].owner;
-        let target = match self.unit_at(x, y) {
-            Some(u) if scenario.units[u].owner != owner => Target::Unit(u),
-            Some(_) => return None,
-            None => {
-                let b = self.building_at(x, y)?;
-                let o = scenario.buildings[b].owner;
-                if o == 0 || o == owner {
-                    return None;
-                }
-                Target::Building(b)
-            }
-        };
-        fire::check(scenario, &self.defs, sel, target)
+        let target = self.target_at(x, y)?;
+        fire::check(&self.map.battle.scenario, &self.defs, sel, target)
     }
 }
 

@@ -542,6 +542,7 @@ fn draw_battle_sidebar(
         let on = match button {
             Button::Overwatch => viewer.overwatch_on(),
             Button::AutoFire => viewer.map.battle.auto_fire,
+            Button::Fire => viewer.fire_mode_on(),
             _ => false,
         };
         gfx.button(canvas, viewer, &layout, button, State::Normal, on)?;

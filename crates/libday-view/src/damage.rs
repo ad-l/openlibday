@@ -49,6 +49,8 @@ pub struct Outcome {
     pub damage: i64,
     /// Indices (before removal) of the units destroyed, ascending.
     pub removed_units: Vec<usize>,
+    /// Indices (before removal) of the buildings destroyed, ascending.
+    pub removed_buildings: Vec<usize>,
     pub destroyed: Vec<Destroyed>,
     /// Wreckage left behind; not yet added to the scenario, so it can show
     /// once the explosions are over.
@@ -403,11 +405,12 @@ pub fn resolve(
         scenario.buildings.remove(i);
     }
     outcome.removed_units = dead_units;
+    outcome.removed_buildings = dead_buildings;
     outcome
 }
 
-/// Index of unit `i` once `removed` (ascending) are taken out, or `None`
-/// if it is one of them.
+/// Index of unit (or building) `i` once `removed` (ascending) are taken
+/// out, or `None` if it is one of them.
 pub fn remap(i: usize, removed: &[usize]) -> Option<usize> {
     match removed.binary_search(&i) {
         Ok(_) => None,

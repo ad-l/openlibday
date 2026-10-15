@@ -170,6 +170,8 @@ struct Viewer {
     /// Enemy locked as the selected unit's target, and a shot playing.
     lock: Option<combat::Lock>,
     shot: Option<combat::Shot>,
+    /// The unit the FIRE button armed for a single shot at any tile.
+    fire_mode: Option<usize>,
     /// `ANMSUNIT.FF` (walk animations).
     anims: Option<Vec<u8>>,
     objectives: bool,
@@ -270,6 +272,7 @@ impl Viewer {
         self.info = None;
         self.preview = None;
         self.lock = None;
+        self.fire_mode = None;
         self.motion = None;
         self.shot = None;
         self.options.hidden_unit = None;
@@ -417,6 +420,7 @@ impl Viewer {
         if self.selected != Some(unit) {
             self.preview = None;
             self.lock = None;
+            self.fire_mode = None;
         }
         self.selected = Some(unit);
         self.centre_on_selected();
@@ -431,6 +435,7 @@ impl Viewer {
                 self.controllable(i) && self.kind_of(i).is_some_and(|k| k.can_overwatch)
             }),
             Button::AutoFire => self.selected.is_some(),
+            Button::Fire => !self.busy() && self.can_fire_mode(),
             Button::Left | Button::Right => !self.busy() && !self.cycle_units().is_empty(),
             Button::Up => self.scroll > 0,
             Button::Down => self.scroll + LIST_ROWS < self.entries().len(),
@@ -464,6 +469,7 @@ impl Viewer {
             Button::Right => self.cycle_selected(1),
             Button::Overwatch => self.toggle_overwatch(),
             Button::AutoFire => self.map.battle.auto_fire ^= true,
+            Button::Fire => self.toggle_fire_mode(),
             Button::Objectives => self.objectives = !self.objectives,
             Button::Swatch(slot) => {
                 self.player = slot;
@@ -687,6 +693,7 @@ impl Viewer {
                 self.selected = None;
                 self.preview = None;
                 self.lock = None;
+                self.fire_mode = None;
                 self.rebuild();
             }
             Keycode::LeftBracket | Keycode::RightBracket if free => {
@@ -697,6 +704,7 @@ impl Viewer {
                 self.selected = None;
                 self.preview = None;
                 self.lock = None;
+                self.fire_mode = None;
                 self.rebuild();
             }
             _ => {}
@@ -811,6 +819,7 @@ impl Viewer {
                 _ if !self.busy() => {
                     self.preview = None;
                     self.lock = None;
+                    self.fire_mode = None;
                 }
                 _ => {}
             }
@@ -1294,6 +1303,7 @@ fn main() -> Result {
         motion: None,
         lock: None,
         shot: None,
+        fire_mode: None,
         anims,
         objectives: true,
         markers: Vec::new(),
