@@ -688,25 +688,20 @@ impl Viewer {
     }
 }
 
-/// Draws frame `frame` (looping) of `ANMSUNIT.FF` animation `name`
-/// centred on map pixel `centre`; `false` when it has no frames.
-pub fn draw_animation(
-    canvas: &mut Canvas<Window>,
-    gfx: &mut Gfx,
+/// The decoded frames of `ANMSUNIT.FF` animation `name`, decoding them on
+/// first use. Full-screen support animations are large: only the latest is
+/// kept.
+fn load_animation<'g, 'r>(
+    gfx: &'g mut Gfx<'r>,
     viewer: &Viewer,
     name: &str,
-    frame: usize,
-    centre: (i32, i32),
-    screen: &dyn Fn(f64, f64) -> (f32, f32),
-) -> Result<bool> {
+) -> Option<&'g hud::Anim<'r>> {
     let creator = gfx.creator();
-    // Full-screen support animations are large: keep only the current one.
     if name.starts_with("AUTOUNIT\\") && !gfx.anims.contains_key(name) {
         gfx.anims
             .retain(|k, _| !k.starts_with("AUTOUNIT\\") || k == name);
     }
-    let anim = gfx
-        .anims
+    gfx.anims
         .entry(name.to_string())
         .or_insert_with(|| {
             let ff = viewer.anims.as_deref()?;
@@ -722,7 +717,50 @@ pub fn draw_animation(
                 .collect();
             Some(hud::Anim { size, frames })
         })
-        .as_ref();
+        .as_ref()
+}
+
+/// Decodes the playing support's animation if it is not ready yet, and
+/// restarts the support's clock so it plays from its first frame: the
+/// decoding takes a noticeable time, which the animation would otherwise
+/// skip, and the frame before it already shows the view centred on the
+/// target.
+pub fn preload_support(gfx: &mut Gfx, viewer: &mut Viewer) {
+    let Some(name) = viewer
+        .shot
+        .as_ref()
+        .filter(|s| s.impact_name.starts_with("AUTOUNIT\\"))
+        .map(|s| s.impact_name.clone())
+    else {
+        return;
+    };
+    if gfx.anims.contains_key(&name) {
+        return;
+    }
+    load_animation(gfx, viewer, &name);
+    let now = viewer.clock.now();
+    if let Some(s) = &mut viewer.shot {
+        s.started = now;
+    }
+}
+
+/// Draws frame `frame` (looping) of `ANMSUNIT.FF` animation `name`
+/// centred on map pixel `centre`; `false` when it has no frames.
+pub fn draw_animation(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    name: &str,
+    frame: usize,
+    centre: (i32, i32),
+    screen: &dyn Fn(f64, f64) -> (f32, f32),
+) -> Result<bool> {
+    // A support's full-screen animation is decoded between frames
+    // (`preload_support`), never while drawing one.
+    if name.starts_with("AUTOUNIT\\") && !gfx.anims.contains_key(name) {
+        return Ok(false);
+    }
+    let anim = load_animation(gfx, viewer, name);
     let Some(anim) = anim.filter(|a| !a.frames.is_empty()) else {
         return Ok(false);
     };

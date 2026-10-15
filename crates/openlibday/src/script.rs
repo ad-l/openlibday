@@ -508,6 +508,8 @@ impl Runner<'_, '_> {
 
     /// Advances the game by one frame.
     fn step(&mut self, viewer: &mut Viewer) -> Result {
+        // At the instant the support started, so its timing is unchanged.
+        crate::moves::preload_support(self.gfx, viewer);
         viewer.clock.advance(self.frame);
         viewer.tick();
         viewer.battle_tick();
@@ -533,7 +535,8 @@ impl Runner<'_, '_> {
         Ok(())
     }
 
-    fn screenshot(&mut self, viewer: &Viewer, path: &Path) -> Result {
+    fn screenshot(&mut self, viewer: &mut Viewer, path: &Path) -> Result {
+        crate::moves::preload_support(self.gfx, viewer);
         crate::render::render(self.canvas, self.gfx, viewer)?;
         let surface = self
             .canvas

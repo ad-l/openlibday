@@ -944,6 +944,8 @@ fn main() -> Result {
             viewer.tick();
             render::render(&mut canvas, &mut gfx, &viewer)?;
             canvas.present();
+            // After the frame that shows the view centred on its target.
+            moves::preload_support(&mut gfx, &mut viewer);
             dirty = false;
         }
     }
