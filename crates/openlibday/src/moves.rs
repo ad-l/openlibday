@@ -15,6 +15,7 @@ use sdl3::video::Window;
 
 use crate::Viewer;
 use crate::hud::{self, Gfx, Result};
+use crate::sound::Playing;
 
 /// Path shown after a single click.
 pub struct Preview {
@@ -220,8 +221,65 @@ impl Viewer {
         self.rebuild();
     }
 
-    /// Advances the walking or shooting unit; returns whether one is busy.
+    /// Advances the walking or shooting unit and plays the sound of what is
+    /// shown; returns whether a unit is busy.
     pub(crate) fn tick(&mut self) -> bool {
+        let busy = self.advance();
+        let playing = self.playing();
+        self.sound.update(self.anims.as_deref(), playing);
+        busy
+    }
+
+    /// Animations on screen, for their sound.
+    fn playing(&self) -> Vec<Playing> {
+        let mut out = Vec::new();
+        if let Some(w) = self.walker()
+            && let Some(name) = w.anim
+        {
+            let started = match (&self.shot, &self.motion) {
+                (Some(s), _) => s.started,
+                (None, Some(m)) => m.started,
+                (None, None) => Duration::ZERO,
+            };
+            out.push(Playing {
+                slot: 0,
+                name,
+                started,
+                frame: w.frame,
+            });
+        }
+        if let Some(s) = &self.shot {
+            let f = s.frame(self.clock.now());
+            if s.projectile(f).is_some() {
+                out.push(Playing {
+                    slot: 1,
+                    name: shot::animation_name(&s.image, s.owner, Anim::Projectile, 0),
+                    started: s.started,
+                    frame: f - s.launch,
+                });
+            }
+            if let Some(frame) = s.impact(f) {
+                out.push(Playing {
+                    slot: 2,
+                    name: shot::animation_name(&s.image, s.owner, Anim::Impact, 0),
+                    started: s.started,
+                    frame,
+                });
+            }
+            for (i, (e, frame)) in s.explosions(f).enumerate() {
+                out.push(Playing {
+                    slot: 3 + i,
+                    name: e.name.clone(),
+                    started: s.started,
+                    frame,
+                });
+            }
+        }
+        out
+    }
+
+    /// Advances the walking or shooting unit; returns whether one is busy.
+    fn advance(&mut self) -> bool {
         let Some(m) = &mut self.motion else {
             return self.tick_shot();
         };

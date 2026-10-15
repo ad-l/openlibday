@@ -544,6 +544,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "units": units,
         "buildings": buildings,
         "ruins": ruins,
+        "sounds": viewer.sound.log,
     })
 }
 

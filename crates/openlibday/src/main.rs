@@ -21,6 +21,7 @@ mod moves;
 mod script;
 mod settings;
 mod skirmish;
+mod sound;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -172,8 +173,10 @@ struct Viewer {
     shot: Option<combat::Shot>,
     /// The unit the FIRE button armed for a single shot at any tile.
     fire_mode: Option<usize>,
-    /// `ANMSUNIT.FF` (walk animations).
+    /// `ANMSUNIT.FF` (unit animations).
     anims: Option<Vec<u8>>,
+    /// Animation sound.
+    sound: sound::Sound,
     objectives: bool,
     /// Units and buildings on the minimap; owners with an overview list.
     markers: Vec<Marker>,
@@ -261,6 +264,7 @@ impl Viewer {
 
     /// Per-map state after loading a map.
     fn reset(&mut self) {
+        self.sound.stop();
         self.rebuild();
         self.recentre();
         self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
@@ -1305,6 +1309,14 @@ fn main() -> Result {
         shot: None,
         fire_mode: None,
         anims,
+        sound: sound::Sound::new(
+            if args.headless {
+                None
+            } else {
+                sdl.audio().ok()
+            },
+            settings.volume,
+        ),
         objectives: true,
         markers: Vec::new(),
         players: Vec::new(),

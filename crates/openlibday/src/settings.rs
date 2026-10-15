@@ -27,6 +27,10 @@ width = 0
 height = 0
 ; Start in borderless fullscreen (true/false).
 fullscreen = false
+
+[sound]
+; Volume of the animation sounds: 0 (off) to 100.
+volume = 100
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +40,8 @@ pub struct Settings {
     pub width: u32,
     pub height: u32,
     pub fullscreen: bool,
+    /// 0 (off) to 100.
+    pub volume: u32,
 }
 
 impl Default for Settings {
@@ -45,6 +51,7 @@ impl Default for Settings {
             width: 0,
             height: 0,
             fullscreen: false,
+            volume: 100,
         }
     }
 }
@@ -78,6 +85,11 @@ impl Settings {
         });
         read("window", "fullscreen", &mut |v| {
             parse_bool(v).map(|f| settings.fullscreen = f).is_some()
+        });
+        read("sound", "volume", &mut |v| {
+            parse_in(v, 0, 100)
+                .map(|n| settings.volume = n as u32)
+                .is_some()
         });
         (settings, warnings)
     }
@@ -146,7 +158,8 @@ mod tests {
                 scale: 1,
                 width: 1600,
                 height: 0,
-                fullscreen: true
+                fullscreen: true,
+                volume: 100,
             }
         );
         assert_eq!(warnings.len(), 1);

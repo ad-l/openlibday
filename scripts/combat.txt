@@ -33,6 +33,10 @@ expect units.-1.x 35
 expect units.-1.y 25
 expect units.-1.facing 4
 expect units.-1.ap 75
+# Animation sounds: the walk (one per facing), the shot, the explosion.
+expect sounds.0 BLCA\P1\BLCA1M0.SMK
+expect sounds.-2 BLCA\P1\BLCA1T4.SMK
+expect sounds.-1 BFOT\P0\BFOT0E0.SMK
 # The Footman is destroyed: it explodes, leaves its wreck and the unit
 # list closes up behind it.
 expect ruins.0.0 UBRUI141
@@ -111,4 +115,7 @@ expect shot null
 expect units.-1.index 26
 expect units.-1.name Beast Wagon
 expect units.-1.ap 85
+expect sounds.-3 BLCA\P1\BLCA1T2.SMK
+expect sounds.-2 BLCA\P1\BLCA1T2.SMK
+expect sounds.-1 BJPF\P0\BJPF0E0.SMK
 echo combat test passed

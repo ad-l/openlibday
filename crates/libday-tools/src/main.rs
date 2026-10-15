@@ -63,6 +63,8 @@ enum Command {
     /// Export Smacker frames as indexed PNGs (background key colour
     /// transparent) plus `meta.json`.
     SmkExport { file: String, out: PathBuf },
+    /// Decode a Smacker file's first audio track to a 16-bit WAV.
+    SmkAudio { file: String, out: PathBuf },
     /// Export every Smacker member under a prefix of an MFF archive, one
     /// sub-directory per member (path separators preserved, `.SMK` dropped).
     FfExport {
@@ -542,6 +544,38 @@ fn run(cli: Cli) -> Result<()> {
         Command::SmkExport { file, out } => {
             let n = export_smk(&read_spec(&cli.root, &file)?, &out)?;
             println!("exported {n} frames to {}", out.display());
+        }
+        Command::SmkAudio { file, out } => {
+            let bytes = read_spec(&cli.root, &file)?;
+            let audio = Smacker::parse(&bytes)?
+                .decode_audio(0)?
+                .ok_or("no audio track")?;
+            let mut wav = Vec::new();
+            let data = audio.samples.len() as u32 * 2;
+            let align = u32::from(audio.channels) * 2;
+            wav.extend_from_slice(b"RIFF");
+            wav.extend_from_slice(&(36 + data).to_le_bytes());
+            wav.extend_from_slice(b"WAVEfmt ");
+            wav.extend_from_slice(&16u32.to_le_bytes());
+            wav.extend_from_slice(&1u16.to_le_bytes());
+            wav.extend_from_slice(&u16::from(audio.channels).to_le_bytes());
+            wav.extend_from_slice(&audio.rate.to_le_bytes());
+            wav.extend_from_slice(&(audio.rate * align).to_le_bytes());
+            wav.extend_from_slice(&(align as u16).to_le_bytes());
+            wav.extend_from_slice(&16u16.to_le_bytes());
+            wav.extend_from_slice(b"data");
+            wav.extend_from_slice(&data.to_le_bytes());
+            for s in &audio.samples {
+                wav.extend_from_slice(&s.to_le_bytes());
+            }
+            fs::write(&out, wav)?;
+            println!(
+                "{} Hz, {} channel(s), {} samples to {}",
+                audio.rate,
+                audio.channels,
+                audio.samples.len(),
+                out.display()
+            );
         }
         Command::FfExport { file, out, prefix } => {
             let bytes = fs::read(resolve(&cli.root, &file)?)?;

@@ -48,6 +48,9 @@ with it) and bare ground and forest burn, while water, mountains and pits
 do not. Destroyed units and buildings play their explosions and leave
 their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
 footprint).
+Animations play their sound (the Smacker audio track of each walk, shot,
+impact and explosion animation, one chunk per shown frame, mixed through
+SDL3 audio streams).
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -82,6 +85,7 @@ cargo run -p libday-tools -- map-render s1-2-1 -o map.png --grid
 cargo run -p libday-tools -- map-scene s1-2-1 --deployment   # draw list as JSON
 cargo run -p libday-tools -- dbi-list TERRAINS.DBI
 cargo run -p libday-tools -- dbi-export UB.DBI out\ub
+cargo run -p libday-tools -- smk-audio 'ANMSUNIT\ANMSUNIT.FF!HART\P1\HART1T7.SMK' shot.wav
 ```
 
 Map viewer controls: mouse wheel or `+`/`-` zoom (anchored on the cursor),
@@ -111,7 +115,8 @@ as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
 `deploy UNIT`, `centre X Y`, `zoom F`, `screenshot FILE.png`, `record DIR N`
 (N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
 phase, turn, selection, hover cursor and fire check code, path preview,
-motion, target lock, shot timeline, deploy zone and every unit),
+motion, target lock, shot timeline, deploy zone, every unit and the latest
+animation sounds started),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
 `units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1), `echo TEXT`,
 `quit`. A failed `expect` or command exits with
@@ -124,7 +129,8 @@ skirmish from selection to turn 2 and
 cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
 ```
 
-Options (interface scale, default 2x; initial window size; fullscreen) are
+Options (interface scale, default 2x; initial window size; fullscreen;
+sound volume) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
 or the file given with `--options FILE`. A commented default is created on
@@ -141,7 +147,7 @@ terrain cells that differ from the source (destroyed tiles). See
 
 | Crate | Purpose |
 |---|---|
-| `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video; DBI/FF/Smacker encoders for modding |
+| `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video and audio; DBI/FF/Smacker encoders for modding |
 | `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup, databases, scenarios inside `SCENS\*.ZIP`, UI strings; typed GLOBAL.MDB definitions, scenario loader, skirmish catalog |
 | `libday-view` | Renderer-independent map scene (isometric projection, draw order, sprite choice) and a software compositor |
 | `libday-sim` | Deterministic headless simulation: movement rules and AP pathfinding (`path`), fire checks and line of sight (`fire`) |

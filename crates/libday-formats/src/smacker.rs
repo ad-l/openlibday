@@ -236,6 +236,63 @@ impl<'a> Smacker<'a> {
         self.frames.iter().any(|f| !f.audio.is_empty())
     }
 
+    /// Decodes audio track `track` (0..7) of every frame except the ring
+    /// frame, or `None` when the track is absent.
+    pub fn decode_audio(&self, track: usize) -> Result<Option<Audio>> {
+        let flags = *self
+            .header
+            .audio_rates
+            .get(track)
+            .ok_or(SmackerError::InvalidHeader("audio track"))?;
+        if flags & AUDIO_PRESENT == 0 {
+            return Ok(None);
+        }
+        let mut audio = Audio {
+            rate: flags & 0x00FF_FFFF,
+            channels: if flags & AUDIO_STEREO != 0 { 2 } else { 1 },
+            samples: Vec::new(),
+            offsets: vec![0],
+        };
+        let sixteen = flags & AUDIO_16BIT != 0;
+        for (index, frame) in self
+            .frames
+            .iter()
+            .take(self.header.frames as usize)
+            .enumerate()
+        {
+            let slot = (0..track)
+                .filter(|t| self.frame_types[index] & (2 << t) != 0)
+                .count();
+            if self.frame_types[index] & (2 << track) == 0 {
+                audio.offsets.push(audio.samples.len());
+                continue;
+            }
+            let chunk = &frame.audio[slot][4..];
+            if flags & AUDIO_COMPRESSED != 0 {
+                decode_audio_chunk(chunk, audio.channels == 2, sixteen, &mut audio.samples).ok_or(
+                    SmackerError::InvalidFrame {
+                        frame: index,
+                        reason: "invalid audio chunk",
+                    },
+                )?;
+            } else if sixteen {
+                audio.samples.extend(
+                    chunk
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|&s| i16::from_le_bytes(s)),
+                );
+            } else {
+                audio
+                    .samples
+                    .extend(chunk.iter().map(|&s| (i16::from(s) - 128) << 8));
+            }
+            audio.offsets.push(audio.samples.len());
+        }
+        Ok(Some(audio))
+    }
+
     /// True when stored frame `index` is flagged as a key frame.
     pub fn is_key_frame(&self, index: usize) -> bool {
         index == 0 || self.frame_sizes[index] & 1 != 0
@@ -349,6 +406,76 @@ fn read_byte_tree(bits: &mut BitReader) -> Result<Vec<Node<u8>>> {
     let mut out = Vec::new();
     node(bits, &mut out, 0)?;
     Ok(out)
+}
+
+const AUDIO_COMPRESSED: u32 = 1 << 31;
+const AUDIO_PRESENT: u32 = 1 << 30;
+const AUDIO_16BIT: u32 = 1 << 29;
+const AUDIO_STEREO: u32 = 1 << 28;
+
+/// Decoded PCM, interleaved signed 16-bit samples.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Audio {
+    pub rate: u32,
+    pub channels: u8,
+    pub samples: Vec<i16>,
+    /// Where each frame's samples start in `samples`, plus the end.
+    pub offsets: Vec<usize>,
+}
+
+/// Decodes one Huffman/DPCM compressed audio chunk (after its length word):
+/// u32 unpacked size, then LSB-first bits: data, stereo and 16-bit flags,
+/// one byte tree per output byte lane, the initial samples (last channel
+/// first; 16-bit values byte-swapped), then deltas that wrap around.
+fn decode_audio_chunk(chunk: &[u8], stereo: bool, sixteen: bool, out: &mut Vec<i16>) -> Option<()> {
+    let size = u32::from_le_bytes(chunk.get(..4)?.try_into().ok()?) as usize;
+    let mut bits = BitReader::new(&chunk[4..]);
+    if !bits.bit()? {
+        return Some(());
+    }
+    if bits.bit()? != stereo || bits.bit()? != sixteen {
+        return None;
+    }
+    let channels = 1 + usize::from(stereo);
+    let width = 1 + usize::from(sixteen);
+    let mut trees = Vec::new();
+    for _ in 0..channels * width {
+        bits.bit()?;
+        trees.push(read_byte_tree(&mut bits).ok()?);
+        bits.bit()?;
+    }
+    let byte = |bits: &mut BitReader, tree: usize| match walk(&trees[tree], bits)? {
+        Node::Leaf(v) => Some(v),
+        _ => None,
+    };
+    let count = size / width;
+    if sixteen {
+        let mut pred = [0u16; 2];
+        for p in pred[..channels].iter_mut().rev() {
+            *p = (bits.bits(16)? as u16).swap_bytes();
+        }
+        out.extend(pred[..channels].iter().map(|&p| p as i16));
+        for i in channels..count {
+            let c = i % channels;
+            let lo = byte(&mut bits, 2 * c)?;
+            let hi = byte(&mut bits, 2 * c + 1)?;
+            pred[c] = pred[c].wrapping_add(u16::from_le_bytes([lo, hi]));
+            out.push(pred[c] as i16);
+        }
+    } else {
+        let mut pred = [0u8; 2];
+        for p in pred[..channels].iter_mut().rev() {
+            *p = bits.bits(8)? as u8;
+        }
+        let to16 = |v: u8| (i16::from(v) - 128) << 8;
+        out.extend(pred[..channels].iter().map(|&p| to16(p)));
+        for i in channels..count {
+            let c = i % channels;
+            pred[c] = pred[c].wrapping_add(byte(&mut bits, c)?);
+            out.push(to16(pred[c]));
+        }
+    }
+    Some(())
 }
 
 /// A decoded 16-bit "big tree" with its recent-value cache.
@@ -1006,12 +1133,59 @@ mod real_data {
             }
         }
     }
+
+    #[test]
+    #[ignore = "needs LIBDAY_ROOT; run with --ignored --release --nocapture"]
+    fn every_unit_animation_audio_decodes() {
+        let Ok(root) = std::env::var("LIBDAY_ROOT") else {
+            return;
+        };
+        let data = std::fs::read(format!("{root}/ANMSUNIT/ANMSUNIT.FF")).unwrap();
+        let mff = crate::mff::Mff::parse(&data).unwrap();
+        let mut by_kind = std::collections::BTreeMap::<char, (usize, usize)>::new();
+        for entry in mff.entries() {
+            let smk = Smacker::parse(mff.get(&entry.name).unwrap()).unwrap();
+            let audio = smk.decode_audio(0).unwrap();
+            let stem = entry.name.trim_end_matches(".SMK");
+            let kind = stem.chars().rev().nth(1).unwrap_or('?');
+            let slot = by_kind.entry(kind).or_default();
+            slot.0 += 1;
+            if audio.is_some_and(|a| a.samples.iter().any(|&s| s.unsigned_abs() > 512)) {
+                slot.1 += 1;
+            }
+        }
+        println!("{by_kind:?}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn decodes_dpcm_audio_chunk() {
+        // 8-bit mono, four samples: start at 0x90, deltas from a two-leaf
+        // tree (0 -> +1, 1 -> -2).
+        let mut w = BitWriter::new();
+        w.bits(0b001, 3); // data, mono, 8-bit
+        w.bit(true); // tree present
+        w.bit(true); // branch
+        w.bit(false);
+        w.bits(1, 8);
+        w.bit(false);
+        w.bits(0xFE, 8);
+        w.bit(false); // tree end
+        w.bits(0x90, 8);
+        w.bit(false);
+        w.bit(true);
+        w.bit(false);
+        let mut chunk = 4u32.to_le_bytes().to_vec();
+        chunk.extend(w.finish());
+        let mut out = Vec::new();
+        decode_audio_chunk(&chunk, false, false, &mut out).unwrap();
+        let bytes: Vec<u8> = out.iter().map(|&s| ((s >> 8) + 128) as u8).collect();
+        assert_eq!(bytes, [0x90, 0x91, 0x8F, 0x90]);
+    }
     #[test]
     fn dominant_colour_is_most_frequent_rgb() {
         let mut palette = [[0u8; 3]; 256];
