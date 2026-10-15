@@ -102,6 +102,11 @@ enum Command {
     },
     /// List the skirmish maps of the skirmish selector.
     Skirmishes,
+    /// Summarise the original campaign: continents, provinces, rewards and
+    /// counterattacks.
+    CampaignInfo,
+    /// Export the original campaign as openlibday campaign JSON.
+    CampaignExport { out: Option<PathBuf> },
     /// List the original savegame slots (`SAVEGAME\savegame.NN`).
     SaveList,
     /// Convert a battle save to an openlibday save file. `save` is an
@@ -677,6 +682,58 @@ fn run(cli: Cli) -> Result<()> {
                     entry.points,
                     entry.title
                 );
+            }
+        }
+        Command::CampaignInfo => {
+            let campaign = game(&cli.root)?.original_campaign()?;
+            for c in &campaign.continents {
+                println!(
+                    "{} {}: cash {}, base {}, capital {}, deploy {}/{}/{}%, intro {:?}",
+                    c.id,
+                    c.name.en,
+                    c.start_cash,
+                    c.base_province,
+                    c.capital_province,
+                    c.deploy_percent.easy,
+                    c.deploy_percent.average,
+                    c.deploy_percent.hard,
+                    c.intro_video
+                );
+                for p in &c.provinces {
+                    let variants: Vec<String> = p
+                        .scenarios
+                        .iter()
+                        .map(|s| {
+                            let counter = if s.counter_attack {
+                                format!(" CA x{}", s.counter_attack_units.len())
+                            } else {
+                                String::new()
+                            };
+                            format!("{}{counter}", s.file)
+                        })
+                        .collect();
+                    println!(
+                        "  {:>2} {:<24} {:>2}x{:<2} credits {:>4} tech {:>4} adj {:?}  {}",
+                        p.number,
+                        p.name.en,
+                        p.map_size,
+                        p.map_size,
+                        p.credits,
+                        p.tech,
+                        c.neighbours(p.number),
+                        variants.join(", ")
+                    );
+                }
+            }
+        }
+        Command::CampaignExport { out } => {
+            let json = game(&cli.root)?.original_campaign()?.to_json();
+            match out {
+                Some(path) => {
+                    fs::write(&path, json + "\n")?;
+                    println!("wrote {}", path.display());
+                }
+                None => println!("{json}"),
             }
         }
         Command::SaveList => {

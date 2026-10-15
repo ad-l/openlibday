@@ -8,6 +8,7 @@
 //! the same data works on case-sensitive file systems.
 
 pub mod battle;
+pub mod campaign;
 pub mod defs;
 pub mod records;
 pub mod scenario;
@@ -21,6 +22,7 @@ use libday_formats::{Database, Ini, JetError, Zip, ZipError};
 use thiserror::Error;
 
 pub use battle::Battle;
+pub use campaign::Campaign;
 pub use defs::Definitions;
 pub use scenario::{Scenario, SkirmishEntry};
 
