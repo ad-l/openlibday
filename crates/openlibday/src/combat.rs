@@ -33,6 +33,11 @@ pub struct Lock {
     pub once: bool,
 }
 
+/// A mine type's explosion animation.
+fn mine_animation(image: &str) -> String {
+    format!("MINE\\{}.SMK", image.to_ascii_uppercase())
+}
+
 /// Reaction fire at a unit spotted moving ([`overwatch`]): rounds in which
 /// every hostile unit that can fire at it on overwatch shoots once, while
 /// one did and it stands.
@@ -127,12 +132,15 @@ impl Shot {
     }
 
     /// Explosions playing at timeline frame `f`, with their frames.
-    pub fn explosions(&self, f: usize) -> impl Iterator<Item = (&Explosion, usize)> {
+    pub fn explosions(&self, f: usize) -> impl Iterator<Item = (usize, &Explosion, usize)> {
         let k = f.checked_sub(self.hit);
-        self.explosions.iter().filter_map(move |e| {
-            let k = k.filter(|&k| k < e.len)?;
-            Some((e, e.first + k))
-        })
+        self.explosions
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, e)| {
+                let k = k.filter(|&k| k < e.len)?;
+                Some((i, e, e.first + k))
+            })
     }
 
     fn animating_shooter(&self) -> bool {
@@ -483,7 +491,7 @@ impl Viewer {
             return;
         };
         let (at, owner, mover) = ((m.x, m.y), m.owner, u.owner);
-        let impact_name = format!("MINE\\{}.SMK", kind.image.to_ascii_uppercase());
+        let impact_name = mine_animation(&kind.image);
         let impact_len = self
             .anims
             .as_deref()
@@ -504,6 +512,8 @@ impl Viewer {
         let explosions: Vec<Explosion> = outcome
             .destroyed
             .iter()
+            // The mine's own explosion is the impact.
+            .filter(|d| !matches!(d, Destroyed::Mine { at: m, .. } if *m == at))
             .filter_map(|d| self.explosion(d))
             .collect();
         let blast = explosions.iter().map(|e| e.len).max().unwrap_or(0);
@@ -699,6 +709,16 @@ impl Viewer {
                     centre: ((a.0 + z.0) / 2, (a.1 + z.1) / 2),
                 })
             }
+            Destroyed::Mine { kind, at } => {
+                let name = mine_animation(&self.defs.mines.get(kind)?.image);
+                let len = shot::animation_length(ff, &name).filter(|&n| n > 0)?;
+                Some(Explosion {
+                    name,
+                    first: 0,
+                    len,
+                    centre: tile_center(size, at.0, at.1),
+                })
+            }
         }
     }
 
@@ -790,7 +810,7 @@ mod tests {
         assert_eq!(s.impact(6), None);
         assert_eq!(s.impact(12), Some(5));
         assert_eq!(s.impact(13), None);
-        let frames = |f| s.explosions(f).map(|(_, k)| k).collect::<Vec<_>>();
+        let frames = |f| s.explosions(f).map(|(_, _, k)| k).collect::<Vec<_>>();
         assert_eq!(frames(12), Vec::<usize>::new());
         assert_eq!(frames(13), vec![1]);
         assert_eq!(frames(15), vec![3]);

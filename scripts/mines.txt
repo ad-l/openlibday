@@ -54,4 +54,17 @@ expect units.-1.x 42
 expect units.-1.y 16
 expect units.-1.ap 80
 expect mines.2.seen true
+# A mine destroyed by fire blows up with its explosion animation, once.
+# The Grenadier, firing at point blank, takes its own splash.
+button Fire
+tile 41 15
+tile 41 15
+idle 3000
+expect shot null
+expect sounds.-2 MINE\MINE.SMK
+expect sounds.-1 HGRE\P1\HGRE1E0.SMK
+expect sounds.-3 HGRE\P1\HGRE1I0.SMK
+expect mines.0.y 21
+expect mines.1.x 40
+expect ruins.1.1 42
 echo mines test passed

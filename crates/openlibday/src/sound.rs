@@ -24,6 +24,8 @@ const MAX_CATCH_UP: usize = 3;
 /// Silence queued before an animation's sound, so frame timing jitter does
 /// not starve its voice between chunks.
 const LEAD_MS: u64 = 20;
+/// Fade-out of a sound cut short with its animation.
+const FADE_MS: u64 = 15;
 /// Instances remembered for scripts.
 const LOG: usize = 32;
 
@@ -180,14 +182,32 @@ impl Sound {
             };
             next.push(Active { playing: p, voice });
         }
-        // Animations gone from screen finish what they have queued.
-        let ended: Vec<VoiceId> = self.active.iter().filter_map(|a| a.voice).collect();
+        // Animations gone from screen: one that showed its last frame
+        // finishes what it has queued; one cut short (a walk stopping, a
+        // turn to another facing) is silenced with it, as an animation's
+        // first frame carries about a second of sound ahead of the picture.
+        let mut ended = Vec::new();
+        for a in &self.active {
+            let Some(v) = a.voice else {
+                continue;
+            };
+            let clip = self.clips.get(&a.playing.name).and_then(Option::as_ref);
+            let cut = clip.map(|c| {
+                let n = (c.offsets.len() - 1).max(1);
+                let fade = (c.rate as u64 * FADE_MS / 1000) as usize;
+                (a.playing.frame % n != n - 1).then_some(fade)
+            });
+            ended.push((v, cut.flatten()));
+        }
         self.active = next;
         if !ended.is_empty()
             && let Some(mut feed) = self.output.as_mut().and_then(|o| o.stream.lock())
         {
-            for v in ended {
-                feed.mixer.close(v);
+            for (v, cut) in ended {
+                match cut {
+                    Some(fade) => feed.mixer.cut(v, fade),
+                    None => feed.mixer.close(v),
+                }
             }
         }
     }

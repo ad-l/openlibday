@@ -41,6 +41,8 @@ pub enum Destroyed {
     },
     /// A building's `BUILDING\{image}.SMK` over its footprint.
     Building { kind: i64, at: (i64, i64) },
+    /// A mine's `MINE\{image}.SMK` at its tile.
+    Mine { kind: i64, at: (i64, i64) },
 }
 
 /// The result of one shot, applied to the scenario by [`resolve`].
@@ -170,11 +172,21 @@ impl Resolver<'_> {
     }
 
     fn mine(&mut self, x: i64, y: i64, events: &mut Vec<u8>) {
-        let before = self.scenario.mines.len();
+        let Some(i) = self
+            .scenario
+            .mines
+            .iter()
+            .position(|m| (m.x, m.y) == (x, y))
+        else {
+            return;
+        };
+        let m = self.scenario.mines.remove(i);
         self.scenario.mines.retain(|m| (m.x, m.y) != (x, y));
-        if self.scenario.mines.len() != before {
-            events.push(MINE);
-        }
+        events.push(MINE);
+        self.outcome.destroyed.push(Destroyed::Mine {
+            kind: m.kind,
+            at: (x, y),
+        });
     }
 
     fn building(&mut self, x: i64, y: i64, dmg: i64, kind: i64, events: &mut Vec<u8>) {

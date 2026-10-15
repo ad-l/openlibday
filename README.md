@@ -44,7 +44,8 @@ the chance by its `Jammer` percentage. Damage follows the original: one
 roll of `damageBase + 1 + rand() % damageRandom`, spread over the
 `DamageArea` square with falloff by distance. Units and walls lose armour
 (paralysing weapons drain AP instead), destructible buildings lose armour
-and switch to their damaged sprites at a third, mines go off, paved roads
+and switch to their damaged sprites at a third, mines go off with their
+explosion, paved roads
 and bridges break (dirt roads never do; a bridge takes the unit on it down
 with it) and bare ground and forest burn, while water, mountains and pits
 do not. Destroyed units and buildings play their explosions and leave
@@ -69,7 +70,8 @@ OVERWATCH toggle only keeps a shot's AP in reserve. As a convenience the
 original lacks, holding the right button on an enemy ready to fire on
 overwatch highlights the tiles it covers (in range and line of sight) in red.
 Animations play their sound (the Smacker audio track of each walk, shot,
-impact and explosion animation, one chunk per shown frame). Sounds are mixed
+impact and explosion animation, one chunk per shown frame; an animation cut
+short, like a walk that stops, cuts its sound with a short fade). Sounds are mixed
 in software (any number at once, each resampled from its own rate) into one
 SDL3 audio stream. Interface effects come from `SOUNDS\*.WAV`: selecting a
 unit, deploying, recalling and refused deployments (with the original

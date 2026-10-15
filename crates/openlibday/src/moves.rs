@@ -293,7 +293,7 @@ impl Viewer {
                     frame,
                 });
             }
-            for (i, (e, frame)) in s.explosions(f).enumerate() {
+            for (i, e, frame) in s.explosions(f) {
                 out.push(Playing {
                     slot: 3 + i,
                     name: e.name.clone(),
@@ -595,7 +595,7 @@ pub fn draw_shot_effects(
         let at = tile_center(size, s.lands.0, s.lands.1);
         draw_animation(canvas, gfx, viewer, &s.impact_name, frame, at, screen)?;
     }
-    for (e, frame) in s.explosions(f) {
+    for (_, e, frame) in s.explosions(f) {
         draw_animation(canvas, gfx, viewer, &e.name, frame, e.centre, screen)?;
     }
     Ok(())

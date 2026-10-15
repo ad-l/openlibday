@@ -77,6 +77,19 @@ impl Mixer {
         }
     }
 
+    /// Ends a voice now, fading out over `fade` source samples so it does
+    /// not click.
+    pub fn cut(&mut self, id: VoiceId, fade: usize) {
+        if let Some(v) = self.voices.iter_mut().find(|v| v.id == id) {
+            v.open = false;
+            let n = fade.min(v.data.len());
+            v.data.truncate(n);
+            for (i, s) in v.data.iter_mut().enumerate() {
+                *s = (i64::from(*s) * (n - i) as i64 / (n as i64 + 1)) as i16;
+            }
+        }
+    }
+
     /// Silences every voice.
     pub fn stop(&mut self) {
         self.voices.clear();
@@ -162,6 +175,17 @@ mod tests {
         assert_eq!(out, [0.5; 4]);
         assert_eq!(m.voices(), 0);
         assert!(!m.append(v, &[1]));
+    }
+
+    #[test]
+    fn cut_fades_out_and_ends() {
+        let mut m = Mixer::new(100, 1.0);
+        let v = m.play(&[16384; 50], 100, true).unwrap();
+        m.cut(v, 3);
+        let mut out = [0.0; 5];
+        m.mix(&mut out);
+        assert_eq!(out, [0.375, 0.25, 0.125, 0.0, 0.0]);
+        assert_eq!(m.voices(), 0);
     }
 
     #[test]
