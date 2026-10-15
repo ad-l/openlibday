@@ -8,6 +8,7 @@
 pub mod compose;
 pub mod damage;
 pub mod fire;
+pub mod inspect;
 pub mod mines;
 pub mod minimap;
 pub mod movement;

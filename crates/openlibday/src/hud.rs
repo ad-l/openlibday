@@ -634,7 +634,8 @@ fn draw_turns(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, field
 }
 
 /// Minimap: box-filtered top-down picture, markers, camera outline. While the
-/// right button is held on a unit, its info replaces the minimap.
+/// right button is held on a unit, building, wall or road, its info replaces
+/// the minimap.
 fn draw_minimap(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,
@@ -642,8 +643,11 @@ fn draw_minimap(
     scene: &Scene,
     art: &Art,
 ) -> Result {
-    if let Some(i) = viewer.info {
-        return draw_unit_info(canvas, gfx, viewer, i);
+    if let Some(target) = viewer.info {
+        return match target.unit() {
+            Some(i) => draw_unit_info(canvas, gfx, viewer, i),
+            None => draw_structure_info(canvas, gfx, viewer, target),
+        };
     }
     let layout = viewer.layout();
     let (rect, square) = viewer.minimap_square();
@@ -724,6 +728,43 @@ fn draw_unit_info(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, i
             );
             canvas.copy(t, None, frect(r))?;
         }
+    }
+    Ok(())
+}
+
+/// Building, wall or road info in the minimap well, laid out as a unit's:
+/// portrait, name and AR beside it, owner (and technology) below.
+fn draw_structure_info(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    target: libday_view::inspect::Target,
+) -> Result {
+    let layout = viewer.layout();
+    let (s, fonts) = (layout.scale, &viewer.fonts);
+    let px = TEXT_PX * s as f32;
+    let well = layout.field(Field::Minimap);
+    fill(canvas, frect(well), BLACK)?;
+    let Some(card) = libday_view::inspect::card(&viewer.map.battle.scenario, &viewer.defs, target)
+    else {
+        return Ok(());
+    };
+    let at =
+        |x: i32, y: i32, w: i32, h: i32| Rect::new(well.x + x * s, well.y + y * s, w * s, h * s);
+    let (x, y, side) = unit_info::PORTRAIT;
+    if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &card.image) {
+        canvas.copy(t, None, frect(at(x, y, side, side)))?;
+    }
+    let well_w = well.w / s;
+    for (row, text) in card.lines.iter().enumerate() {
+        let left = if row < 3 {
+            unit_info::TEXT_BESIDE
+        } else {
+            unit_info::TEXT_LEFT
+        };
+        let top = unit_info::TEXT_TOP + row as i32 * unit_info::LINE;
+        let r = at(left, top, well_w - left, unit_info::LINE);
+        gfx.text_in(canvas, fonts, text, px, WHITE, r, 0.0, 0)?;
     }
     Ok(())
 }

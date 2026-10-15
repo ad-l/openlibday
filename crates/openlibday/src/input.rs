@@ -230,9 +230,12 @@ impl Viewer {
                     self.centre_on_tile(tx, ty);
                 } else if !layout.on_panel(ox, oy) {
                     if button == MouseButton::Right
-                        && let Some(i) = self.unit_under(ox, oy)
+                        && let Some(target) = self.inspect_under(ox, oy)
                     {
-                        self.inspect(i);
+                        match target.unit() {
+                            Some(i) => self.inspect(i),
+                            None => self.info = Some(target),
+                        }
                         return;
                     }
                     self.drag = Some((x, y));
@@ -276,7 +279,7 @@ impl Viewer {
     /// enemy ready to fire on overwatch, the tiles it covers (a convenience
     /// the original lacks).
     pub(crate) fn inspect(&mut self, i: usize) {
-        self.info = Some(i);
+        self.info = Some(libday_view::inspect::Target::Unit(i));
         let scenario = &self.map.battle.scenario;
         let enemy = scenario
             .units

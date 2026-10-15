@@ -742,6 +742,10 @@ pub fn state(viewer: &Viewer) -> Value {
             })
             .collect::<Vec<_>>(),
     });
+    let inspect = viewer.info.map(|t| {
+        let card = libday_view::inspect::card(scenario, &viewer.defs, t);
+        json!({"kind": t.name(), "index": t.index(), "lines": card.map(|c| c.lines)})
+    });
     let mut state = json!({
         "time_ms": viewer.clock.now().as_millis() as u64,
         "screen": variant(&viewer.screen),
@@ -770,7 +774,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "shot": shot,
         "flights": viewer.flights.len(),
         "reaction": viewer.reaction.as_ref().map(|r| r.target),
-        "info": viewer.info,
+        "info": viewer.info.and_then(|t| t.unit()),
         "watch": viewer.watch.iter().map(|((x, y), _)| [*x, *y]).collect::<Vec<_>>(),
         "zone": zone,
         "units": units,
@@ -791,6 +795,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    state["inspect"] = json!(inspect);
     // `tech.buildings`: every technology building and its reward;
     // `tech.captured`: those the player's units hold; `tech.found`: their
     // total.

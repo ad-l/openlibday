@@ -161,8 +161,9 @@ struct Viewer {
     drag: Option<(f32, f32)>,
     press: Option<(f32, f32)>,
     minimap_drag: bool,
-    /// Unit whose info replaces the minimap while the right button is held.
-    info: Option<usize>,
+    /// Unit, building, wall or road whose info replaces the minimap while
+    /// the right button is held.
+    info: Option<libday_view::inspect::Target>,
     /// Overwatch zone of the inspected enemy (`info`): tiles and markers.
     watch: Vec<((i64, i64), String)>,
     hover: Option<(i64, i64)>,
@@ -370,11 +371,19 @@ impl Viewer {
         minimap::entries(&self.markers, &self.defs, owner)
     }
 
-    /// Unit on the map tile under output pixel `(x, y)`.
-    fn unit_under(&self, x: i32, y: i32) -> Option<usize> {
+    /// What the right button inspects under output pixel `(x, y)`: the
+    /// shown unit there, else the building, wall or road.
+    fn inspect_under(&self, x: i32, y: i32) -> Option<libday_view::inspect::Target> {
+        use libday_view::inspect::{Target, structure_at};
         let (mx, my) = self.to_map(x as f32, y as f32);
         let (tx, ty) = tile_at(self.map.battle.scenario.size, mx as f64, my as f64)?;
-        self.unit_at(tx, ty)
+        if let Some(i) = self.unit_at(tx, ty) {
+            return Some(Target::Unit(i));
+        }
+        if self.options.arrival.is_none() || self.options.terrain_only {
+            return None;
+        }
+        structure_at(&self.map.battle.scenario, &self.defs, tx, ty)
     }
 
     /// Unit on tile `(x, y)` among the shown units.

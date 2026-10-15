@@ -53,6 +53,17 @@ expect info 29
 tile 72 26
 expect info null
 expect watch []
+# Right-button inspection of structures: a building shows its armour, owner
+# and tech reward, a wall its armour left, a road its type's armour.
+inspect 68 14
+expect inspect.kind building
+expect inspect.lines ["Tech Center","AR 75","","Alien","TECH 500"]
+inspect 46 86
+expect inspect.lines ["Concrete","AR 60","","Alien"]
+inspect 40 43
+expect inspect.lines ["Paved Road","AR 10","","Alien"]
+tile 40 43
+expect inspect null
 # A Main Tank walking toward the AI base is spotted by the Light Tank at
 # (72, 26) on its first step: the walk ends there and the Light Tank fires
 # while it has a shot's AP left.

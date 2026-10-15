@@ -794,7 +794,8 @@ impl Viewer {
         }
         self.selected = remap(self.selected);
         self.fire_mode = remap(self.fire_mode);
-        self.info = remap(self.info);
+        // Buildings, walls and roads may have gone too: stop inspecting them.
+        self.info = remap(self.info.and_then(|t| t.unit())).map(libday_view::inspect::Target::Unit);
         self.options.hidden_unit = remap(self.options.hidden_unit);
         self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
         self.entry = None;
