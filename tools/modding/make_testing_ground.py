@@ -13,7 +13,8 @@ campaign map s3-1-1 (rivers, lakes, banks, forests and mountains), and has:
 
 Every player-1 unit is at least 20 tiles (Chebyshev) from every AI unit.
 
-The scenario gets 5000 reinforcement credits per turn, 0 deployment points
+The scenario gets 5000 reinforcement credits per turn, every automated unit
+of every race, 0 deployment points
 (first in the skirmish list) and the openlibday-only
 `Scenario Info.TechPoints` column set to 0, which makes openlibday skip the
 technology screen. The original game ignores the extra column.
@@ -59,6 +60,8 @@ BRIEFING = ("A proving ground for scripted tests. Player 1 fields three of every
 POINTS = 0
 # Reinforcement credits each turn (`Scenario Info.ReinfRes`).
 REINFORCEMENTS = 5000
+# Every automated unit (GLOBAL `Automated Units.typeID`), all races.
+AUTOMATED = range(27)
 GRASS = "BORE000"
 
 PLAYER, AI = 1, 0
@@ -372,7 +375,10 @@ def build(root: Path, work: Path) -> Path:
         document.close()
     # openlibday-only extension: 0 technology points skips the technology screen.
     jet(output, ["ALTER TABLE [Scenario Info] ADD COLUMN [TechPoints] LONG",
-                 f"UPDATE [Scenario Info] SET [TechPoints] = 0, [ReinfRes] = {REINFORCEMENTS}"])
+                 f"UPDATE [Scenario Info] SET [TechPoints] = 0, [ReinfRes] = {REINFORCEMENTS}",
+                 "DELETE FROM [One Off Automated Available]",
+                 *(f"INSERT INTO [One Off Automated Available] ([Enum],[Available]) VALUES ({kind},True)"
+                   for kind in AUTOMATED)])
     return output
 
 
