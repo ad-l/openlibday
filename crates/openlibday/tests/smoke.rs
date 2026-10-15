@@ -57,6 +57,11 @@ fn automated_script() {
 }
 
 #[test]
+fn bridge_script() {
+    play("scripts/bridge.txt", "bridge test passed");
+}
+
+#[test]
 fn testing_ground_script() {
     // Only present once tools/modding/make_testing_ground.py --install has run.
     let installed = std::env::var_os("LIBDAY_ROOT").is_some_and(|root| {

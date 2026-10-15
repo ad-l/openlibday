@@ -1,5 +1,7 @@
 //! Map drawing.
 
+use libday_data::defs::AutomatedCategory;
+use libday_view::support;
 use libday_view::ui::Screen;
 use libday_view::{Art, Layer, Sheet, sprite_origin};
 use sdl3::pixels::Color;
@@ -177,6 +179,24 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     }
     // An armed support's cursor; a transport's pickup keeps its own.
     if let Some(a) = viewer.armed_support() {
+        // A bridge's sites without a road: those buildable now crossed in
+        // red, the others as girders (`0x4722b3`).
+        if a.category() == Some(AutomatedCategory::Build) {
+            let (s, defs) = (&viewer.map.battle.scenario, &viewer.defs);
+            let sites = support::bridge_sites(s, defs);
+            for &(x, y) in &sites {
+                if s.roads.iter().any(|r| (r.x, r.y) == (x, y)) {
+                    continue;
+                }
+                let name = if support::bridge_buildable(s, defs, &sites, (x, y)) {
+                    "BRIDGE"
+                } else {
+                    "BRIDG001"
+                };
+                let (left, top) = sprite_origin(size, x, y);
+                cell(canvas, gfx, left, top, name)?;
+            }
+        }
         if let Some((x, y)) = viewer.flow.pickup {
             let (left, top) = sprite_origin(size, x, y);
             cell(canvas, gfx, left, top, &a.cursor)?;

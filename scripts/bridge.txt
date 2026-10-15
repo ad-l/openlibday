@@ -1,0 +1,37 @@
+# Bridge: the sites are the river crossings found from the terrain
+# (riverbank, deep water, riverbank, with plain beyond both banks); a
+# section can be built on a bank end, or on deep water next to a road, so
+# bridges grow one tile at a time from the banks.
+# Run: openlibday --headless --script scripts/bridge.txt  (needs LIBDAY_ROOT)
+ai off
+skirmish Recycle This!
+key Return
+key Return
+key Return
+key Return
+key Y
+# The map's own bridges are all on sites; (7, 36)-(7, 39) is unbuilt.
+expect automated.bridge_sites.0 [0,35,false]
+expect automated.bridge_sites.3 [7,36,true]
+expect automated.bridge_sites.4 [7,39,true]
+expect automated.bridge_sites.5 [7,37,false]
+credits 100
+support Bridge
+expect automated.armed 1
+# Mid-river with no road beside it: not yet.
+tile 7 37
+expect message Invalid target
+tile 7 36
+idle
+expect credits 90
+expect automated.bridge_sites.3 [7,36,false]
+expect automated.bridge_sites.5 [7,37,true]
+# The next section extends it.
+support Bridge
+tile 7 37
+idle
+expect credits 80
+expect automated.bridge_sites.5 [7,37,false]
+expect automated.bridge_sites.6 [7,38,true]
+echo bridge test passed
+quit

@@ -16,7 +16,7 @@
 //!    - drop: `nbDrop` units (half when damaged) appear around the target
 //!      with full AP; an armed mine on a spot goes off instead and an
 //!      unplaceable spot loses its unit;
-//!    - build: a bridge (a paved road) on the target;
+//!    - build: one bridge section (a paved road) on the target;
 //!    - transport: the unit on the target is lifted, then the second leg's
 //!      anti-aircraft fire decides whether it is set down on the
 //!      destination (losing its AP and the share of armour the transport
@@ -140,19 +140,122 @@ pub fn placeable(
     grid.is_none_or(|g| g.get(at.0 as i32, at.1 as i32).0 == Access::Stop)
 }
 
-/// Whether a bridge may be built on `at`: free water or a crack.
-pub fn bridgeable(scenario: &Scenario, defs: &Definitions, at: (i64, i64)) -> bool {
-    use libday_data::defs::terrain_kind::{CRACK, DEEP_WATER, SHALLOW_WATER};
+/// Terrain kind of tile `at`, if it is on the map.
+fn kind_at(scenario: &Scenario, defs: &Definitions, at: (i64, i64)) -> Option<u8> {
     scenario
         .cell(at.0, at.1)
         .and_then(|c| defs.terrain(&c.terrain))
-        .is_some_and(|t| matches!(t.kind, SHALLOW_WATER | DEEP_WATER | CRACK))
-        && unit_at(scenario, defs, at).is_none()
-        && building_at(scenario, defs, at).is_none()
-        && !scenario.walls.iter().any(|w| (w.x, w.y) == at)
-        && !scenario.roads.iter().any(|r| (r.x, r.y) == at)
+        .map(|t| t.kind)
 }
 
+/// The tiles bridges may span, computed from the terrain as the road
+/// layer does (`0x42fb2d`):
+///
+/// 1. a riverbank with plain behind it (west or north) and water ahead
+///    (east or south) starts a span (`0x42fbb1`);
+/// 2. the span crosses deep water to the next riverbank, which must have
+///    plain beyond it (`0x42fe1d`);
+/// 3. a span whose start and end are each next to an earlier one's is
+///    dropped (`0x42ff6e`);
+/// 4. a span sharing a tile with an earlier one is dropped and the rest
+///    give their tiles, ends first (`0x43002d`).
+pub fn bridge_sites(scenario: &Scenario, defs: &Definitions) -> Vec<(i64, i64)> {
+    use libday_data::defs::terrain_kind::{DEEP_WATER, PLAIN, RIVERBANK};
+    let kind = |x: i64, y: i64| kind_at(scenario, defs, (x, y));
+    let water = |k: Option<u8>| matches!(k, Some(DEEP_WATER | RIVERBANK));
+    let size = scenario.size as i64;
+    let mut spans: Vec<((i64, i64), (i64, i64))> = Vec::new();
+    for y in 0..size - 1 {
+        for x in 0..size - 1 {
+            if kind(x, y) != Some(RIVERBANK) {
+                continue;
+            }
+            let dir = if water(kind(x + 1, y)) && kind(x - 1, y) == Some(PLAIN) {
+                (1, 0)
+            } else if water(kind(x, y + 1)) && kind(x, y - 1) == Some(PLAIN) {
+                (0, 1)
+            } else {
+                continue;
+            };
+            let mut end = (x, y);
+            let reached = loop {
+                if end.0 >= size || end.1 >= size {
+                    break false;
+                }
+                end = (end.0 + dir.0, end.1 + dir.1);
+                match kind(end.0, end.1) {
+                    Some(RIVERBANK) => break true,
+                    Some(DEEP_WATER) => {}
+                    _ => break false,
+                }
+            };
+            if reached && kind(end.0 + dir.0, end.1 + dir.1) == Some(PLAIN) {
+                spans.push(((x, y), end));
+            }
+        }
+    }
+    let near = |a: (i64, i64), b: (i64, i64)| (a.0 - b.0).abs() == 1 || (a.1 - b.1).abs() == 1;
+    let mut i = 0;
+    while i < spans.len() {
+        let (s, e) = spans[i];
+        let mut j = i + 1;
+        while j < spans.len() {
+            if near(s, spans[j].0) && near(e, spans[j].1) {
+                spans.remove(j);
+            } else {
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    let mut sites = Vec::new();
+    for (s, e) in spans {
+        let dir = ((e.0 - s.0).signum(), (e.1 - s.1).signum());
+        let mut tiles = vec![s, e];
+        let mut p = (s.0 + dir.0, s.1 + dir.1);
+        while p != e {
+            tiles.push(p);
+            p = (p.0 + dir.0, p.1 + dir.1);
+        }
+        if !tiles.iter().any(|t| sites.contains(t)) {
+            sites.extend(tiles);
+        }
+    }
+    sites
+}
+
+/// Whether a bridge tile may be built on `at` now (`0x42f5dd`): a free
+/// bridge site, on deep water only next to a road, so bridges grow from
+/// the banks and from the tiles already built.
+pub fn bridgeable(scenario: &Scenario, defs: &Definitions, at: (i64, i64)) -> bool {
+    bridge_buildable(scenario, defs, &bridge_sites(scenario, defs), at)
+}
+
+/// [`bridgeable`] against precomputed [`bridge_sites`].
+pub fn bridge_buildable(
+    scenario: &Scenario,
+    defs: &Definitions,
+    sites: &[(i64, i64)],
+    at: (i64, i64),
+) -> bool {
+    use libday_data::defs::terrain_kind::{DEEP_WATER, RIVERBANK};
+    let road = |p: (i64, i64)| scenario.roads.iter().any(|r| (r.x, r.y) == p);
+    if !sites.contains(&at)
+        || unit_at(scenario, defs, at).is_some()
+        || building_at(scenario, defs, at).is_some()
+        || scenario.walls.iter().any(|w| (w.x, w.y) == at)
+        || road(at)
+    {
+        return false;
+    }
+    match kind_at(scenario, defs, at) {
+        Some(RIVERBANK) => true,
+        Some(DEEP_WATER) => [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            .iter()
+            .any(|d| road((at.0 + d.0, at.1 + d.1))),
+        _ => false,
+    }
+}
 /// Whether `player` may target `at` (and `dest`, for a transport's second
 /// click) with support `kind`, as the selectors check it.
 pub fn valid_target(
@@ -827,5 +930,39 @@ mod tests {
         // 15 of 40 taken: 40 * 25 / 40.
         assert_eq!((u.x, u.y, u.arrival), (11, 11, 0));
         assert_eq!((u.armor, u.action_points), (Some(25), Some(0)));
+    }
+
+    #[test]
+    fn bridges_span_rivers_and_grow_from_the_banks() {
+        use libday_data::defs::terrain_kind::{DEEP_WATER, RIVERBANK};
+        let mut d = defs();
+        for (id, kind) in [("BANK", RIVERBANK), ("DEEP", DEEP_WATER)] {
+            let mut t = d.terrains["ARID000"].clone();
+            (t.id, t.kind) = (id.into(), kind);
+            d.terrains.insert(id.into(), t);
+        }
+        // A river running north-south: banks at x = 5 and 9, deep between.
+        let mut s = scenario();
+        for c in &mut s.cells {
+            c.terrain = match c.id % 16 {
+                5 | 9 => "BANK",
+                6..=8 => "DEEP",
+                _ => "ARID000",
+            }
+            .into();
+        }
+        let sites = bridge_sites(&s, &d);
+        // Each row's crossing drops the next row's (adjacent ends); the
+        // last row is never scanned.
+        assert_eq!(sites.len(), 8 * 5);
+        assert_eq!(&sites[..5], &[(5, 0), (9, 0), (6, 0), (7, 0), (8, 0)]);
+        assert!(!sites.contains(&(5, 1)) && sites.contains(&(5, 2)));
+        assert!(bridgeable(&s, &d, (5, 0)) && bridgeable(&s, &d, (9, 0)));
+        assert!(!bridgeable(&s, &d, (6, 0)) && !bridgeable(&s, &d, (5, 1)));
+        let bridge = support(2, &[(0, "40")]);
+        let legs = execute(&s, &d, &mut Rand::new(1), &bridge, 1, (5, 0), None);
+        let s = &legs[0].scenario;
+        assert_eq!(s.roads.len(), 1);
+        assert!(bridgeable(s, &d, (6, 0)) && !bridgeable(s, &d, (5, 0)));
     }
 }

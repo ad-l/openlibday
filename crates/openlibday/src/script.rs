@@ -729,6 +729,13 @@ pub fn state(viewer: &Viewer) -> Value {
         "armed": viewer.armed_support().map(|a| a.id),
         "pickup": viewer.flow.pickup.map(|(x, y)| [x, y]),
         "legs": viewer.supports.len(),
+        "bridge_sites": libday_view::support::bridge_sites(scenario, &viewer.defs)
+            .iter()
+            .map(|&(x, y)| {
+                let free = libday_view::support::bridgeable(scenario, &viewer.defs, (x, y));
+                json!([x, y, free])
+            })
+            .collect::<Vec<_>>(),
     });
     let mut state = json!({
         "time_ms": viewer.clock.now().as_millis() as u64,
