@@ -1,0 +1,32 @@
+# Scripted automated units: the scenario's `Automated Units` table has the
+# AI launch a support on a given turn. Opportunity Knocks drops four
+# Footmen (type 14) around (33, 13) on the AI's turn 5.
+# Run: openlibday --headless --script scripts/scripted_support.txt  (needs LIBDAY_ROOT)
+ai legacy
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+key Return
+key Y
+expect automated.scripted.0.kind 14
+expect automated.scripted.0.turn 5
+button EndTurn
+idle 20000
+button EndTurn
+idle 20000
+button EndTurn
+idle 20000
+button EndTurn
+idle 20000
+expect turn 5
+expect automated.scripted.0.turn 5
+button EndTurn
+idle 20000
+expect turn 6
+expect automated.scripted []
+expect units.id=149.name Footman
+expect units.id=149.owner 0
+expect units.id=150.name Footman
+echo scripted support test passed
+quit

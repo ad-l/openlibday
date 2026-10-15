@@ -119,5 +119,8 @@ Building lays road type 1.
 detector and a bomber on *Opportunity Knocks*.
 [scripts/bridge.txt](../scripts/bridge.txt) builds two sections of the
 unfinished bridge on *Recycle This!* and checks `automated.bridge_sites`
-(`[x, y, buildable]` in the state). The `grant ID` and
+(`[x, y, buildable]` in the state).
+[scripts/scripted_support.txt](../scripts/scripted_support.txt) checks the
+scenario's scripted Footmen drop on *Opportunity Knocks* turn 5
+(`automated.scripted` lists the pending ones). The `grant ID` and
 `credits N` script cheats offer any support and set the credits.

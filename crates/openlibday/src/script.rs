@@ -729,6 +729,12 @@ pub fn state(viewer: &Viewer) -> Value {
         "armed": viewer.armed_support().map(|a| a.id),
         "pickup": viewer.flow.pickup.map(|(x, y)| [x, y]),
         "legs": viewer.supports.len(),
+        "scripted": scenario
+            .info
+            .supports
+            .iter()
+            .map(|s| json!({"kind": s.kind, "turn": s.turn, "at": [s.start.0, s.start.1]}))
+            .collect::<Vec<_>>(),
         "bridge_sites": libday_view::support::bridge_sites(scenario, &viewer.defs)
             .iter()
             .map(|&(x, y)| {
