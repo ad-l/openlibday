@@ -7,7 +7,7 @@ use std::time::Duration;
 use libday_view::fire::{self, Fire};
 use libday_view::mines;
 use libday_view::movement::{
-    self, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
+    self, Movement, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
 };
 use libday_view::overwatch;
 use libday_view::shot::{self, Anim};
@@ -71,6 +71,24 @@ pub struct Motion {
     pub final_ap: i64,
     /// Owner colour of the walk animation ([`shot::animation_owner`]).
     pub colour: i64,
+    /// A teleport: the unit vanishes (`L` animation) where it stands, then
+    /// appears (`N`) on its single step, without crossing the map.
+    pub teleport: bool,
+    /// Facing while vanishing.
+    pub facing: u8,
+}
+
+/// Frames of the vanish and appear animations, shown one per position.
+const TELEPORT_FRAMES: usize = 10;
+
+/// Teleport queue: [`TELEPORT_FRAMES`] positions at `start`, then as many on
+/// the destination.
+fn teleport_queue(size: usize, start: (i64, i64), to: &Step) -> Vec<((i32, i32), usize)> {
+    let from = tile_center(size, start.0, start.1);
+    let to = tile_center(size, i64::from(to.x), i64::from(to.y));
+    let mut out = vec![(from, 0); TELEPORT_FRAMES];
+    out.extend(std::iter::repeat_n((to, 0), TELEPORT_FRAMES));
+    out
 }
 
 /// The original's walk queue for `steps` from tile `start`.
@@ -223,7 +241,7 @@ impl Viewer {
     pub(crate) fn start_walk(
         &mut self,
         unit_index: usize,
-        steps: Vec<Step>,
+        mut steps: Vec<Step>,
         final_ap: i64,
     ) -> bool {
         let Some(unit) = self.map.battle.scenario.units.get(unit_index) else {
@@ -247,16 +265,33 @@ impl Viewer {
         let colour = self.anims.as_deref().map_or(unit.owner, |ff| {
             shot::animation_owner(ff, &kind.image, unit.owner)
         });
-        let facing = i64::from(steps[0].facing);
+        let teleport = Movement::from_id(kind.movement) == Movement::Teleport;
+        let old_facing = unit.facing.rem_euclid(8) as u8;
+        let positions = if teleport {
+            // Only the destination counts (`0x42e1c1`); it appears facing a
+            // random way (`0x42d9c9`).
+            steps.drain(..steps.len() - 1);
+            steps[0].facing = self.rng.rand().rem_euclid(8) as u8;
+            teleport_queue(size, start, &steps[0])
+        } else {
+            walk_queue(size, start, &steps, pix_speed)
+        };
+        let facing = if teleport {
+            i64::from(old_facing)
+        } else {
+            i64::from(steps[0].facing)
+        };
         self.motion = Some(Motion {
             unit: unit_index,
-            positions: walk_queue(size, start, &steps, pix_speed),
+            positions,
             steps,
             done: 0,
             from: start,
             started: now,
             final_ap,
             colour,
+            teleport,
+            facing: old_facing,
         });
         self.map.battle.scenario.units[unit_index].facing = facing;
         self.options.hidden_unit = Some(unit_index);
@@ -340,8 +375,12 @@ impl Viewer {
             let (i, done, final_ap) = (m.unit, m.done, m.final_ap);
             let last = done == m.steps.len();
             let next = m.steps.get(done).map(|s| i64::from(s.facing));
+            let teleport = m.teleport;
             let unit = &mut self.map.battle.scenario.units[i];
             (unit.x, unit.y) = to;
+            if teleport {
+                unit.facing = i64::from(step.facing);
+            }
             if let Some(ap) = &mut unit.action_points {
                 *ap -= i64::from(step.cost);
             } else if let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) {
@@ -435,13 +474,34 @@ impl Viewer {
             Some(&(p, s)) if s == m.done => p,
             _ => tile_center(size, to.0, to.1),
         };
+        let unit = &self.map.battle.scenario.units[m.unit];
+        if m.teleport {
+            let kind = self.defs.unit(unit.kind)?;
+            let (letter, facing, at, frame) = if shown < TELEPORT_FRAMES {
+                ('L', m.facing, m.from, shown)
+            } else {
+                ('N', step.facing, to, shown - TELEPORT_FRAMES)
+            };
+            return Some(Walker {
+                unit: m.unit,
+                centre: tile_center(size, at.0, at.1),
+                facing,
+                anim: Some(movement::move_animation_name(
+                    &kind.image,
+                    m.colour,
+                    letter,
+                    facing,
+                )),
+                frame: frame.min(TELEPORT_FRAMES - 1),
+                depth: at,
+            });
+        }
         let frame = shown;
         let depth = if (to.0 + to.1, to.0) > (m.from.0 + m.from.1, m.from.0) {
             to
         } else {
             m.from
         };
-        let unit = &self.map.battle.scenario.units[m.unit];
         let anim = self
             .defs
             .unit(unit.kind)

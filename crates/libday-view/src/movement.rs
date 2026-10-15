@@ -124,9 +124,15 @@ pub fn move_grid(scenario: &Scenario, defs: &Definitions, mover: usize) -> Optio
 
 /// `ANMSUNIT.FF` member of a unit's walk animation for an owner colour.
 pub fn walk_animation_name(image: &str, owner: i64, facing: u8) -> String {
+    move_animation_name(image, owner, 'M', facing)
+}
+
+/// `ANMSUNIT.FF` member of a movement animation: `M` walk, `L` move start
+/// (a teleporter vanishing), `N` move end (appearing).
+pub fn move_animation_name(image: &str, owner: i64, letter: char, facing: u8) -> String {
     let image = image.to_ascii_uppercase();
     let owner = owner.clamp(0, 4);
-    format!("{image}\\P{owner}\\{image}{owner}M{facing}.SMK")
+    format!("{image}\\P{owner}\\{image}{owner}{letter}{facing}.SMK")
 }
 
 /// Decodes an animation to RGBA frames, with the background key colour (the

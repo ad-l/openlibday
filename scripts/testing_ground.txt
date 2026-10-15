@@ -100,4 +100,20 @@ idle
 expect shot null
 expect flights 0
 expect units.97.ap 20
+# A Mind Warrior teleports (0x42d9c9): one step to any tile it may stop on,
+# for that tile's AP whatever the distance. It vanishes where it stands (L
+# animation, 10 frames) and appears on the destination (N).
+place 57 40 88
+tile 40 88
+expect selected 57
+tile 60 70
+expect preview.steps [[60,70,10,0]]
+tile 60 70
+expect motion.steps 1
+wait 20
+expect units.57.x 40
+idle
+expect units.57.x 60
+expect units.57.y 70
+expect units.57.ap 290
 echo testing ground test passed

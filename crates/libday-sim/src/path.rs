@@ -181,6 +181,8 @@ pub struct MoveGrid {
     width: i32,
     height: i32,
     cells: Vec<(Access, u32)>,
+    /// Paths are a single jump to the goal (`0x42d9c9`).
+    teleport: bool,
 }
 
 impl MoveGrid {
@@ -202,7 +204,29 @@ impl MoveGrid {
             width,
             height,
             cells,
+            teleport: m == Movement::Teleport,
         }
+    }
+
+    /// A teleporter's path: one step onto any tile it may stop on, at that
+    /// tile's cost, whatever the distance. The facing is left at 0; the
+    /// original picks `rand() % 8`.
+    fn jump(&self, start: usize, goal: usize) -> Option<Vec<Step>> {
+        let (access, cost) = self.cells[goal];
+        (start != goal && access == Access::Stop).then(|| {
+            vec![Step {
+                x: (goal as i32) % self.width,
+                y: (goal as i32) / self.width,
+                facing: 0,
+                cost,
+                stop: true,
+            }]
+        })
+    }
+
+    /// Paths are single jumps ([`Movement::Teleport`]).
+    pub fn teleports(&self) -> bool {
+        self.teleport
     }
 
     fn index(&self, x: i32, y: i32) -> Option<usize> {
@@ -320,6 +344,9 @@ impl MoveGrid {
     pub fn find_path(&self, from: (i32, i32), to: (i32, i32)) -> Option<Vec<Step>> {
         let start = self.index(from.0, from.1)?;
         let goal = self.index(to.0, to.1)?;
+        if self.teleport {
+            return self.jump(start, goal);
+        }
         if start == goal || self.cells[goal].0 != Access::Stop {
             return None;
         }
@@ -397,6 +424,9 @@ impl Flood<'_> {
         let g = self.grid;
         let start = self.start?;
         let goal = g.index(to.0, to.1)?;
+        if g.teleport {
+            return g.jump(start, goal);
+        }
         if start == goal || g.cells[goal].0 != Access::Stop || self.prev[goal] == usize::MAX {
             return None;
         }
@@ -512,6 +542,23 @@ mod tests {
 
     fn cost(path: &[Step]) -> u32 {
         path.iter().map(|s| s.cost).sum()
+    }
+
+    #[test]
+    fn teleport_jumps_in_one_step() {
+        // Walled in, it still jumps anywhere it may stop, for one tile's AP.
+        let g = grid(&[".U^^^^.", "UUw^^U.", "^^^^^^~"], Movement::Teleport);
+        let one = |p: Option<Vec<Step>>| {
+            let p = p.unwrap();
+            assert_eq!(p.len(), 1);
+            (p[0].x, p[0].y, p[0].cost, p[0].stop)
+        };
+        assert_eq!(one(g.find_path((0, 0), (6, 0))), (6, 0, 10, true));
+        assert_eq!(one(g.flood((0, 0)).path((6, 2))), (6, 2, 10, true));
+        assert_eq!(one(g.find_path((0, 0), (2, 1))), (2, 1, 10, true));
+        assert!(g.find_path((0, 0), (3, 0)).is_none());
+        assert!(g.find_path((0, 0), (1, 0)).is_none());
+        assert!(g.find_path((0, 0), (0, 0)).is_none());
     }
 
     #[test]
