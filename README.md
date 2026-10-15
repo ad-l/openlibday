@@ -211,4 +211,5 @@ Windows-only for now.
 Reverse-engineering notes, file formats and observed native behavior are in
 [tools/modding/README.md](tools/modding/README.md) ("Engine reconstruction
 knowledge base"). Findings that the engine relies on are summarized in
-`docs/` as they are implemented.
+`docs/` as they are implemented; [docs/ai.md](docs/ai.md) documents the
+computer player.
