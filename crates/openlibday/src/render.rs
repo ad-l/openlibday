@@ -96,7 +96,9 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             }
             Ok(())
         };
-    let mut walker = viewer.walker_depth().map(|(x, y)| (x + y, x));
+    let mut walkers = viewer.walkers();
+    walkers.sort_by_key(|w| (w.depth.0 + w.depth.1, w.depth.0));
+    let mut walkers = walkers.into_iter().peekable();
     // Tile overlays drawn in depth order, after their tile's ground and
     // buildings but before its units, so objects in front cover them: the
     // selection grid, path dots and the move cursor. Target cursors go on
@@ -116,16 +118,16 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     overlays.sort_by_key(|&(x, y, _)| (x + y, x));
     let mut overlays = overlays.into_iter().peekable();
     for item in &viewer.map.scene.items {
-        if let Some(depth) = walker
-            && (item.x + item.y, item.x) > depth
+        while let Some(w) =
+            walkers.next_if(|w| (item.x + item.y, item.x) > (w.depth.0 + w.depth.1, w.depth.0))
         {
             // Path dots up to the walker's tile go underneath it.
+            let depth = (w.depth.0 + w.depth.1, w.depth.0);
             while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| (x + y, x) <= depth) {
                 let (left, top) = sprite_origin(size, x, y);
                 cell(canvas, gfx, left, top, name)?;
             }
-            moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
-            walker = None;
+            moves::draw_walker(canvas, gfx, viewer, &w, &screen_f)?;
         }
         let depth = (item.x + item.y, item.x);
         while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| {
@@ -147,12 +149,13 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
         }
     }
-    if let Some(depth) = walker {
+    for w in walkers {
+        let depth = (w.depth.0 + w.depth.1, w.depth.0);
         while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| (x + y, x) <= depth) {
             let (left, top) = sprite_origin(size, x, y);
             cell(canvas, gfx, left, top, name)?;
         }
-        moves::draw_walker(canvas, gfx, viewer, &screen_f)?;
+        moves::draw_walker(canvas, gfx, viewer, &w, &screen_f)?;
     }
     for (x, y, name) in overlays {
         let (left, top) = sprite_origin(size, x, y);
@@ -234,7 +237,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             }
         }
     }
-    // Arrows above the centre of a footprint: the selected unit's in its
+    // Arrows above the centre of a footprint: the selected units' in their
     // owner's colour, a locked target's in red.
     let arrow = |canvas: &mut Canvas<Window>, gfx: &mut Gfx, tiles: &[(i64, i64)], name: &str| {
         let (Some(a), Some(b)) = (tiles.first(), tiles.last()) else {
@@ -251,12 +254,13 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             name,
         )
     };
-    if !viewer.busy()
-        && let Some(i) = viewer.selected
-        && let Some(unit) = viewer.map.battle.scenario.units.get(i)
-    {
-        let name = format!("SU{:03}", unit.owner.clamp(0, 4));
-        arrow(canvas, gfx, &footprint(i), &name)?;
+    if !viewer.busy() {
+        for i in viewer.selection() {
+            if let Some(unit) = viewer.map.battle.scenario.units.get(i) {
+                let name = format!("SU{:03}", unit.owner.clamp(0, 4));
+                arrow(canvas, gfx, &footprint(i), &name)?;
+            }
+        }
     }
     if !viewer.busy() {
         arrow(canvas, gfx, &viewer.lock_tiles(), "SU000")?;

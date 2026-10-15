@@ -56,9 +56,9 @@ pub struct Options {
     pub terrain_only: bool,
     /// Ground drawn under trees/scenery without a plain counterpart.
     pub ground: String,
-    /// Index into `scenario.units` left out of the scene (a unit being
+    /// Indices into `scenario.units` left out of the scene (units being
     /// animated separately).
-    pub hidden_unit: Option<usize>,
+    pub hidden_units: Vec<usize>,
     /// Player whose view is shown: mines hidden from them are left out
     /// (`None`: everything).
     pub viewer: Option<i64>,
@@ -71,7 +71,7 @@ impl Default for Options {
             deployment: false,
             terrain_only: false,
             ground: "BORE000".to_owned(),
-            hidden_unit: None,
+            hidden_units: Vec::new(),
             viewer: None,
         }
     }
@@ -204,7 +204,7 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 .units
                 .iter()
                 .enumerate()
-                .filter(|&(i, u)| u.arrival == arrival && options.hidden_unit != Some(i));
+                .filter(|&(i, u)| u.arrival == arrival && !options.hidden_units.contains(&i));
             for (_, unit) in shown {
                 let (Some(kind), Some(frame)) =
                     (defs.unit(unit.kind), art.unit_frame(unit.kind, unit.owner))

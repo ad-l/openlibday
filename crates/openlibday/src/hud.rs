@@ -577,13 +577,21 @@ fn draw_battle_sidebar(
             Button::Overwatch => viewer.overwatch_on(),
             Button::AutoFire => viewer.map.battle.auto_fire,
             Button::Fire => viewer.fire_mode_on(),
+            Button::Group => viewer.grouping,
             _ => false,
         };
         gfx.button(canvas, viewer, &layout, button, State::Normal, on)?;
     }
     draw_credits(canvas, gfx, viewer)?;
     draw_turns(canvas, gfx, viewer, Field::Turn)?;
-    if let Some((name, image, ap, ar)) = unit {
+    let group = viewer.selection().len();
+    if group > 1 {
+        // String 0x53 (`%1!d! units selected`) in place of the portrait.
+        let text = format!("{group} units selected");
+        let (p, t) = (layout.field(Field::Portrait), layout.field(Field::UnitText));
+        let r = Rect::new(p.x, p.y, (t.x + t.w).max(p.x + p.w) - p.x, p.h);
+        gfx.text_in(canvas, fonts, &text, px, WHITE, r, 0.5, 0)?;
+    } else if let Some((name, image, ap, ar)) = unit {
         let r = layout.field(Field::Portrait);
         if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &image) {
             canvas.copy(t, None, frect(r))?;

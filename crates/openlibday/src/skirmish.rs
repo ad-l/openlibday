@@ -684,7 +684,7 @@ impl Viewer {
     }
 
     pub(crate) fn can_end_turn(&self) -> bool {
-        self.flow.phase == Phase::Player && !self.flow.reinforcing && self.motion.is_none()
+        self.flow.phase == Phase::Player && !self.flow.reinforcing && self.motions.is_empty()
     }
 
     pub(crate) fn end_turn(&mut self) {

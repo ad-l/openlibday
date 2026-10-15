@@ -124,7 +124,7 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (176, 191, 19, 17),
     (226, 226, SIDEBAR_W, SIDEBAR_H),
     (231, 238, 53, 17),
-    (241, 244, 53, 17),
+    (241, 246, 53, 17),
     (247, 250, 110, 17),
     (251, 256, 19, 19),
     (258, 263, 110, 17),
@@ -502,7 +502,11 @@ impl Button {
     pub fn is_toggle(self) -> bool {
         matches!(
             self,
-            Button::Overwatch | Button::AutoFire | Button::Fire | Button::Objectives
+            Button::Overwatch
+                | Button::AutoFire
+                | Button::Fire
+                | Button::Objectives
+                | Button::Group
         )
     }
 

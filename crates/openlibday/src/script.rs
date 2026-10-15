@@ -645,7 +645,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "steps": p.steps.iter().map(|s| json!([s.x, s.y, s.cost, s.facing])).collect::<Vec<_>>(),
         })
     });
-    let motion = viewer.motion.as_ref().map(|m| {
+    let motion = viewer.motions.first().map(|m| {
         json!({
             "unit": m.unit,
             "done": m.done,
@@ -799,6 +799,9 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    state["selection"] = json!(viewer.selection());
+    state["grouping"] = json!(viewer.grouping);
+    state["walking"] = json!(viewer.motions.iter().map(|m| m.unit).collect::<Vec<_>>());
     state["inspect"] = json!(inspect);
     // The tile at the middle of the battle view.
     let v = viewer.layout().viewport();

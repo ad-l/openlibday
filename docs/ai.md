@@ -406,8 +406,13 @@ flushed together (`0x47142f`), in queue order:
 3. Cut the path to the AP budget.
    - goto: AP minus `actionPointsShoot` for types that can overwatch.
    - goto fast: all AP.
-4. Execute the moves one after another as normal moves (reaction fire,
-   mines).
+4. Execute the moves as one batch: the server resolves them one after
+   another as normal moves (reaction fire, mines; an interrupted AI move
+   does not stop the others), and the client plays all the walks at once,
+   each starting 3 animation ticks after the one before (`0x41b25e`). Our
+   engine plans every path up front (both AI modes), walks them together
+   and plays what they ended in (reaction fire, mines) once all have
+   stopped.
 5. For each mover: if it ends within 1 tile (Chebyshev) of its head
    waypoint, pop the waypoint. With no waypoints left, clear the order.
 

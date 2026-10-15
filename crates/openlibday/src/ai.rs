@@ -147,13 +147,6 @@ impl Action {
     }
 }
 
-/// The goto batch being walked (`0x47142f`).
-struct Flush {
-    next: usize,
-    /// Legacy: every path worked out up front.
-    paths: Vec<Option<Vec<Step>>>,
-}
-
 /// The AI turn in progress.
 pub(crate) struct Brain {
     mode: AiMode,
@@ -166,7 +159,8 @@ pub(crate) struct Brain {
     best: Record,
     /// Goto moves to make: unit id and destination.
     batch: Vec<(i64, (i64, i64))>,
-    flush: Option<Flush>,
+    /// The goto batch is walking (`0x47142f`).
+    flushing: bool,
 }
 
 impl Brain {
@@ -179,7 +173,7 @@ impl Brain {
             base: Vec::new(),
             best: Record::none(),
             batch: Vec::new(),
-            flush: None,
+            flushing: false,
         }
     }
 }
@@ -1671,58 +1665,46 @@ impl Viewer {
         (n > 1).then(|| path[..n].to_vec())
     }
 
-    /// One move of the goto batch, then the waypoints reached are done
-    /// (`0x47142f`); returns whether the batch is finished.
+    /// The goto batch's moves, all walking together (`0x47142f`), then
+    /// the waypoints reached are done; returns whether it is finished.
     fn flush_step(&mut self, b: &mut Brain, keep: bool) -> bool {
-        let Some(f) = &mut b.flush else {
+        if !b.flushing {
             if b.batch.is_empty() {
                 return true;
             }
-            let mut paths = vec![None; b.batch.len()];
-            if b.mode == AiMode::Legacy {
-                let (mut claimed, mut vacated) = (Vec::new(), Vec::new());
-                for (k, &(id, dest)) in b.batch.iter().enumerate() {
-                    let Some(idx) = self.unit_index(id) else {
-                        continue;
-                    };
-                    let path = self.goto_path(b.mode, idx, dest, keep, &claimed, &vacated);
-                    if let Some(p) = &path
-                        && let Some(last) = p.last()
-                    {
-                        let u = &self.units()[idx];
-                        vacated.push((u.x, u.y));
-                        claimed.push((i64::from(last.x), i64::from(last.y)));
-                    }
-                    paths[k] = path;
-                }
-            }
-            b.flush = Some(Flush { next: 0, paths });
-            return false;
-        };
-        if f.next < b.batch.len() {
-            let k = f.next;
-            f.next += 1;
-            let pre = f.paths[k].take();
-            let (id, dest) = b.batch[k];
-            let Some(idx) = self.unit_index(id) else {
-                return false;
-            };
-            let path = match b.mode {
-                AiMode::Legacy => pre,
-                AiMode::Modern => self.goto_path(b.mode, idx, dest, keep, &[], &[]),
-            };
-            let u = &self.units()[idx];
-            if let Some(p) = path
-                && p.first()
+            // Each path ends clear of where those before it end, and may
+            // cross the tiles they leave.
+            let (mut claimed, mut vacated) = (Vec::new(), Vec::new());
+            let mut walks = Vec::new();
+            for &(id, dest) in &b.batch {
+                let Some(idx) = self.unit_index(id) else {
+                    continue;
+                };
+                let Some(p) = self.goto_path(b.mode, idx, dest, keep, &claimed, &vacated) else {
+                    continue;
+                };
+                let u = &self.units()[idx];
+                if !p
+                    .first()
                     .is_some_and(|o| (i64::from(o.x), i64::from(o.y)) == (u.x, u.y))
-            {
+                {
+                    continue;
+                }
+                let last = p[p.len() - 1];
+                vacated.push((u.x, u.y));
+                claimed.push((i64::from(last.x), i64::from(last.y)));
+                walks.push((idx, p));
+            }
+            if let Some((_, p)) = walks.first() {
+                let last = p[p.len() - 1];
+                self.watch_tile((i64::from(last.x), i64::from(last.y)));
+            }
+            for (nth, (idx, p)) in walks.into_iter().enumerate() {
                 let ap = self.ap(idx);
                 let spent: i64 = p[1..].iter().map(|s| i64::from(s.cost)).sum();
-                if let Some(last) = p.last().filter(|_| p.len() > 1) {
-                    self.watch_tile((i64::from(last.x), i64::from(last.y)));
-                }
-                self.start_walk(idx, p[1..].to_vec(), (ap - spent).max(0));
+                self.start_batch_walk(idx, p[1..].to_vec(), (ap - spent).max(0), nth, false);
             }
+            b.flushing = true;
             return false;
         }
         for (id, _) in std::mem::take(&mut b.batch) {
@@ -1740,7 +1722,7 @@ impl Viewer {
                 self.clear_order(id);
             }
         }
-        b.flush = None;
+        b.flushing = false;
         true
     }
 }

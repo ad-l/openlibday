@@ -18,6 +18,7 @@ mod ai;
 mod automated;
 mod clock;
 mod combat;
+mod group;
 mod hud;
 mod input;
 mod menu;
@@ -167,10 +168,25 @@ struct Viewer {
     /// Overwatch zone of the inspected enemy (`info`): tiles and markers.
     watch: Vec<((i64, i64), String)>,
     hover: Option<(i64, i64)>,
-    /// Index into `map.battle.scenario.units`.
+    /// Index into `map.battle.scenario.units`: the selection's leader (the
+    /// unit last added to it).
     selected: Option<usize>,
+    /// The units selected together with GROUP, in the order added; it holds
+    /// only while it ends with `selected`.
+    group: Vec<usize>,
+    /// The GROUP box is checked: unit clicks add to the selection.
+    grouping: bool,
+    /// A group order went out: the next unit click starts a new selection
+    /// (`view+0x1c8`).
+    stale: bool,
     preview: Option<moves::Preview>,
-    motion: Option<moves::Motion>,
+    /// Units walking, together when a batch was moved.
+    motions: Vec<moves::Motion>,
+    /// What finished walks ended in (a shot at a locked target, a mine,
+    /// reaction fire), played in order once every walk is over.
+    ends: Vec<(usize, moves::End)>,
+    /// A group's shots still to fire, in order.
+    volley: Vec<(usize, libday_view::fire::Target, bool)>,
     /// Enemy locked as the selected unit's target, and a shot playing.
     lock: Option<combat::Lock>,
     shot: Option<combat::Shot>,
@@ -306,13 +322,17 @@ impl Viewer {
         self.preview = None;
         self.lock = None;
         self.fire_mode = None;
-        self.motion = None;
+        self.motions.clear();
+        self.ends.clear();
+        self.volley.clear();
+        self.group.clear();
+        self.stale = false;
         self.shot = None;
         self.flights.clear();
         self.supports.clear();
         self.reaction = None;
         self.brain = None;
-        self.options.hidden_unit = None;
+        self.options.hidden_units.clear();
         self.hover = None;
         self.started = self.clock.now();
     }
@@ -464,12 +484,9 @@ impl Viewer {
             None => n - 1,
         };
         let unit = units[next as usize];
-        if self.selected != Some(unit) {
-            self.preview = None;
-            self.lock = None;
-            self.fire_mode = None;
-        }
-        self.selected = Some(unit);
+        // The arrows browse: the unit replaces the selection.
+        self.stale = true;
+        self.pick(unit);
         self.effect(sound::Effect::Select);
         self.centre_on_selected();
     }
@@ -530,6 +547,7 @@ impl Viewer {
             Button::Left => self.cycle_selected(-1),
             Button::Right => self.cycle_selected(1),
             Button::Overwatch => self.toggle_overwatch(),
+            Button::Group => self.toggle_group(),
             Button::AutoFire => self.map.battle.auto_fire ^= true,
             Button::Fire => self.toggle_fire_mode(),
             Button::Objectives => self.objectives = !self.objectives,
@@ -820,8 +838,13 @@ fn main() -> Result {
         watch: Vec::new(),
         hover: None,
         selected: None,
+        group: Vec::new(),
+        grouping: false,
+        stale: false,
         preview: None,
-        motion: None,
+        motions: Vec::new(),
+        ends: Vec::new(),
+        volley: Vec::new(),
         lock: None,
         shot: None,
         flights: Vec::new(),

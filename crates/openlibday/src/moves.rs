@@ -28,8 +28,8 @@ pub struct Preview {
     pub affordable: usize,
 }
 
-/// Where and how the walking (or shooting) unit is drawn.
-struct Walker {
+/// Where and how a walking (or shooting) unit is drawn.
+pub(crate) struct Walker {
     unit: usize,
     /// Point the unit is centred on (a tile centre while standing), in map
     /// pixels.
@@ -39,12 +39,15 @@ struct Walker {
     anim: Option<String>,
     frame: usize,
     /// Tile whose depth the unit is drawn at.
-    depth: (i64, i64),
+    pub(crate) depth: (i64, i64),
+    /// Sound slot of its animation.
+    slot: usize,
+    started: Duration,
 }
 
 /// How a walk ends.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum End {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum End {
     /// At the destination: a locked target is shot.
     Arrived,
     /// Short of it, on sighting a mine.
@@ -85,7 +88,13 @@ pub struct Motion {
     /// A walk cut short still lands where it stopped before its end plays
     /// out (reaction fire, a mine).
     pub landing: Option<Landing>,
+    /// One of a player's group moves: a unit fired on or hitting a mine
+    /// stops the whole group (`0x416cf1` breaks out of the batch).
+    pub halts: bool,
 }
+
+/// Animation ticks between the starts of a batch's moves (`0x41b25e`).
+const BATCH_STAGGER: u64 = 3;
 
 /// End animation of a walk cut short.
 pub struct Landing {
@@ -216,25 +225,40 @@ impl Viewer {
         }
         self.lock = None;
         let unit = self.unit_at(x, y);
+        let sole = self.selection().len() == 1;
         match (self.selected, unit) {
-            (Some(sel), Some(u)) if sel == u => self.turn_clockwise(u),
+            (Some(sel), Some(u)) if sel == u && sole && !self.stale => self.turn_clockwise(u),
             // Only own units are selected; enemies are targeted.
             (_, Some(u)) if self.controllable(u) => {
-                if self.selected != Some(u) {
-                    self.preview = None;
-                    self.fire_mode = None;
+                if self.pick(u) {
+                    self.effect(Effect::Select);
                 }
-                self.selected = Some(u);
-                self.effect(Effect::Select);
             }
             (Some(sel), None) if self.options.arrival == Some(0) && self.controllable(sel) => {
                 match &self.preview {
-                    Some(p) if p.unit == sel && p.target == (x, y) => self.start_move(),
-                    _ => self.preview = self.plan(sel, (x, y)),
+                    Some(p) if p.target == (x, y) && self.selection().contains(&p.unit) => {
+                        self.start_move()
+                    }
+                    _ => self.preview = self.plan_selection((x, y)),
                 }
             }
             _ => {}
         }
+    }
+
+    /// The path previewed for the selection's move to `target`: the
+    /// leader's, or the first other member's that has one (`0x452165`).
+    fn plan_selection(&mut self, target: (i64, i64)) -> Option<Preview> {
+        let units = self.selection();
+        let preview = units
+            .iter()
+            .rev()
+            .filter_map(|&u| self.plan(u, target))
+            .find(|p| !p.steps.is_empty());
+        if preview.is_none() && units.len() > 1 {
+            self.say(0x241, "Unit can't reach that position");
+        }
+        preview
     }
 
     /// Clicking the selected unit turns it one facing clockwise (facings
@@ -257,6 +281,10 @@ impl Viewer {
         let Some(p) = self.preview.take() else {
             return;
         };
+        if self.selection().len() > 1 {
+            self.move_group(p.target);
+            return;
+        }
         let Some((ap, _)) = self.action_points(p.unit) else {
             return;
         };
@@ -272,8 +300,22 @@ impl Viewer {
     pub(crate) fn start_walk(
         &mut self,
         unit_index: usize,
+        steps: Vec<Step>,
+        final_ap: i64,
+    ) -> bool {
+        self.start_batch_walk(unit_index, steps, final_ap, 0, false)
+    }
+
+    /// [`Self::start_walk`] as move `nth` of a batch, all of whose walks
+    /// play together, each starting [`BATCH_STAGGER`] ticks after the one
+    /// before; `halts` for a player's group.
+    pub(crate) fn start_batch_walk(
+        &mut self,
+        unit_index: usize,
         mut steps: Vec<Step>,
         final_ap: i64,
+        nth: usize,
+        halts: bool,
     ) -> bool {
         let Some(unit) = self.map.battle.scenario.units.get(unit_index) else {
             return false;
@@ -281,15 +323,20 @@ impl Viewer {
         let Some(kind) = self.defs.unit_tech(unit.kind, unit.tech) else {
             return false;
         };
-        if steps.is_empty() {
+        if steps.is_empty() || self.motions.iter().any(|m| m.unit == unit_index) {
             return false;
         }
-        // Already covered by overwatch: shot at without moving.
+        // Already covered by overwatch: shot at without moving, once the
+        // rest of the batch has walked.
         if self.reactions && overwatch::spotted(&self.map.battle.scenario, &self.defs, unit_index) {
-            self.start_reaction(unit_index);
+            self.ends.push((unit_index, End::Spotted));
+            if halts {
+                self.halt_group();
+            }
             return true;
         }
-        let now = self.clock.now();
+        let now =
+            self.clock.now() + Duration::from_millis(nth as u64 * BATCH_STAGGER * WALK_POSITION_MS);
         let size = self.map.battle.scenario.size;
         let start = (unit.x, unit.y);
         let pix_speed = kind.move_pix_speed.clamp(1, 1000) as i32;
@@ -324,7 +371,7 @@ impl Viewer {
         } else {
             i64::from(steps[0].facing)
         };
-        self.motion = Some(Motion {
+        self.motions.push(Motion {
             unit: unit_index,
             positions,
             steps,
@@ -338,9 +385,10 @@ impl Viewer {
             lead,
             walk: walk_len,
             landing: None,
+            halts,
         });
         self.map.battle.scenario.units[unit_index].facing = facing;
-        self.options.hidden_unit = Some(unit_index);
+        self.options.hidden_units.push(unit_index);
         self.rebuild();
         true
     }
@@ -356,22 +404,18 @@ impl Viewer {
 
     /// Animations on screen, for their sound.
     fn playing(&self) -> Vec<Playing> {
-        let mut out = Vec::new();
-        if let Some(w) = self.walker()
-            && let Some(name) = w.anim
-        {
-            let started = match (&self.shot, &self.motion) {
-                (Some(s), _) => s.started,
-                (None, Some(m)) => m.started,
-                (None, None) => Duration::ZERO,
-            };
-            out.push(Playing {
-                slot: 0,
-                name,
-                started,
-                frame: w.frame,
-            });
-        }
+        let mut out: Vec<Playing> = self
+            .walkers()
+            .into_iter()
+            .filter_map(|w| {
+                Some(Playing {
+                    slot: w.slot,
+                    name: w.anim?,
+                    started: w.started,
+                    frame: w.frame,
+                })
+            })
+            .collect();
         for s in self.flights.iter().chain(&self.shot) {
             let f = s.frame(self.clock.now());
             if s.projectile(f).is_some() {
@@ -402,16 +446,60 @@ impl Viewer {
         out
     }
 
-    /// Advances the walking or shooting unit; returns whether one is busy.
+    /// Advances the walking units, then the shots, then what the walks
+    /// ended in, one at a time; returns whether anything is busy.
     fn advance(&mut self) -> bool {
-        let Some(m) = &self.motion else {
-            return self.tick_shot();
-        };
+        // A walk ending reshuffles the list: go over it again.
+        'walks: loop {
+            for k in 0..self.motions.len() {
+                if !self.advance_motion(k) {
+                    continue 'walks;
+                }
+            }
+            break;
+        }
+        if !self.motions.is_empty() || self.tick_shot() {
+            return true;
+        }
+        while !self.ends.is_empty() {
+            let (i, end) = self.ends.remove(0);
+            if end != End::Arrived && self.lock.as_ref().is_some_and(|l| l.unit == i) {
+                self.lock = None;
+            }
+            match end {
+                End::Mine(k) => {
+                    // An earlier blast may have shifted the list: the mine
+                    // is the one under the unit.
+                    let u = &self.map.battle.scenario.units[i];
+                    let at = (u.x, u.y);
+                    let mines = &self.map.battle.scenario.mines;
+                    let k = match mines.get(k) {
+                        Some(m) if (m.x, m.y) == at => Some(k),
+                        _ => mines.iter().position(|m| (m.x, m.y) == at),
+                    };
+                    if let Some(k) = k {
+                        self.start_mine(i, k);
+                    }
+                }
+                End::Spotted => self.start_reaction(i),
+                End::Arrived | End::Interrupted => self.arrived(i),
+            }
+            if self.shot.is_some() || self.reaction.is_some() || !self.flights.is_empty() {
+                return true;
+            }
+        }
+        self.next_volley()
+    }
+
+    /// Advances walk `k`; returns whether it is still walking.
+    fn advance_motion(&mut self, k: usize) -> bool {
+        let m = &self.motions[k];
         if let Some(l) = &m.landing {
             let ms = self.clock.since(l.started).as_millis();
             if ms >= (l.frames as u128) * u128::from(WALK_POSITION_MS) {
-                let (i, ap, end) = (m.unit, l.ap, l.end);
-                return self.stop(i, ap, end);
+                let (ap, end) = (l.ap, l.end);
+                self.stop(k, ap, end);
+                return false;
             }
             return true;
         }
@@ -419,9 +507,8 @@ impl Viewer {
             (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
         // Steps whose positions have all been shown are walked.
         let walked = m.positions.get(shown).map_or(m.steps.len(), |&(_, s)| s);
-        while let Some(m) = &mut self.motion
-            && m.done < walked
-        {
+        while self.motions[k].done < walked {
+            let m = &mut self.motions[k];
             let step = m.steps[m.done];
             let to = (i64::from(step.x), i64::from(step.y));
             m.from = to;
@@ -446,7 +533,7 @@ impl Viewer {
             // under reaction fire, before mines are looked at.
             let scenario = &self.map.battle.scenario;
             if self.reactions && overwatch::spotted(scenario, &self.defs, i) {
-                return self.cut_short(i, ap, End::Spotted, to, step.facing);
+                return self.cut_short(k, ap, End::Spotted, to, step.facing);
             }
             // A detector stops on sighting a hidden mine; else an armed
             // mine on the tile may go off. Either ends the walk there.
@@ -456,17 +543,17 @@ impl Viewer {
             } else {
                 None
             };
-            for &k in &detected {
-                self.map.battle.scenario.mines[k].reveal_to(owner);
+            for &d in &detected {
+                self.map.battle.scenario.mines[d].reveal_to(owner);
             }
             let end = match mine {
-                Some(k) => Some(End::Mine(k)),
+                Some(d) => Some(End::Mine(d)),
                 None if !detected.is_empty() && !last => Some(End::Interrupted),
                 None if last => Some(End::Arrived),
                 None => None,
             };
             if let Some(end) = end {
-                return self.cut_short(i, ap, end, to, step.facing);
+                return self.cut_short(k, ap, end, to, step.facing);
             }
             if let Some(facing) = next {
                 self.map.battle.scenario.units[i].facing = facing;
@@ -475,83 +562,107 @@ impl Viewer {
         true
     }
 
-    /// Ends the walk of unit `i` on tile `at`. On the last step the end
-    /// animation has already played; short of it, a unit with one plays it
-    /// there first (facing `facing`), then the walk stops.
+    /// Ends walk `k` on tile `at`; returns whether it is still playing. On
+    /// the last step the end animation has already played; short of it, a
+    /// unit with one plays it there first (facing `facing`), then the walk
+    /// stops.
     fn cut_short(
         &mut self,
-        i: usize,
+        k: usize,
         ap: Option<i64>,
         end: End,
         at: (i64, i64),
         facing: u8,
     ) -> bool {
         let now = self.clock.now();
-        if let Some(m) = &mut self.motion {
-            let frames = m.positions.len().saturating_sub(m.lead + m.walk);
-            if frames > 0 && m.done < m.steps.len() {
-                m.steps.truncate(m.done);
-                m.landing = Some(Landing {
-                    started: now,
-                    at,
-                    facing,
-                    frames,
-                    ap,
-                    end,
-                });
-                return true;
-            }
+        let m = &mut self.motions[k];
+        let frames = m.positions.len().saturating_sub(m.lead + m.walk);
+        if frames > 0 && m.done < m.steps.len() {
+            m.steps.truncate(m.done);
+            m.landing = Some(Landing {
+                started: now,
+                at,
+                facing,
+                frames,
+                ap,
+                end,
+            });
+            return true;
         }
-        self.stop(i, ap, end)
+        self.stop(k, ap, end);
+        false
     }
 
-    /// Ends the walk of unit `i` (with `ap` left, if given): it shoots its
-    /// locked target if it arrived.
-    fn stop(&mut self, i: usize, ap: Option<i64>, end: End) -> bool {
-        self.motion = None;
+    /// Ends walk `k` (with `ap` left, if given); what it ended in (a shot
+    /// at its locked target, a mine, reaction fire) plays once every walk
+    /// is over. A group member fired on or blown up stops the group.
+    fn stop(&mut self, k: usize, ap: Option<i64>, end: End) {
+        let m = self.motions.remove(k);
+        let i = m.unit;
         if let Some(ap) = ap {
             self.map.battle.scenario.units[i].action_points = Some(ap.max(0));
         }
-        self.options.hidden_unit = None;
+        self.options.hidden_units.retain(|&u| u != i);
+        if m.halts && matches!(end, End::Mine(_) | End::Spotted) {
+            self.halt_group();
+        }
+        self.ends.push((i, end));
         self.rebuild();
         self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-        if end != End::Arrived {
-            self.lock = None;
-        }
-        match end {
-            End::Mine(k) => self.start_mine(i, k),
-            End::Spotted => self.start_reaction(i),
-            End::Arrived | End::Interrupted => self.arrived(),
-        }
-        self.busy()
     }
 
-    /// The walking unit's centre (map pixels), facing, animation frame
-    /// counter and the tile whose depth it is drawn at.
-    fn walker(&self) -> Option<Walker> {
-        if let Some(s) = &self.shot {
-            let (anim, frame) = s.shooter(s.frame(self.clock.now()))?;
-            let unit = self.map.battle.scenario.units.get(s.unit)?;
-            let kind = self.defs.unit(unit.kind)?;
-            let facing = unit.facing.rem_euclid(8) as u8;
-            let size = self.map.battle.scenario.size;
-            return Some(Walker {
-                unit: s.unit,
-                centre: tile_center(size, unit.x, unit.y),
-                facing,
-                anim: Some(shot::animation_name(&kind.image, s.owner, anim, facing)),
-                frame,
-                // In front of the whole footprint.
-                depth: (
-                    unit.x + kind.width.max(1) - 1,
-                    unit.y + kind.height.max(1) - 1,
-                ),
-            });
+    /// Stops every group walk where it stands (on the last tile it
+    /// reached) and calls off the group's shots.
+    pub(crate) fn halt_group(&mut self) {
+        self.volley.clear();
+        let (halted, walking): (Vec<Motion>, Vec<Motion>) = std::mem::take(&mut self.motions)
+            .into_iter()
+            .partition(|m| m.halts);
+        self.motions = walking;
+        for m in halted {
+            self.options.hidden_units.retain(|&u| u != m.unit);
         }
-        let m = self.motion.as_ref()?;
+        self.rebuild();
+    }
+
+    /// The walking and shooting units: centre (map pixels), facing,
+    /// animation frame counter and the tile whose depth each is drawn at.
+    pub(crate) fn walkers(&self) -> Vec<Walker> {
+        let mut out: Vec<Walker> = self.shooter().into_iter().collect();
+        for (k, m) in self.motions.iter().enumerate() {
+            let slot = if k == 0 { 0 } else { 100 + k };
+            out.extend(self.motion_walker(m, slot));
+        }
+        out
+    }
+
+    fn shooter(&self) -> Option<Walker> {
+        let s = self.shot.as_ref()?;
+        let (anim, frame) = s.shooter(s.frame(self.clock.now()))?;
+        let unit = self.map.battle.scenario.units.get(s.unit)?;
+        let kind = self.defs.unit(unit.kind)?;
+        let facing = unit.facing.rem_euclid(8) as u8;
         let size = self.map.battle.scenario.size;
+        Some(Walker {
+            unit: s.unit,
+            centre: tile_center(size, unit.x, unit.y),
+            facing,
+            anim: Some(shot::animation_name(&kind.image, s.owner, anim, facing)),
+            frame,
+            // In front of the whole footprint.
+            depth: (
+                unit.x + kind.width.max(1) - 1,
+                unit.y + kind.height.max(1) - 1,
+            ),
+            slot: 0,
+            started: s.started,
+        })
+    }
+
+    fn motion_walker(&self, m: &Motion, slot: usize) -> Option<Walker> {
+        let size = self.map.battle.scenario.size;
+        let unit = self.map.battle.scenario.units.get(m.unit)?;
         if let Some(l) = &m.landing {
-            let unit = &self.map.battle.scenario.units[m.unit];
             let kind = self.defs.unit(unit.kind)?;
             let frame =
                 (self.clock.since(l.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
@@ -567,6 +678,8 @@ impl Viewer {
                 )),
                 frame: frame.min(l.frames - 1),
                 depth: l.at,
+                slot,
+                started: l.started,
             });
         }
         let step = m.steps.get(m.done)?;
@@ -577,7 +690,6 @@ impl Viewer {
             Some(&(p, s)) if s == m.done => p,
             _ => tile_center(size, to.0, to.1),
         };
-        let unit = &self.map.battle.scenario.units[m.unit];
         let walk_end = m.lead + m.walk;
         let phase = if shown < m.lead {
             Some(('L', m.facing, m.from, shown, m.lead))
@@ -601,6 +713,8 @@ impl Viewer {
                 )),
                 frame: frame.min(frames - 1),
                 depth: at,
+                slot,
+                started: m.started,
             });
         }
         let frame = shown - m.lead;
@@ -621,12 +735,9 @@ impl Viewer {
             anim,
             frame,
             depth,
+            slot,
+            started: m.started,
         })
-    }
-
-    /// Tile the walking unit is drawn after (in back-to-front order).
-    pub(crate) fn walker_depth(&self) -> Option<(i64, i64)> {
-        self.walker().map(|w| w.depth)
     }
 
     /// Building on tile `(x, y)`.
@@ -780,17 +891,15 @@ pub fn draw_animation(
     Ok(true)
 }
 
-/// Draws the walking or shooting unit; `screen` maps map pixels to output
+/// Draws a walking or shooting unit; `screen` maps map pixels to output
 /// pixels.
-pub fn draw_walker(
+pub(crate) fn draw_walker(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,
     viewer: &Viewer,
+    w: &Walker,
     screen: &dyn Fn(f64, f64) -> (f32, f32),
 ) -> Result {
-    let Some(w) = viewer.walker() else {
-        return Ok(());
-    };
     let ((cx, cy), facing) = (w.centre, w.facing);
     if let Some(name) = &w.anim
         && draw_animation(canvas, gfx, viewer, name, w.frame, w.centre, screen)?
@@ -842,19 +951,28 @@ pub fn draw_shot_effects(
     Ok(())
 }
 
-/// Path dots of the preview, or of the rest of the walk.
+/// Path dots of the preview, or of the rest of the walks.
 pub fn path_dots(viewer: &Viewer) -> Vec<(i64, i64, &'static str)> {
-    let (steps, affordable): (&[Step], usize) = match (&viewer.motion, &viewer.preview) {
-        (Some(m), _) => (&m.steps[m.done..], usize::MAX),
-        (None, Some(p)) => (&p.steps, p.affordable),
-        _ => return Vec::new(),
+    let dots = |steps: &[Step], affordable: usize| -> Vec<(i64, i64, &'static str)> {
+        steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let dot = movement::path_dot(s, i + 1 == steps.len(), i < affordable);
+                (i64::from(s.x), i64::from(s.y), dot)
+            })
+            .collect()
     };
-    steps
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let dot = movement::path_dot(s, i + 1 == steps.len(), i < affordable);
-            (i64::from(s.x), i64::from(s.y), dot)
-        })
-        .collect()
+    if !viewer.motions.is_empty() {
+        return viewer
+            .motions
+            .iter()
+            .flat_map(|m| dots(&m.steps[m.done.min(m.steps.len())..], usize::MAX))
+            .collect();
+    }
+    viewer
+        .preview
+        .as_ref()
+        .map(|p| dots(&p.steps, p.affordable))
+        .unwrap_or_default()
 }

@@ -1,0 +1,77 @@
+# GROUP: with the box checked unit clicks add units to the selection (or
+# take them out), up to five; the unit last added leads. A group attacks
+# together (walking into range first if it must) and moves together onto
+# the clicked tile and the free tiles around it, all walks playing at once.
+# After a group order the next unit click starts a new selection.
+# Run: openlibday --headless --script scripts/group.txt  (needs LIBDAY_ROOT)
+ai off
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Grenadier
+tile 44 18
+deploy Grenadier
+tile 45 18
+deploy Grenadier
+tile 44 19
+key Return
+key Y
+# A Claptrap in range of two of the Grenadiers.
+place 15 40 18
+tile 44 18
+expect selection [27]
+button Group
+expect grouping true
+tile 45 18
+tile 44 19
+expect selection [27,28,29]
+expect selected 29
+# Clicking a member takes it out.
+tile 45 18
+expect selection [27,29]
+tile 45 18
+tile 12 19
+tile 13 21
+expect selection [27,29,28,0,1]
+expect selected 1
+tile 13 19
+expect message Too many selected units
+expect selection [27,29,28,0,1]
+tile 12 19
+tile 13 21
+expect selection [27,29,28]
+# Group fire: the Grenadier out of range walks up first, then all three
+# throw, the leader first.
+centre 42 18
+tile 40 18
+tile 40 18
+idle
+expect units.28.x 44
+expect units.28.y 17
+expect units.15.armor 11
+expect selection [27,29,28]
+# The order went out: a unit click starts afresh.
+tile 44 18
+expect selection [27]
+tile 44 19
+tile 44 17
+expect selection [27,29,28]
+# Group move: all three walk at once to (40, 22) and around it, as far as
+# their AP goes.
+tile 40 22
+tile 40 22
+wait 2
+expect walking [28,29,27]
+idle
+expect walking []
+expect units.27.x 42
+expect units.27.y 20
+expect units.29.x 41
+expect units.29.y 22
+expect units.28.x 43
+expect units.28.y 19
+# Unchecking GROUP keeps only the leader.
+button Group
+expect grouping false
+expect selection [28]

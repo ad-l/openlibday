@@ -174,7 +174,9 @@ fn distance(a: (i64, i64), b: (i64, i64)) -> i64 {
 impl Viewer {
     /// A unit is walking or shooting: orders and selection wait.
     pub(crate) fn busy(&self) -> bool {
-        self.motion.is_some()
+        !self.motions.is_empty()
+            || !self.ends.is_empty()
+            || !self.volley.is_empty()
             || self.shot.is_some()
             || !self.flights.is_empty()
             || self.reaction.is_some()
@@ -281,6 +283,7 @@ impl Viewer {
         if self.options.arrival != Some(0) || self.map.battle.scenario.units[sel].arrival != 0 {
             return;
         }
+        let group = self.selection().len() > 1;
         if let Some(lock) = &mut self.lock
             && lock.unit == sel
             && lock.target == target
@@ -290,11 +293,17 @@ impl Viewer {
             if once {
                 self.fire_mode = None;
             }
+            if group {
+                self.lock = None;
+                self.preview = None;
+                self.fire_group(target, !once);
+                return;
+            }
             match &self.preview {
                 Some(p) if p.unit == sel => {
                     lock.pending = true;
                     self.start_move();
-                    if self.motion.is_none() {
+                    if self.motions.is_empty() && self.ends.is_empty() {
                         self.lock = None;
                     }
                 }
@@ -326,6 +335,16 @@ impl Viewer {
     /// left after walking there, or failing that the cheapest with a clear
     /// shot (walked as far as it can afford).
     fn approach(&self, unit: usize, target: Target) -> Option<Preview> {
+        self.approach_avoiding(unit, target, &[])
+    }
+
+    /// [`Self::approach`] ending on none of the `claimed` tiles.
+    pub(crate) fn approach_avoiding(
+        &self,
+        unit: usize,
+        target: Target,
+        claimed: &[(i64, i64)],
+    ) -> Option<Preview> {
         let scenario = &self.map.battle.scenario;
         let u = scenario.units.get(unit)?;
         let grid = movement::move_grid(scenario, &self.defs, unit)?;
@@ -336,7 +355,7 @@ impl Viewer {
         let mut fallback = None;
         for (tile, _) in grid.reachable(from) {
             let at = (i64::from(tile.0), i64::from(tile.1));
-            if !matches!(checker.check(at, i64::MAX / 2), Fire::Clear(_)) {
+            if claimed.contains(&at) || !matches!(checker.check(at, i64::MAX / 2), Fire::Clear(_)) {
                 continue;
             }
             let Some(steps) = grid.find_path(from, tile) else {
@@ -511,15 +530,15 @@ impl Viewer {
             ruins: outcome.ruins,
         };
         if shot.animating_shooter() {
-            self.options.hidden_unit = Some(unit);
+            self.options.hidden_units.push(unit);
         }
         self.shot = Some(shot);
         self.rebuild();
     }
 
-    /// After a move: the confirmed attack shoots if it now can.
-    pub(crate) fn arrived(&mut self) {
-        let Some(lock) = self.lock.take() else {
+    /// After unit `unit` moved: its confirmed attack shoots if it now can.
+    pub(crate) fn arrived(&mut self, unit: usize) {
+        let Some(lock) = self.lock.take_if(|l| l.unit == unit) else {
             return;
         };
         if lock.pending {
@@ -638,8 +657,8 @@ impl Viewer {
             return false;
         };
         let (unit, total) = (s.unit, s.total);
-        if s.shooter(f).is_none() && self.options.hidden_unit == Some(unit) {
-            self.options.hidden_unit = None;
+        if s.shooter(f).is_none() && self.options.hidden_units.contains(&unit) {
+            self.options.hidden_units.retain(|&u| u != unit);
             self.rebuild();
         }
         let Some(s) = &self.shot else {
@@ -793,10 +812,28 @@ impl Viewer {
             }
         }
         self.selected = remap(self.selected);
+        self.group = self.group.iter().filter_map(|&i| remap(Some(i))).collect();
+        self.ends = std::mem::take(&mut self.ends)
+            .into_iter()
+            .filter_map(|(i, e)| Some((remap(Some(i))?, e)))
+            .collect();
+        self.volley = std::mem::take(&mut self.volley)
+            .into_iter()
+            .filter_map(|(i, t, r)| {
+                Some((
+                    remap(Some(i))?,
+                    remap_target(t, &removed, &removed_buildings)?,
+                    r,
+                ))
+            })
+            .collect();
         self.fire_mode = remap(self.fire_mode);
         // Buildings, walls and roads may have gone too: stop inspecting them.
         self.info = remap(self.info.and_then(|t| t.unit())).map(libday_view::inspect::Target::Unit);
-        self.options.hidden_unit = remap(self.options.hidden_unit);
+        self.options.hidden_units = std::mem::take(&mut self.options.hidden_units)
+            .into_iter()
+            .filter_map(|i| remap(Some(i)))
+            .collect();
         self.markers = minimap::markers(&self.map.battle.scenario, &self.defs);
         self.entry = None;
         self.rebuild();
