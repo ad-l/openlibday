@@ -35,3 +35,18 @@ fn combat_script() {
 fn mines_script() {
     play("scripts/mines.txt", "mines test passed");
 }
+
+#[test]
+fn testing_ground_script() {
+    // Only present once tools/modding/make_testing_ground.py --install has run.
+    let installed = std::env::var_os("LIBDAY_ROOT").is_some_and(|root| {
+        Path::new(&root)
+            .join("SCENS/SCEN1.ZIP.pre-testing-ground")
+            .exists()
+    });
+    if !installed {
+        eprintln!("skipping: Testing Ground not installed");
+        return;
+    }
+    play("scripts/testing_ground.txt", "testing ground test passed");
+}

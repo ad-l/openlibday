@@ -211,7 +211,9 @@ impl Viewer {
             .filter(|&k| self.defs.unit(k).is_some())
             .collect();
         let automated = info.available_automated.clone();
-        let points = self.defs.tech_points(info.points);
+        let points = info
+            .tech_points
+            .unwrap_or_else(|| self.defs.tech_points(info.points));
         self.flow.setup = Some(Setup {
             tech: vec![0; units.len()],
             units,
@@ -227,7 +229,12 @@ impl Viewer {
         });
         self.players = skirmish_players();
         self.player = 0;
-        self.screen = Screen::Tech { read_only: false };
+        if points == 0 {
+            // Nothing to buy (openlibday's `TechPoints` = 0): straight to the briefing.
+            self.begin_briefing();
+        } else {
+            self.screen = Screen::Tech { read_only: false };
+        }
     }
 
     // Technology.

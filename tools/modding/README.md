@@ -558,40 +558,50 @@ change, close the game, restore those two backups to `ddraw.dll` and
 `LIBDAY.INI`, and remove only `EXE\ddraw.ini`. The archived
 `archive\playtest` configuration is byte-unchanged but retains its old paths.
 
-### Installed skirmish: Green Thaw
+### Installed skirmish: Testing Ground
 
-The main installation's skirmish catalog now includes **Green Thaw**, cloned
-from **Crime and Punishment** (template Counter 3, `s1-3-1.mdb`). Its new
-catalog Counter is 55, and its database is `s1-99-1.mdb`, added to
-`SCENS\SCEN1.ZIP` without replacing any original member.
+Catalog Counter 55 (`s1-99-1.mdb` in `SCENS\SCEN1.ZIP`), first installed as
+the 24x24 **Green Thaw** example (a grass-painted clone of Crime and
+Punishment), is now **Testing Ground**: a 96x96 sandbox for scripted tests,
+produced reproducibly by `make_testing_ground.py`:
 
-The edit changes 112 plain-snow cells (`NORD000`) to plain grass (`BORE000`)
-within the central square, coordinates x=6..17 and y=6..17 inclusive. Other
-terrain, the 24x24 grid, units, buildings, roads, walls, deployment, objectives,
-and all remaining scenario tables are unchanged. Both base terrain types have
-the same type, fire-through, and overlapping flags in the terrain registry.
-The preview/minimap blobs and internal scenario title still belong to the
-original mission; preview regeneration and mission-text editing are not part
-of this example.
+```powershell
+python tools\modding\make_testing_ground.py --root F:\libday --install
+```
 
-Editable CSVs, the fresh template, edited MDB, and staged archive/catalog are
-in `modding\green-skirmish`. Database readback confirmed exactly 112 edited
-cells, all 21 other tables preserved, all 46 original catalog entries
-unchanged, and every original archive member byte-identical.
+The generator keeps Green Thaw's database tables, stages the terrain of
+s3-1-1 (rivers, lakes, banks, forests, mountains) into `[Map]`, then builds
+everything else through the map editor model and saves with the editor's
+validation (`Apply -ResizeMap square -BridgeTerrain banks`). Layout (x, y):
 
-In-game, **Green Thaw (Easy)** appears in the skirmish list and loads through
-the upgrade and overview screens into the tactical deployment map. The central
-grass area is visibly rendered, and the tactical minimap reflects the change.
-The pre-mission overview still uses the preserved snowy artwork. A full mission
-playthrough has not been performed.
+| Feature | Where |
+| --- | --- |
+| Player 1 | 3 of every unit type (186): land units x 1..33, y 24..95; water units in the north-west sea x 0..33, y 0..41; starting zone x 11..22, y 45..52 |
+| AI | 1 of every non-human unit type (35): land units near (76, 20), water units in the south-east sea near (84, 74); every building type (81), land at x 56..95, y 0..41, water at x 72..95, y 52..95. At least 20 tiles (40 as generated) from any player unit |
+| Built bridges | (35,33)-(35,41) and (67,46)-(67,51), paved, joined by the paved trunk road y 43 from x 4 and by paved approaches |
+| Unbuilt bridges | (19,22)-(24,22) and (58,61)-(64,61): bank/water spans with dirt approaches ending at the banks |
+| Dirt roads | (39,16)-(80,16), (21,13)-(39,13)-(39,15), (10,60)-(30,60)-(30,75)-(44,75)-(44,92) |
+| AI mines, hidden from humans | normal x 37..42, y 64..68; grav x 37..42, y 80..84; on the paved road (46,43) and (48,43); x 48..50, y 18..20 |
+| Player 1 mines | normal x 37..40, grav x 41..42, y 88..91 |
+| Walls (AI) | concrete y 86, laser fence y 88, force field y 90, ruined y 92 (x 46..52); concrete x 56, y 20..26 |
+| Props | up to three ruins/wrecks of every artwork family at x 20..54, y 1..9 (step 2); BORE scenery along y 11; a fresh forest patch x 46..51, y 33..37 |
 
-To undo this installation, close the game and restore
-`SCENS\SKIRMISH.MDB.pre-green-thaw` and `SCENS\SCEN1.ZIP.pre-green-thaw`
-to `SKIRMISH.MDB` and `SCEN1.ZIP`. Remove only
-`CACHE\SCEN1\s1-99-1.mdb` if the game has extracted it. Clear that same
-cached file while the game is closed before installing later edits to this
-scenario. Keep the editor files if further edits are desired.
-The prior playtest scenario modifications are retained in `archive\playtest`.
+The scenario has 100 turns, 999 deployment points and every skirmish unit
+type available. It also gets an **openlibday-only** `TechPoints` column
+in `Scenario Info` (LONG, 0): the original game ignores it, but openlibday
+uses it in place of the technology points derived from `One Off
+Deployment`, and skips the technology screen when it is 0. The four
+obsolete campaign `HQ on Map` rows are removed. The catalog row gets the
+new title (all languages), description and size 96.
+
+`--install` backs up `SCENS\SCEN1.ZIP` and `SCENS\SKIRMISH.MDB` once as
+`*.pre-testing-ground` (these contain Green Thaw, and the golden-digest
+tests read them in preference to the modified files), repacks the archive
+member, updates the catalog and removes `CACHE\SCEN1\s1-99-1.mdb`. Re-running
+regenerates from the backups. To undo, restore the two backups.
+`scripts\testing_ground.txt` checks the result headless (run by `cargo test`
+when the backups exist). The older Green Thaw files remain in
+`modding\green-skirmish`.
 
 | Feature | What is established | Limit |
 | --- | --- | --- |
@@ -599,7 +609,7 @@ The prior playtest scenario modifications are retained in `archive\playtest`.
 | 1920x1080 scaling | The original executable's main menu rendered at 1920x1080 with cnc-ddraw in the isolated copy | Tactical gameplay and reliable navigation are not established |
 | Native 1920x1080 | The experimental table patch requests and recognizes the larger display mode; its loading screen was observed | No verified expanded map viewport; a later capture was black |
 | Custom terrain | Export, validate, edit and repack square MDB terrain grids | Template dimensions, units, objectives and preview blobs remain unchanged |
-| Custom map catalog | Green Thaw was added to the main skirmish catalog and reached tactical deployment; a separate cloned deathmatch entry remains in the copied catalog | Full mission playthrough and the custom deathmatch remain unverified |
+| Custom map catalog | Testing Ground (formerly Green Thaw) is in the main skirmish catalog and plays in openlibday; a separate cloned deathmatch entry remains in the copied catalog | Full mission playthrough and the custom deathmatch remain unverified |
 
 Early native-resolution experiments included loading screens, black/incomplete drawing, and
 inconsistent navigation with synthetic input. They do not isolate a single

@@ -242,6 +242,10 @@ pub struct ScenarioInfo {
     pub turns: i64,
     /// `One Off Deployment`: technology/deployment points of a skirmish.
     pub points: i64,
+    /// `TechPoints`: an openlibday-only override of the technology points
+    /// derived from `points`. The original ignores the column; 0 skips the
+    /// technology screen.
+    pub tech_points: Option<i64>,
     /// `NextID_Units` / `NextID_Buildings`. The original does not update
     /// them in savegames; see [`Scenario::next_unit_id`].
     pub next_unit_id: i64,
@@ -503,6 +507,7 @@ impl Scenario {
                 description: t.text_or(0, "descriptionEnglish")?,
                 turns: t.int_or(0, "turn_qty", 0)?,
                 points: t.int_or(0, "One Off Deployment", 0)?,
+                tech_points: Some(t.int_or(0, "TechPoints", -1)?).filter(|&p| p >= 0),
                 next_unit_id: t.int_or(0, "NextID_Units", 0)?,
                 next_building_id: t.int_or(0, "NextID_Buildings", 0)?,
                 reinf_res: t.int_or(0, "ReinfRes", 0)?,

@@ -1,0 +1,28 @@
+# Testing Ground: the generated sandbox skirmish (tools/modding/make_testing_ground.py).
+# 0 technology points skip the technology screen; 3 of every unit for player 1,
+# every alien unit and building for the AI.
+# Run: openlibday --headless --script scripts/testing_ground.txt  (needs LIBDAY_ROOT
+# and the generator installed)
+skirmish Testing Ground
+expect screen Skirmishes
+key Return
+expect screen Briefing
+expect title Testing Ground
+expect size 96
+expect setup.points 0
+expect credits 999
+expect units.34.owner 0
+expect units.35.owner 1
+expect units.220.owner 1
+expect buildings.80.owner 0
+key Return
+expect screen Deploy
+key Return
+key Y
+expect phase Player
+expect turn 1
+button EndTurn
+idle
+expect turn 2
+expect phase Player
+echo testing ground test passed

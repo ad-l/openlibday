@@ -39,9 +39,22 @@ fn dump(db: &Database) -> (usize, usize, String) {
     (tables, rows, digest)
 }
 
+/// The stock file: `make_testing_ground.py --install` keeps the original
+/// next to the modified one as `<name>.pre-testing-ground`.
+fn stock(game: &GameData, dir: Dir, file: &str) -> String {
+    let backup = format!("{file}.pre-testing-ground");
+    if game.read(dir, &backup).is_ok() {
+        backup
+    } else {
+        file.to_owned()
+    }
+}
+
 /// Digest over every scenario database of an archive, in member order.
 fn archive_dump(game: &GameData, archive: &str) -> (usize, usize, usize, String) {
-    let bytes = game.read(Dir::Scenarios, archive).unwrap();
+    let bytes = game
+        .read(Dir::Scenarios, &stock(game, Dir::Scenarios, archive))
+        .unwrap();
     let zip = Zip::parse(&bytes).unwrap();
     let mut hash = Sha256::new();
     let (mut dbs, mut tables, mut rows) = (0, 0, 0);
@@ -95,7 +108,7 @@ fn databases_match_golden_dumps() {
     ];
     let mut failed = false;
     for (dir, file, tables, rows, digest) in golden {
-        let got = dump(&game.database(dir, file).unwrap());
+        let got = dump(&game.database(dir, &stock(&game, dir, file)).unwrap());
         if got != (tables, rows, digest.to_owned()) {
             eprintln!("{file}: got {got:?}");
             failed = true;
