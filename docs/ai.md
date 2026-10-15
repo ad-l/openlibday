@@ -511,4 +511,7 @@ The AI can buy supports in three ways:
   automated units), the counter-attack, the seven-sweep limit, the teleport
   single-step path, the 4000 ms time slices, and the centre walk on a stale
   grid when the unit has under 4 AP.
+- The view follows the AI: it centres on a walk's destination before the
+  unit sets off, and on a unit that fires without moving. Supports already
+  centre on their target before their animation.
 - `scripts/ai.txt` plays modern, legacy and off turns on the Testing Ground.

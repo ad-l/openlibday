@@ -885,6 +885,12 @@ impl Viewer {
         Some(grid)
     }
 
+    /// Centres the view on a tile the AI is about to act on: a walk's
+    /// destination, or a unit that fires without moving.
+    fn watch_tile(&mut self, (x, y): (i64, i64)) {
+        self.centre_on_tile(x as f64 + 0.5, y as f64 + 0.5);
+    }
+
     /// Cuts `path` to the unit's AP and walks it (`0x46e7e7`).
     fn issue_move(&mut self, mode: AiMode, a: &mut Action, idx: usize, path: &[Step]) -> Issued {
         let ap = self.ap(idx);
@@ -899,6 +905,7 @@ impl Viewer {
         }
         let steps = path[1..n].to_vec();
         let spent: i64 = steps.iter().map(|s| i64::from(s.cost)).sum();
+        self.watch_tile(a.dest);
         if self.start_walk(idx, steps, (ap - spent).max(0)) {
             Issued::Walk
         } else {
@@ -1174,6 +1181,8 @@ impl Viewer {
         if let Some(t) = self.record_target(&b.best)
             && self.clear(idx, t)
         {
+            let u = &self.units()[idx];
+            self.watch_tile((u.x, u.y));
             self.start_shot(idx, t, true, false);
             if self.shot.is_some() {
                 a.pending = Some(Pending::Fire);
@@ -1709,6 +1718,9 @@ impl Viewer {
             {
                 let ap = self.ap(idx);
                 let spent: i64 = p[1..].iter().map(|s| i64::from(s.cost)).sum();
+                if let Some(last) = p.last().filter(|_| p.len() > 1) {
+                    self.watch_tile((i64::from(last.x), i64::from(last.y)));
+                }
                 self.start_walk(idx, p[1..].to_vec(), (ap - spent).max(0));
             }
             return false;

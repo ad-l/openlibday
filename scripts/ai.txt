@@ -12,8 +12,13 @@ expect units.29.x 72
 # A Main Tank parked near the AI base: the unordered AI units close in and
 # destroy it, the towers fire from where they stand.
 place 77 66 32
+centre 10 10
 button EndTurn
 expect phase Ai
+# The view follows the AI: a walk's destination, a shooter that stays put.
+wait 2
+expect shot.unit 19
+expect view [78,24]
 idle 20000
 expect phase Player
 expect turn 2

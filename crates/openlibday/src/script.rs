@@ -27,7 +27,8 @@
 //! zoom F                set the zoom (1 = original map pixels)
 //! screenshot FILE       save the screen as PNG
 //! record DIR N          save N consecutive frames as DIR\frameNNNN.png
-//! state [FILE]          write the game state as JSON (stdout without FILE)
+//! state [FILE]          write the game state as JSON (stdout without FILE;
+//!                       `view` is the tile at the middle of the map view)
 //! expect PATH VALUE     fail unless the state at PATH (dotted; `id=N`
 //!                       picks the array element with that id, `-1` the
 //!                       last) is VALUE
@@ -796,6 +797,11 @@ pub fn state(viewer: &Viewer) -> Value {
     });
     state["automated"] = automated;
     state["inspect"] = json!(inspect);
+    // The tile at the middle of the battle view.
+    let v = viewer.layout().viewport();
+    let (mx, my) = viewer.to_map(v.w as f32 / 2.0, v.h as f32 / 2.0);
+    let (tx, ty) = libday_view::tile_coords(viewer.map.battle.scenario.size, mx as f64, my as f64);
+    state["view"] = json!([tx.floor() as i64, ty.floor() as i64]);
     // `tech.buildings`: every technology building and its reward;
     // `tech.captured`: those the player's units hold; `tech.found`: their
     // total.
