@@ -33,7 +33,9 @@ arms a single shot instead: any tile can then be targeted (friendly units,
 buildings and bare ground included), and once fired the mode switches off.
 Each shot plays the original raise/fire/lower, projectile (arced, for units
 that have one and are not adjacent) and impact animations, charging the
-shot's AP. Shots miss as in the original: beyond adjacent tiles the
+shot's AP. Towers and the OutPost turn their fire animation to the target
+too, and units drawn in one colour set only use it whoever owns them (the
+original swaps the AI's colour for player 1's, `0x43650b`). Shots miss as in the original: beyond adjacent tiles the
 shooter's `HitShortRange`/`HitMediumRange`/`HitLongRange` chance (bands from
 the `Ranges` table, 3 and 6 tiles) is rolled with the game's `rand()`, and a
 miss lands on a random neighbouring tile on the map, whoever stands there.
@@ -71,7 +73,9 @@ units and the AI passes its turn.
 96x96 skirmish for scripted tests: three of every unit for player 1, every
 alien unit and building for the AI, roads, built and unbuilt bridges, water,
 minefields, walls and props. Its openlibday-only `TechPoints` = 0 skips the
-technology screen (the original game ignores that column).
+technology screen (the original game ignores that column), and its 0
+deployment points list it first: the skirmish list is sorted by `One Off
+Deployment`, as the original's query is.
 DBI sprites, Jet 3 databases, ZIP archives and PE string tables decode natively. The first goal is playable
 stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
 

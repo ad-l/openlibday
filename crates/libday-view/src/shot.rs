@@ -49,6 +49,27 @@ pub fn animation_name(image: &str, owner: i64, anim: Anim, facing: u8) -> String
     )
 }
 
+/// Owner colour whose shot animations `image` has, for a unit owned by
+/// `owner`. The original (`0x43650b`) swaps the AI's colour (0) for player
+/// 1's when the unit type has no alien artwork (human towers held by the
+/// AI); a player holding a unit drawn only in alien colours (the OutPost,
+/// the alien towers) likewise falls back to colour 0.
+pub fn animation_owner(ff: &[u8], image: &str, owner: i64) -> i64 {
+    let owner = owner.clamp(0, 4);
+    let Ok(mff) = Mff::parse(ff) else {
+        return owner;
+    };
+    let has = |o: i64| {
+        let prefix = format!("{}\\P{o}\\", image.to_ascii_uppercase());
+        mff.entries().iter().any(|e| {
+            e.name
+                .get(..prefix.len())
+                .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+        })
+    };
+    [owner, 1, 0].into_iter().find(|&o| has(o)).unwrap_or(owner)
+}
+
 /// Frame count of an animation, from its header.
 pub fn animation_length(ff: &[u8], name: &str) -> Option<usize> {
     let mff = Mff::parse(ff).ok()?;

@@ -586,7 +586,9 @@ validation (`Apply -ResizeMap square -BridgeTerrain banks`). Layout (x, y):
 | Walls (AI) | concrete y 86, laser fence y 88, force field y 90, ruined y 92 (x 46..52); concrete x 56, y 20..26 |
 | Props | up to three ruins/wrecks of every artwork family at x 20..54, y 1..9 (step 2); BORE scenery along y 11; a fresh forest patch x 46..51, y 33..37 |
 
-The scenario has 100 turns, 999 deployment points and every skirmish unit
+The scenario has 100 turns, 0 deployment points (the original lists
+skirmishes `ORDER BY [One Off Deployment]`, so this puts it first; the
+stock minimum is 150) and every skirmish unit
 type available. It also gets an **openlibday-only** `TechPoints` column
 in `Scenario Info` (LONG, 0): the original game ignores it, but openlibday
 uses it in place of the technology points derived from `One Off

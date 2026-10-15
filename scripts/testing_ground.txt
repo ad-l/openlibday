@@ -10,7 +10,7 @@ expect screen Briefing
 expect title Testing Ground
 expect size 96
 expect setup.points 0
-expect credits 999
+expect credits 0
 expect units.34.owner 0
 expect units.35.owner 1
 expect units.220.owner 1
@@ -21,6 +21,25 @@ key Return
 key Y
 expect phase Player
 expect turn 1
+# Towers fire their own animations: the OutPost (3x3, drawn in alien
+# colours only) turns to its target, a player's alien Plasma Tower uses the
+# alien artwork.
+tile 16 62
+button Fire
+tile 16 57
+tile 16 57
+wait 1
+expect shot.shoot 7
+expect units.38.facing 4
+idle 3000
+tile 26 74
+button Fire
+tile 30 74
+tile 30 74
+wait 1
+expect shot.shoot 10
+expect units.149.facing 6
+idle 3000
 button EndTurn
 idle
 expect turn 2

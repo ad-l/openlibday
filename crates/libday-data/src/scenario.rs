@@ -587,7 +587,8 @@ pub fn skirmish_catalog(db: &Database) -> Result<Vec<SkirmishEntry>, DataError> 
             file_name: t.text(r, "FileName")?,
         });
     }
-    out.sort_by_key(|e| e.counter);
+    // The original selects `... ORDER BY [One Off Deployment]` (ties in table order).
+    out.sort_by_key(|e| (e.points, e.counter));
     Ok(out)
 }
 

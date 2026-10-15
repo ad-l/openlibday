@@ -55,6 +55,8 @@ pub struct Motion {
     /// Clock time the walk started.
     pub started: Duration,
     pub final_ap: i64,
+    /// Owner colour of the walk animation ([`shot::animation_owner`]).
+    pub colour: i64,
 }
 
 /// The original's walk queue for `steps` from tile `start`.
@@ -209,6 +211,9 @@ impl Viewer {
         let start = (unit.x, unit.y);
         let pix_speed = kind.move_pix_speed.clamp(1, 1000) as i32;
         let steps = p.steps[..n].to_vec();
+        let colour = self.anims.as_deref().map_or(unit.owner, |ff| {
+            shot::animation_owner(ff, &kind.image, unit.owner)
+        });
         self.motion = Some(Motion {
             unit: p.unit,
             positions: walk_queue(size, start, &steps, pix_speed),
@@ -217,6 +222,7 @@ impl Viewer {
             from: start,
             started: now,
             final_ap: ap - i64::from(spent),
+            colour,
         });
         self.map.battle.scenario.units[p.unit].facing = i64::from(p.steps[0].facing);
         self.options.hidden_unit = Some(p.unit);
@@ -358,13 +364,18 @@ impl Viewer {
             let unit = self.map.battle.scenario.units.get(s.unit)?;
             let kind = self.defs.unit(unit.kind)?;
             let facing = unit.facing.rem_euclid(8) as u8;
+            let size = self.map.battle.scenario.size;
             return Some(Walker {
                 unit: s.unit,
-                centre: tile_center(self.map.battle.scenario.size, unit.x, unit.y),
+                centre: tile_center(size, unit.x, unit.y),
                 facing,
-                anim: Some(shot::animation_name(&kind.image, unit.owner, anim, facing)),
+                anim: Some(shot::animation_name(&kind.image, s.owner, anim, facing)),
                 frame,
-                depth: (unit.x, unit.y),
+                // In front of the whole footprint.
+                depth: (
+                    unit.x + kind.width.max(1) - 1,
+                    unit.y + kind.height.max(1) - 1,
+                ),
             });
         }
         let m = self.motion.as_ref()?;
@@ -388,7 +399,7 @@ impl Viewer {
             .defs
             .unit(unit.kind)
             .filter(|k| k.move_animation)
-            .map(|k| movement::walk_animation_name(&k.image, unit.owner, step.facing));
+            .map(|k| movement::walk_animation_name(&k.image, m.colour, step.facing));
         Some(Walker {
             unit: m.unit,
             centre,

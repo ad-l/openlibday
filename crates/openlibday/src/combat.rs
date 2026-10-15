@@ -313,18 +313,19 @@ impl Viewer {
             return;
         };
         let at = (u.x, u.y);
-        let facing = if kind.facings {
-            facing_toward(at, aim)
-        } else {
-            u.facing
-        };
+        // Units without facings still have eight fire animations (the
+        // OutPost's turret turns), so every shooter faces its target.
+        let facing = facing_toward(at, aim);
+        let colour = self.anims.as_deref().map_or(u.owner, |ff| {
+            shot::animation_owner(ff, &kind.image, u.owner)
+        });
         let anim = kind.shot.clone();
         let size = scenario.size;
         let len = |a: Anim, present: bool| -> usize {
             if !present {
                 return 0;
             }
-            let name = shot::animation_name(&kind.image, u.owner, a, facing as u8);
+            let name = shot::animation_name(&kind.image, colour, a, facing as u8);
             self.anims
                 .as_deref()
                 .and_then(|ff| shot::animation_length(ff, &name))
@@ -371,7 +372,7 @@ impl Viewer {
         let hit = impact_start + impact_len;
         let damage = damage::roll(&mut self.rng, kind.damage_base, kind.damage_random);
         let (damage_type, area) = (kind.damage_type, kind.damage_area);
-        let (image, owner) = (kind.image.clone(), u.owner);
+        let (image, owner) = (kind.image.clone(), colour);
         let impact_name = shot::animation_name(&image, owner, Anim::Impact, 0);
         let cost = kind.shoot_action_points.max(0);
         let ap = u.action_points.unwrap_or(kind.action_points);
@@ -603,7 +604,8 @@ impl Viewer {
         let size = self.map.battle.scenario.size;
         match d {
             Destroyed::Unit { image, owner, at } => {
-                let name = shot::animation_name(image, *owner, Anim::Explosion, 0);
+                let owner = shot::animation_owner(ff, image, *owner);
+                let name = shot::animation_name(image, owner, Anim::Explosion, 0);
                 let len = shot::animation_length(ff, &name).filter(|&n| n > 0)?;
                 Some(Explosion {
                     name,

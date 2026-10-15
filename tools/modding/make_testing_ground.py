@@ -13,9 +13,10 @@ campaign map s3-1-1 (rivers, lakes, banks, forests and mountains), and has:
 
 Every player-1 unit is at least 20 tiles (Chebyshev) from every AI unit.
 
-The scenario gets 999 deployment points and the openlibday-only
-`Scenario Info.TechPoints` column set to 0, which makes openlibday skip the
-technology screen. The original game ignores the extra column.
+The scenario gets 0 deployment points (first in the skirmish list) and the
+openlibday-only `Scenario Info.TechPoints` column set to 0, which makes
+openlibday skip the technology screen. The original game ignores the extra
+column.
 
 Usage (Windows, needs the 32-bit Jet provider used by map_tool.ps1):
 
@@ -54,7 +55,8 @@ BRIEFING = ("A proving ground for scripted tests. Player 1 fields three of every
             "west; the AI holds one of every alien unit and building in the east. The middle "
             "has roads, bridges, minefields, walls and wreckage.##Objective: ( 100 turns )##"
             "Destroy all enemy units.")
-POINTS = 999
+# 0 sorts it first: the original lists skirmishes ORDER BY [One Off Deployment].
+POINTS = 0
 GRASS = "BORE000"
 
 PLAYER, AI = 1, 0
