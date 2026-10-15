@@ -129,4 +129,17 @@ expect units.122.x 40
 idle
 expect units.122.x 44
 expect units.122.y 84
+# Cut short by reaction fire, a Seeker still lands (N) where it stopped
+# before the overwatch shot.
+place 131 62 30
+tile 62 30
+tile 69 29
+tile 69 29
+wait 33
+expect motion.landing true
+expect units.131.x 66
+expect reaction null
+wait 18
+expect motion null
+expect units.131.x 66
 echo testing ground test passed

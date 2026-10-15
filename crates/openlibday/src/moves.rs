@@ -82,6 +82,19 @@ pub struct Motion {
     /// Positions of the walk proper; any after them play the end (landing /
     /// appear, `N`) animation on the last step.
     pub walk: usize,
+    /// A walk cut short still lands where it stopped before its end plays
+    /// out (reaction fire, a mine).
+    pub landing: Option<Landing>,
+}
+
+/// End animation of a walk cut short.
+pub struct Landing {
+    started: Duration,
+    at: (i64, i64),
+    facing: u8,
+    frames: usize,
+    ap: Option<i64>,
+    end: End,
 }
 
 /// The original queues a move as three animation objects (`0x41b25e`): the
@@ -324,6 +337,7 @@ impl Viewer {
             facing: old_facing,
             lead,
             walk: walk_len,
+            landing: None,
         });
         self.map.battle.scenario.units[unit_index].facing = facing;
         self.options.hidden_unit = Some(unit_index);
@@ -393,6 +407,14 @@ impl Viewer {
         let Some(m) = &self.motion else {
             return self.tick_shot();
         };
+        if let Some(l) = &m.landing {
+            let ms = self.clock.since(l.started).as_millis();
+            if ms >= (l.frames as u128) * u128::from(WALK_POSITION_MS) {
+                let (i, ap, end) = (m.unit, l.ap, l.end);
+                return self.stop(i, ap, end);
+            }
+            return true;
+        }
         let shown =
             (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
         // Steps whose positions have all been shown are walked.
@@ -424,7 +446,7 @@ impl Viewer {
             // under reaction fire, before mines are looked at.
             let scenario = &self.map.battle.scenario;
             if self.reactions && overwatch::spotted(scenario, &self.defs, i) {
-                return self.stop(i, ap, End::Spotted);
+                return self.cut_short(i, ap, End::Spotted, to, step.facing);
             }
             // A detector stops on sighting a hidden mine; else an armed
             // mine on the tile may go off. Either ends the walk there.
@@ -444,13 +466,43 @@ impl Viewer {
                 None => None,
             };
             if let Some(end) = end {
-                return self.stop(i, ap, end);
+                return self.cut_short(i, ap, end, to, step.facing);
             }
             if let Some(facing) = next {
                 self.map.battle.scenario.units[i].facing = facing;
             }
         }
         true
+    }
+
+    /// Ends the walk of unit `i` on tile `at`. On the last step the end
+    /// animation has already played; short of it, a unit with one plays it
+    /// there first (facing `facing`), then the walk stops.
+    fn cut_short(
+        &mut self,
+        i: usize,
+        ap: Option<i64>,
+        end: End,
+        at: (i64, i64),
+        facing: u8,
+    ) -> bool {
+        let now = self.clock.now();
+        if let Some(m) = &mut self.motion {
+            let frames = m.positions.len().saturating_sub(m.lead + m.walk);
+            if frames > 0 && m.done < m.steps.len() {
+                m.steps.truncate(m.done);
+                m.landing = Some(Landing {
+                    started: now,
+                    at,
+                    facing,
+                    frames,
+                    ap,
+                    end,
+                });
+                return true;
+            }
+        }
+        self.stop(i, ap, end)
     }
 
     /// Ends the walk of unit `i` (with `ap` left, if given): it shoots its
@@ -498,6 +550,25 @@ impl Viewer {
         }
         let m = self.motion.as_ref()?;
         let size = self.map.battle.scenario.size;
+        if let Some(l) = &m.landing {
+            let unit = &self.map.battle.scenario.units[m.unit];
+            let kind = self.defs.unit(unit.kind)?;
+            let frame =
+                (self.clock.since(l.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
+            return Some(Walker {
+                unit: m.unit,
+                centre: tile_center(size, l.at.0, l.at.1),
+                facing: l.facing,
+                anim: Some(movement::move_animation_name(
+                    &kind.image,
+                    m.colour,
+                    'N',
+                    l.facing,
+                )),
+                frame: frame.min(l.frames - 1),
+                depth: l.at,
+            });
+        }
         let step = m.steps.get(m.done)?;
         let to = (i64::from(step.x), i64::from(step.y));
         let shown =

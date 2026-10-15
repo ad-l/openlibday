@@ -558,6 +558,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "steps": m.steps.len(),
             "lead": m.lead,
             "walk": m.walk,
+            "landing": m.landing.is_some(),
             "positions": m.positions.iter().map(|((x, y), s)| json!([x, y, s])).collect::<Vec<_>>(),
         })
     });
