@@ -21,6 +21,8 @@
 //! button NAME           click an interface button (EndTurn, TechContinue...)
 //! skirmish NAME|N       pick a skirmish by file, title or list number
 //! deploy NAME           pick a unit type in the deployment list
+//! support NAME|ID       open AUTOMATED UNITS and arm that support (then
+//!                       aim it with `tile`)
 //! centre X Y            centre the view on map tile (X, Y)
 //! zoom F                set the zoom (1 = original map pixels)
 //! screenshot FILE       save the screen as PNG
@@ -33,6 +35,8 @@
 //! seed N                reseed the game's rand() (scripts start at 1)
 //! mine KIND OWNER X Y [seen]  lay an armed mine of type KIND, hidden from
 //!                       all but OWNER (from nobody with `seen`)
+//! grant ID            add automated unit ID to the support list
+//! credits N             set the player's credits
 //! place I X Y         move unit I (state index) to map tile (X, Y)
 //! reactions on|off    whether overwatch spots moving units (default on)
 //! ai off|legacy|modern  how the computer player plays (default: settings)
@@ -96,6 +100,9 @@ pub enum Command {
     Option(String, i32),
     Skirmish(String),
     Deploy(String),
+    Support(String),
+    Grant(i64),
+    Credits(i64),
     Centre(f64, f64),
     Zoom(f32),
     Screenshot(PathBuf),
@@ -211,6 +218,9 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         ),
         "skirmish" => Command::Skirmish(text()?),
         "deploy" => Command::Deploy(text()?),
+        "support" => Command::Support(text()?),
+        "grant" => Command::Grant(num(args.first())?),
+        "credits" => Command::Credits(num(args.first())?),
         "centre" | "center" => Command::Centre(num(args.first())?, num(args.get(1))?),
         "zoom" => Command::Zoom(num(args.first())?),
         "screenshot" => Command::Screenshot(text()?.into()),
@@ -378,6 +388,31 @@ impl Runner<'_, '_> {
                 }
                 viewer.deploy_select(row);
             }
+            Command::Support(name) => {
+                viewer.open_supports();
+                if viewer.screen != libday_view::ui::Screen::Automated {
+                    return Err("AUTOMATED UNITS is not available".into());
+                }
+                let row = viewer
+                    .support_row_named(name)
+                    .ok_or_else(|| format!("{name} is not in the support list"))?;
+                let rows = libday_view::ui::DEPLOY_ROWS;
+                let scroll = &mut viewer.flow.support_scroll;
+                if row < *scroll {
+                    *scroll = row;
+                } else if row >= *scroll + rows {
+                    *scroll = row + 1 - rows;
+                }
+                viewer.support_select(row);
+            }
+            Command::Grant(id) => {
+                if let Some(setup) = &mut viewer.flow.setup
+                    && !setup.automated.contains(id)
+                {
+                    setup.automated.push(*id);
+                }
+            }
+            Command::Credits(n) => *viewer.credits_mut() = *n,
             Command::Centre(x, y) => viewer.centre_on_tile(*x, *y),
             Command::Zoom(z) => {
                 let v = viewer.layout().viewport();
@@ -689,7 +724,13 @@ pub fn state(viewer: &Viewer) -> Value {
         .iter()
         .map(|p| json!({"player": p.player, "totals": p.totals(), "rank": p.rank(&viewer.defs)}))
         .collect();
-    json!({
+    let automated = json!({
+        "list": viewer.support_list(),
+        "armed": viewer.armed_support().map(|a| a.id),
+        "pickup": viewer.flow.pickup.map(|(x, y)| [x, y]),
+        "legs": viewer.supports.len(),
+    });
+    let mut state = json!({
         "time_ms": viewer.clock.now().as_millis() as u64,
         "screen": variant(&viewer.screen),
         "phase": variant(&viewer.flow.phase),
@@ -736,7 +777,9 @@ pub fn state(viewer: &Viewer) -> Value {
         "report": report,
         "players": players,
         "menu": menu_state(viewer),
-    })
+    });
+    state["automated"] = automated;
+    state
 }
 
 /// The OPTIONS table: `values.NAME` (true/false or the selector's text).

@@ -63,6 +63,7 @@ impl Viewer {
         let free = self.flow.phase == Phase::Free;
         let home = self.home();
         match key {
+            Keycode::Escape if self.screen == Screen::Automated => self.close_supports(),
             Keycode::Escape if self.screen != home => self.screen = home,
             Keycode::Escape if self.flow.reinforcing => self.finish_deploy(),
             Keycode::Escape => return false,
@@ -210,16 +211,20 @@ impl Viewer {
                 }
             }
             Screen::Overview | Screen::Briefing => {}
-            Screen::Battle | Screen::Deploy | Screen::AiTurn => {
-                let row = (self.screen == Screen::Deploy)
+            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated => {
+                let row = matches!(self.screen, Screen::Deploy | Screen::Automated)
                     .then(|| {
                         (0..libday_view::ui::DEPLOY_ROWS)
                             .find(|&i| layout.deploy_row(i).contains(ox, oy))
                     })
                     .flatten();
                 if left && let Some(row) = row {
-                    let scroll = self.flow.setup.as_ref().map_or(0, |s| s.scroll);
-                    self.deploy_select(scroll + row);
+                    if self.screen == Screen::Automated {
+                        self.support_select(self.flow.support_scroll + row);
+                    } else {
+                        let scroll = self.flow.setup.as_ref().map_or(0, |s| s.scroll);
+                        self.deploy_select(scroll + row);
+                    }
                 } else if left && let Some((tx, ty)) = self.picture_tile(ox, oy) {
                     self.minimap_drag = true;
                     self.centre_on_tile(tx, ty);
@@ -252,6 +257,7 @@ impl Viewer {
             match tile_at(self.map.battle.scenario.size, mx as f64, my as f64) {
                 Some((tx, ty)) if self.screen == Screen::Deploy => self.deploy_click(tx, ty),
                 Some((tx, ty)) if self.screen == Screen::Battle => self.click_tile(tx, ty),
+                Some((tx, ty)) if self.screen == Screen::Automated => self.support_click(tx, ty),
                 _ if !self.busy() => {
                     self.preview = None;
                     self.lock = None;
@@ -307,7 +313,7 @@ impl Viewer {
         }
         let on_map = matches!(
             self.screen,
-            Screen::Battle | Screen::Deploy | Screen::AiTurn
+            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated
         ) && !self.layout().on_panel(ox, oy);
         self.hover = on_map
             .then(|| {
@@ -350,12 +356,13 @@ impl Viewer {
                 let (ox, oy) = self.output_point(mouse_x, mouse_y);
                 let step = if y > 0.0 { 1 } else { -1 };
                 match self.screen {
-                    Screen::Battle | Screen::Deploy | Screen::AiTurn
+                    Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated
                         if !self.layout().on_panel(ox, oy) =>
                     {
                         self.zoom_step(step, (ox as f32, oy as f32));
                     }
                     Screen::Deploy => self.deploy_scroll(-step as isize),
+                    Screen::Automated => self.support_scroll(-step as isize),
                     Screen::Options { ask: None } => self.menu_scroll(-step as isize),
                     Screen::Skirmishes => {
                         let last = self.flow.catalog.len().saturating_sub(SKIRMISH_ROWS);

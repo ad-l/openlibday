@@ -256,6 +256,50 @@ pub(super) fn draw_deploy_sidebar(
     draw_minimap(canvas, gfx, viewer, &viewer.map.scene, &viewer.art)
 }
 
+/// The AUTOMATED UNITS sidebar: the supports with their prices, the armed
+/// one outlined, those the credits cannot pay greyed.
+pub(super) fn draw_automated_sidebar(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+) -> Result {
+    const GREY: [u8; 3] = [128, 128, 128];
+    let layout = viewer.layout();
+    let (s, fonts) = (layout.scale, &viewer.fonts);
+    let px = TEXT_PX * s as f32;
+    draw_sidebar(canvas, gfx, &layout, frame::AUTOMATED_SIDEBAR)?;
+    buttons(canvas, gfx, viewer, Screen::Automated)?;
+    draw_credits(canvas, gfx, viewer)?;
+    draw_turns(canvas, gfx, viewer, Field::Turn)?;
+    let x = layout.in_side(Rect::new(58, 0, 0, 0)).x;
+    let first = viewer.flow.support_scroll;
+    let credits = viewer.credits();
+    for (row, id) in viewer
+        .support_list()
+        .into_iter()
+        .enumerate()
+        .skip(first)
+        .take(DEPLOY_ROWS)
+    {
+        let Some(a) = viewer.defs.automated.get(&id) else {
+            continue;
+        };
+        let r = layout.deploy_row(row - first);
+        if let Some(t) = portrait(gfx, viewer.listbox.as_ref(), &a.image) {
+            let side = 38 * s;
+            canvas.copy(t, None, frect(Rect::new(r.x + 2 * s, r.y, side, side)))?;
+        }
+        let rgb = if a.cost <= credits { WHITE } else { GREY };
+        gfx.text(canvas, fonts, &a.name, px, rgb, x, r.y + 2 * s)?;
+        gfx.text(canvas, fonts, &a.cost.to_string(), px, rgb, x, r.y + 21 * s)?;
+        if viewer.flow.support_row == Some(row) {
+            canvas.set_draw_color(Color::RGB(255, 255, 255));
+            canvas.draw_rect(frect(Rect::new(r.x, r.y - s, r.w, r.h)))?;
+        }
+    }
+    draw_minimap(canvas, gfx, viewer, &viewer.map.scene, &viewer.art)
+}
+
 pub(super) fn draw_ai_sidebar(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,

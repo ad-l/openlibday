@@ -1,0 +1,61 @@
+# Automated units: AUTOMATED UNITS lists the scenario's supports; one is
+# armed from the list (if the credits cover its flat price), aimed at a
+# tile and plays its full-screen animation. Transports take two clicks:
+# the unit, then where to set it down.
+# Run: openlibday --headless --script scripts/automated.txt  (needs LIBDAY_ROOT)
+ai off
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Grenadier
+tile 44 18
+key Return
+key Y
+expect credits 37
+expect automated.list [0,15,14,7]
+# Troopers (90) are too dear.
+support Troopers
+expect message Need more tactical resource
+expect automated.armed null
+# Transport (30): lift the Grenadier, set it down at (40, 22).
+support 0
+expect screen Automated
+expect message Click on the unit you wish to transport.
+tile 30 30
+expect message Invalid target
+tile 44 18
+expect message Click on destination
+tile 40 22
+expect screen Battle
+expect credits 7
+expect automated.legs 1
+idle
+expect automated.legs 0
+expect units.-1.name Grenadier
+expect units.-1.x 40
+expect units.-1.y 22
+# Mine detector: reveals hidden mines within its range only.
+mine 0 0 42 18
+mine 0 0 42 25
+grant 2
+credits 100
+support Mine
+tile 43 18
+idle
+expect credits 90
+expect mines.0.seen true
+expect mines.1.seen false
+# Bomber (150): area damage kills the Pyro Maniac and Footmen around (35, 17).
+grant 4
+credits 500
+support Bomber
+tile 35 17
+idle
+expect credits 350
+# Footmen at (35, 15), (35, 19) and the Pyro Maniac at (34, 17) are gone.
+expect units.8.x 38
+expect units.9.x 28
+expect units.9.y 14
+echo automated test passed
+quit

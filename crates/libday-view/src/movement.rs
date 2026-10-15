@@ -163,6 +163,31 @@ pub fn animation_frames(ff: &[u8], name: &str) -> Option<Vec<Image>> {
     )
 }
 
+/// The bounding box of `image`'s opaque pixels, cut out, and its top-left
+/// corner; `None` when it is fully transparent. Mostly empty full-screen
+/// animations (the automated units') keep only what they draw.
+pub fn crop(image: &Image) -> Option<(Image, (usize, usize))> {
+    let (w, h) = (image.width, image.height);
+    let opaque = |x: usize, y: usize| image.rgba[(y * w + x) * 4 + 3] != 0;
+    let rows: Vec<usize> = (0..h).filter(|&y| (0..w).any(|x| opaque(x, y))).collect();
+    let (&y0, &y1) = (rows.first()?, rows.last()?);
+    let x0 = (0..w).find(|&x| (y0..=y1).any(|y| opaque(x, y)))?;
+    let x1 = (0..w).rev().find(|&x| (y0..=y1).any(|y| opaque(x, y)))?;
+    let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+    let mut rgba = Vec::with_capacity(cw * ch * 4);
+    for y in y0..=y1 {
+        rgba.extend_from_slice(&image.rgba[(y * w + x0) * 4..(y * w + x1 + 1) * 4]);
+    }
+    Some((
+        Image {
+            width: cw,
+            height: ch,
+            rgba,
+        },
+        (x0, y0),
+    ))
+}
+
 /// Path dot sprite (`SYMBOLS.DBI`) for a path step: red at the destination,
 /// blue on tiles the unit may stop on, dark blue on fly-over tiles; crossed
 /// once the unit cannot afford the step.
@@ -180,6 +205,29 @@ pub fn path_dot(step: &Step, last: bool, affordable: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::walk_positions;
+
+    #[test]
+    fn crop_keeps_the_opaque_box() {
+        let mut rgba = vec![0u8; 4 * 4 * 4];
+        for (x, y) in [(1, 1), (2, 2)] {
+            rgba[(y * 4 + x) * 4 + 3] = 255;
+        }
+        let img = crate::Image {
+            width: 4,
+            height: 4,
+            rgba,
+        };
+        let (c, at) = super::crop(&img).unwrap();
+        assert_eq!((c.width, c.height, at), (2, 2, (1, 1)));
+        assert_eq!(c.rgba[3], 255);
+        assert_eq!(c.rgba[15], 255);
+        let empty = crate::Image {
+            width: 2,
+            height: 2,
+            rgba: vec![0; 16],
+        };
+        assert!(super::crop(&empty).is_none());
+    }
 
     #[test]
     fn walk_positions_sample_every_pix_speed_points() {

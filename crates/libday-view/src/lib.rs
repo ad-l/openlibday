@@ -15,6 +15,7 @@ pub mod overwatch;
 pub mod scatter;
 pub mod scene;
 pub mod shot;
+pub mod support;
 pub mod text;
 pub mod ui;
 

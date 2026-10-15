@@ -89,6 +89,13 @@ pub struct Flow {
     /// and the unit selected before.
     pub reinforcing: bool,
     pub resume: Option<usize>,
+    /// AUTOMATED UNITS sidebar: the armed support's row, the list's
+    /// scroll, a transport's pickup tile, and the once-per-battle supports
+    /// already used.
+    pub support_row: Option<usize>,
+    pub support_scroll: usize,
+    pub pickup: Option<(i64, i64)>,
+    pub used_once: Vec<i64>,
 }
 
 impl Flow {
@@ -106,6 +113,10 @@ impl Flow {
             report: None,
             reinforcing: false,
             resume: None,
+            support_row: None,
+            support_scroll: 0,
+            pickup: None,
+            used_once: Vec::new(),
         }
     }
 }
@@ -154,7 +165,7 @@ impl Viewer {
             .map_or(self.map.battle.scenario.info.points, |p| p.deploy_points)
     }
 
-    fn credits_mut(&mut self) -> &mut i64 {
+    pub(crate) fn credits_mut(&mut self) -> &mut i64 {
         let players = &mut self.map.battle.players;
         let i = match players.iter().position(|p| p.player == PLAYER) {
             Some(i) => i,
@@ -635,6 +646,7 @@ impl Viewer {
     pub(crate) fn start_battle(&mut self) {
         self.flow.phase = Phase::Player;
         self.flow.reinforcing = false;
+        self.flow.used_once.clear();
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.clear();
         }
@@ -703,6 +715,9 @@ impl Viewer {
         let Some(until) = self.flow.ai_until else {
             return false;
         };
+        if self.launch_authored_support() {
+            return true;
+        }
         if let Some(acted) = self.run_brain() {
             return acted;
         }

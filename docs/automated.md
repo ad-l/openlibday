@@ -1,0 +1,93 @@
+# Automated units (off-map supports)
+
+Automated units are aircraft and drops called in from off the map: a
+bomber, a transport that lifts a unit and sets it down elsewhere, a mine
+detector, paratroopers and so on. They were recovered from `LIBDAY.EXE`
+(addresses below are in the 1080p build) and the GLOBAL database tables
+`Automated Units`, `Automated Units Infos` and `Automated Units Properties`.
+
+The rules live in `libday-view::support` (pure, unit tested). The sidebar,
+targeting and animation are in `openlibday/src/automated.rs`.
+
+## Data
+
+| Category | Types | Effect |
+|---|---|---|
+| 0 Destroy | Bomber, Gas, Nuke, Fighters, Gene Bomb | `damage` of `damageType` on everything within `damageArea`, friend and foe |
+| 1 Repair | Armor, Medic, Movement | `armorInc` / `actionInc` restored to the player's units, falling off with Chebyshev distance, capped at the maximum |
+| 2 Build | Bridge | a bridge road on water or a crack |
+| 3 Mine | Mine | reveals hidden mines within `mineDetectionRange` |
+| 4 Drop | Footmen, Troopers, ... | `nbDrop` units of `unitIDDrop` at the `unitPos` offsets with the given facings, full AP |
+| 5 Transport | Transport | two clicks: the unit to lift, then where to set it down |
+
+Each type has a flat cost, a race, an SMK prefix (`HBMB`, `HHTR`...), a
+cursor, an explanation shown in the status bar, the anti-aircraft position
+`AAPos` in SMK pixels, and the frames at which the flak starts (`FrameAA`)
+and the effect applies (`FrameAction`). `DeployOnce` types can be used once
+per battle. Transports have a second animation with its own frames and
+`SecondExplain` ("Click on destination").
+
+## Player
+
+- **AUTOMATED UNITS** (player's turn, nothing moving) swaps the sidebar for
+  the support list (`1024X768.SMK` frame 507, the same layout as deployment):
+  portrait, name and price. Rows the credits do not cover are greyed, and
+  clicking one says "Need more tactical resource".
+- Clicking a row arms the support and shows its explanation. A map click
+  checks the target ("Invalid target" otherwise), deducts the price from the
+  same credits as reinforcements, and plays the animation.
+- There is no action point cost and no per-turn limit.
+- MAP, GOAL, the arrow on AUTOMATED UNITS and Escape leave the list.
+
+## Anti-aircraft
+
+When the aircraft arrives (`0x41bc04`), the hostile units that can fire at it
+are listed:
+- units on the map (not waiting to arrive) that are anti-aircraft and can
+  overwatch;
+- with the action points to shoot;
+- with the target within their range.
+
+They fire, strongest first (`damage base + random / 2`, then shoot AP). Each
+adds its flat `DamageAA` until the aircraft's armour is gone. The animation
+variant follows: intact, damaged, or shot down. The survival fraction scales
+the effect:
+- a damaged drop lands half its units;
+- a damaged mine detector has a shorter range;
+- a downed aircraft does nothing.
+
+Each shooter's impact animation is drawn at `AAPos`, staggered by 3 frames.
+
+## Drops and transports
+
+- A drop onto a mine sets it off.
+- A spot where the unit cannot stand loses that unit.
+- A transport's lifted unit leaves the map between the two legs and arrives
+  with no action points left.
+
+## AI
+
+A scenario's `Automated Units` table lists supports the AI launches for free
+on a given turn, with a start tile (and destination for a transport). Stage
+6 of the AI turn (`0x46feb0`) launches them one at a time before the AI moves
+its units. Supports that are Human and not Bomber, Gas or Nuke are skipped,
+as in the original (`0x470acf`).
+
+## Approximations
+
+- **Availability.** The original offers the supports whose prerequisite
+  building the player owns. We use the scenario's own list (`setup.automated`),
+  which matches the skirmishes. Campaigns will need the building rule.
+- **Bridge.** The bridge is placed as road kind 1 on water or a crack. The
+  exact tile choice was not traced.
+- **AI purchases.** AI stages 2 and 7 (buying supports with the campaign's
+  AI budget) are not implemented. They belong to the campaign work in
+  [campaigns.md](campaigns.md).
+- **Cursors.** The support cursors come from the `cursorID` names in the
+  symbol sheet and have not been checked against the original.
+
+## Testing
+
+[scripts/automated.txt](../scripts/automated.txt) plays a transport, a mine
+detector and a bomber on *Opportunity Knocks*. The `grant ID` and
+`credits N` script cheats offer any support and set the credits.

@@ -15,6 +15,7 @@
 //! it without a window, at `--size` (default 1024x768).
 
 mod ai;
+mod automated;
 mod clock;
 mod combat;
 mod hud;
@@ -174,6 +175,8 @@ struct Viewer {
     shot: Option<combat::Shot>,
     /// Earlier shots of a burst still in the air, in firing order.
     flights: Vec<combat::Shot>,
+    /// Automated unit legs still to play (a transport's set-down).
+    supports: Vec<combat::Shot>,
     /// Reaction fire at a unit spotted moving.
     reaction: Option<combat::Reaction>,
     /// Overwatch spots moving units (scripts may turn it off).
@@ -305,6 +308,7 @@ impl Viewer {
         self.motion = None;
         self.shot = None;
         self.flights.clear();
+        self.supports.clear();
         self.reaction = None;
         self.brain = None;
         self.options.hidden_unit = None;
@@ -495,14 +499,23 @@ impl Viewer {
             Button::DeployDown => self.deploy_scroll_ok(1),
             Button::Army | Button::DeployContinue => deploy_ready,
             Button::Reinforcement => self.can_reinforce(),
+            Button::Automated => self.can_support(),
+            Button::AutomatedUp => self.support_scroll_ok(-1),
+            Button::AutomatedDown => self.support_scroll_ok(1),
             _ => true,
         }
     }
 
     fn activate(&mut self, button: Button) {
         match button {
-            Button::Map | Button::DeployMap => self.screen = Screen::Overview,
-            Button::Goal | Button::DeployGoal => self.screen = Screen::Goal,
+            Button::Map | Button::DeployMap | Button::AutomatedMap => {
+                self.close_supports();
+                self.screen = Screen::Overview
+            }
+            Button::Goal | Button::DeployGoal | Button::AutomatedGoal => {
+                self.close_supports();
+                self.screen = Screen::Goal
+            }
             Button::Back | Button::Continue => self.screen = self.home(),
             Button::Center => self.centre_on_selected(),
             Button::Left => self.cycle_selected(-1),
@@ -520,6 +533,10 @@ impl Viewer {
             Button::Down => self.scroll += 1,
             Button::EndTurn => self.end_turn(),
             Button::Reinforcement => self.begin_reinforce(),
+            Button::Automated => self.open_supports(),
+            Button::AutomatedUp => self.support_scroll(-1),
+            Button::AutomatedDown => self.support_scroll(1),
+            Button::AutomatedBack => self.close_supports(),
             Button::SkirmishUp => self.pick_step(-1),
             Button::SkirmishDown => self.pick_step(1),
             Button::SkirmishBack => self.quit = true,
@@ -799,6 +816,7 @@ fn main() -> Result {
         lock: None,
         shot: None,
         flights: Vec::new(),
+        supports: Vec::new(),
         reaction: None,
         reactions: true,
         brain: None,

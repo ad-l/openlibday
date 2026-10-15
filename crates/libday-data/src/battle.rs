@@ -208,13 +208,14 @@ impl Battle {
         let units: Vec<(i64, i64)> = before
             .units
             .iter()
-            .filter(|u| u.arrival == 0)
+            .filter(|u| u.arrival <= 0)
             .filter(|u| {
+                // A unit lifted by a transport (arrival -1) is not lost.
                 !self
                     .scenario
                     .units
                     .iter()
-                    .any(|n| n.id == u.id && n.arrival == 0)
+                    .any(|n| n.id == u.id && n.arrival <= 0)
             })
             .map(|u| (u.kind, u.owner))
             .collect();

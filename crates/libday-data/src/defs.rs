@@ -292,8 +292,98 @@ impl RangeBands {
 pub struct AutomatedType {
     pub id: i64,
     pub name: String,
-    /// `LISTBOX.DBI` portrait prefix.
+    /// `LISTBOX.DBI` portrait prefix; also the `AUTOUNIT\<image>0N.SMK`
+    /// animation name.
     pub image: String,
+    pub race: i64,
+    /// `Automated Units Categories`: see [`AutomatedCategory`].
+    pub category: i64,
+    pub cost: i64,
+    /// Campaign technology needed to buy it (`Prerequisite`).
+    pub prerequisite: i64,
+    /// Screen position of the anti-aircraft check in the animation.
+    pub aa_pos: (i64, i64),
+    /// Animation frame of the anti-aircraft check and of the effect.
+    pub frame_aa: i64,
+    pub frame_action: i64,
+    pub cursor: String,
+    /// Status bar prompt while choosing the target.
+    pub explain: String,
+    /// Usable once per battle.
+    pub deploy_once: bool,
+    /// `Automated Units Infos`, by `Automated Units Properties` number.
+    pub infos: BTreeMap<i64, String>,
+}
+
+/// `Automated Units Categories`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutomatedCategory {
+    Destroy,
+    Repair,
+    Build,
+    Mine,
+    Drop,
+    Transport,
+}
+
+/// `Automated Units Properties` numbers.
+pub mod auto_prop {
+    pub const ARMOR: i64 = 0;
+    pub const DAMAGE: i64 = 1;
+    pub const DAMAGE_TYPE: i64 = 2;
+    pub const MINE_DETECTION_RANGE: i64 = 3;
+    pub const DAMAGE_AREA: i64 = 4;
+    pub const UNIT_ID_DROP: i64 = 5;
+    pub const UNIT_TL_DROP: i64 = 6;
+    pub const NB_DROP: i64 = 7;
+    /// `unitPosX1`; X/Y pairs follow up to `unitPosY5` (17).
+    pub const UNIT_POS: i64 = 8;
+    pub const SECOND_ANIM_OK_BEGIN: i64 = 18;
+    pub const SECOND_AA_POS_X: i64 = 24;
+    pub const SECOND_AA_POS_Y: i64 = 25;
+    pub const SECOND_FRAME_AA: i64 = 26;
+    pub const SECOND_FRAME_ACTION: i64 = 27;
+    pub const ARMOR_INC: i64 = 28;
+    /// `facing1`; up to `facing5` (33).
+    pub const FACING: i64 = 29;
+    pub const SECOND_EXPLAIN: i64 = 34;
+    pub const ACTION_INC: i64 = 35;
+}
+
+impl AutomatedType {
+    pub fn category(&self) -> Option<AutomatedCategory> {
+        use AutomatedCategory::*;
+        Some(match self.category {
+            0 => Destroy,
+            1 => Repair,
+            2 => Build,
+            3 => Mine,
+            4 => Drop,
+            5 => Transport,
+            _ => return None,
+        })
+    }
+
+    /// Integer property, if set.
+    pub fn int(&self, property: i64) -> Option<i64> {
+        self.infos.get(&property)?.trim().parse().ok()
+    }
+
+    pub fn int_or(&self, property: i64, default: i64) -> i64 {
+        self.int(property).unwrap_or(default)
+    }
+
+    /// Dropped units: offset from the target and facing, `nbDrop` of them.
+    pub fn drops(&self) -> Vec<((i64, i64), i64)> {
+        let n = self.int_or(auto_prop::NB_DROP, 0).clamp(0, 5);
+        (0..n)
+            .map(|i| {
+                let x = self.int_or(auto_prop::UNIT_POS + 2 * i, 0);
+                let y = self.int_or(auto_prop::UNIT_POS + 2 * i + 1, 0);
+                ((x, y), self.int_or(auto_prop::FACING + i, 0))
+            })
+            .collect()
+    }
 }
 
 fn invalid(table: &str, message: String) -> DataError {
@@ -515,8 +605,29 @@ impl Definitions {
                     id: t.int(r, "typeID")?,
                     name: t.text_or(r, "NameEnglish")?,
                     image: t.text_or(r, "facingsImageID")?.to_ascii_uppercase(),
+                    race: t.int_or(r, "Race", 0)?,
+                    category: t.int_or(r, "Category", 0)?,
+                    cost: t.int_or(r, "Cost", 0)?,
+                    prerequisite: t.int_or(r, "Prerequisite", -1)?,
+                    aa_pos: (t.int_or(r, "AAPosX", 0)?, t.int_or(r, "AAPosY", 0)?),
+                    frame_aa: t.int_or(r, "FrameAA", 0)?,
+                    frame_action: t.int_or(r, "FrameAction", 0)?,
+                    cursor: t.text_or(r, "cursorID")?.to_ascii_uppercase(),
+                    explain: t.text_or(r, "ExplainEnglish")?,
+                    deploy_once: t.flag_or(r, "DeployOnce", false)?,
+                    infos: BTreeMap::new(),
                 };
                 insert_unique(&mut defs.automated, &t.table, item.id, item)?;
+            }
+        }
+        if let Ok(t) = Records::read(global, "Automated Units Infos") {
+            for r in 0..t.len() {
+                let id = t.int(r, "typeID")?;
+                let property = t.int(r, "Property")?;
+                let value = t.text_or(r, "Value")?;
+                if let Some(a) = defs.automated.get_mut(&id) {
+                    a.infos.insert(property, value);
+                }
             }
         }
         Ok(defs)

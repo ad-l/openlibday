@@ -700,24 +700,44 @@ pub fn draw_animation(
     screen: &dyn Fn(f64, f64) -> (f32, f32),
 ) -> Result<bool> {
     let creator = gfx.creator();
-    let frames = gfx
+    // Full-screen support animations are large: keep only the current one.
+    if name.starts_with("AUTOUNIT\\") && !gfx.anims.contains_key(name) {
+        gfx.anims
+            .retain(|k, _| !k.starts_with("AUTOUNIT\\") || k == name);
+    }
+    let anim = gfx
         .anims
         .entry(name.to_string())
         .or_insert_with(|| {
             let ff = viewer.anims.as_deref()?;
             let frames = movement::animation_frames(ff, name)?;
-            frames.iter().map(|f| hud::texture(creator, f)).collect()
+            let first = frames.first()?;
+            let size = (first.width as i32, first.height as i32);
+            let frames = frames
+                .iter()
+                .map(|f| {
+                    let (img, (x, y)) = movement::crop(f)?;
+                    Some((hud::texture(creator, &img)?, (x as i32, y as i32)))
+                })
+                .collect();
+            Some(hud::Anim { size, frames })
         })
         .as_ref();
-    let Some(frames) = frames.filter(|f| !f.is_empty()) else {
+    let Some(anim) = anim.filter(|a| !a.frames.is_empty()) else {
         return Ok(false);
     };
-    let texture = &frames[frame % frames.len()];
-    let (w, h) = (texture.width() as i32, texture.height() as i32);
+    let Some((texture, (dx, dy))) = &anim.frames[frame % anim.frames.len()] else {
+        return Ok(true);
+    };
+    let (w, h) = anim.size;
+    let (tw, th) = (texture.width() as i32, texture.height() as i32);
     // Centred on the point (`0x468515`), halves rounded down.
-    let (ox, oy) = (f64::from(centre.0 - w / 2), f64::from(centre.1 - h / 2));
+    let (ox, oy) = (
+        f64::from(centre.0 - w / 2 + dx),
+        f64::from(centre.1 - h / 2 + dy),
+    );
     let (x0, y0) = screen(ox, oy);
-    let (x1, y1) = screen(ox + f64::from(w), oy + f64::from(h));
+    let (x1, y1) = screen(ox + f64::from(tw), oy + f64::from(th));
     canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
     Ok(true)
 }

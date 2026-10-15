@@ -79,6 +79,13 @@ pub mod frame {
     pub const NO: u16 = 482;
     pub const BOTTOM_BAR: u16 = 498;
     pub const CHAT: u16 = 499;
+    /// AUTOMATED UNITS sidebar and its buttons.
+    pub const AUTOMATED_SIDEBAR: u16 = 507;
+    pub const AUTOMATED_BACK: u16 = 512;
+    pub const AUTOMATED_MAP: u16 = 520;
+    pub const AUTOMATED_GOAL: u16 = 524;
+    pub const AUTOMATED_UP: u16 = 528;
+    pub const AUTOMATED_DOWN: u16 = 532;
     /// Battle report shown when a battle is over, and its CONTINUE.
     pub const REPORT_DIALOG: u16 = 365;
     pub const REPORT_CONTINUE: u16 = 366;
@@ -134,6 +141,9 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (478, 489, 53, 17),
     (498, 498, BOTTOM_W, BOTTOM_H),
     (499, 502, 53, 17),
+    (507, 507, SIDEBAR_W, SIDEBAR_H),
+    (512, 515, 110, 17),
+    (520, 535, 53, 17),
     (633, 633, 449, 268),
     (634, 637, 110, 17),
     (638, 643, 19, 19),
@@ -229,6 +239,7 @@ impl UiArt {
                     | frame::OVERVIEW_SIDEBAR
                     | frame::DEPLOY_SIDEBAR
                     | frame::AI_SIDEBAR
+                    | frame::AUTOMATED_SIDEBAR
             ) {
                 hide_emblem(&mut image);
             }
@@ -345,6 +356,12 @@ pub enum Button {
     SkirmishContinue,
     // Battle report.
     ReportContinue,
+    // Automated units sidebar.
+    AutomatedMap,
+    AutomatedGoal,
+    AutomatedUp,
+    AutomatedDown,
+    AutomatedBack,
     // OPTIONS dialog.
     OptionsRestart,
     OptionsSave,
@@ -374,6 +391,8 @@ pub enum Screen {
     Confirm,
     /// Another player's (the AI's) turn.
     AiTurn,
+    /// The AUTOMATED UNITS sidebar: choosing a support and its target.
+    Automated,
     /// The battle is over: the battle report.
     Report,
     /// The OPTIONS dialog (MENU), possibly asking to confirm a button.
@@ -466,6 +485,11 @@ impl Button {
             Button::SkirmishBack => SKIRMISH_BACK,
             Button::SkirmishContinue => SKIRMISH_CONTINUE,
             Button::ReportContinue => REPORT_CONTINUE,
+            Button::AutomatedMap => AUTOMATED_MAP,
+            Button::AutomatedGoal => AUTOMATED_GOAL,
+            Button::AutomatedUp => AUTOMATED_UP,
+            Button::AutomatedDown => AUTOMATED_DOWN,
+            Button::AutomatedBack => AUTOMATED_BACK,
             Button::OptionsRestart => OPTIONS_RESTART,
             Button::OptionsSave => OPTIONS_SAVE,
             Button::OptionsQuit => OPTIONS_QUIT,
@@ -530,6 +554,11 @@ impl Button {
             Button::DeployDown => (73, 401),
             Button::Army => (9, 430),
             Button::DeployContinue => (9, 456),
+            Button::AutomatedMap => (9, 172),
+            Button::AutomatedGoal => (68, 172),
+            Button::AutomatedUp => (9, 401),
+            Button::AutomatedDown => (73, 401),
+            Button::AutomatedBack => (9, 430),
             Button::OverviewContinue => (10, 458),
             // Relative to the technology dialog.
             Button::TechLeft => (247, 280),
@@ -948,6 +977,13 @@ impl Layout {
                 });
             }
             Screen::Deploy => buttons.extend(DEPLOY_BUTTONS),
+            Screen::Automated => buttons.extend([
+                Button::AutomatedMap,
+                Button::AutomatedGoal,
+                Button::AutomatedUp,
+                Button::AutomatedDown,
+                Button::AutomatedBack,
+            ]),
             Screen::Confirm => buttons.extend([Button::Yes, Button::No]),
             Screen::AiTurn => buttons.extend([Button::Map, Button::Goal]),
             Screen::Report => buttons.push(Button::ReportContinue),

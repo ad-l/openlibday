@@ -51,12 +51,19 @@ fn colour([r, g, b]: [u8; 3]) -> Color {
     Color::RGB(r, g, b)
 }
 
+/// A decoded `ANMSUNIT.FF` animation: each frame's opaque box (if any) and
+/// its offset in the full `size`.
+pub struct Anim<'r> {
+    pub size: (i32, i32),
+    pub frames: Vec<Option<(Texture<'r>, (i32, i32))>>,
+}
+
 /// Cached textures; all borrow the canvas' texture creator.
 pub struct Gfx<'r> {
     creator: &'r TextureCreator<WindowContext>,
     pub sprites: HashMap<(Sheet, String), Option<Texture<'r>>>,
-    /// Walk animation frames by `ANMSUNIT.FF` member.
-    pub anims: HashMap<String, Option<Vec<Texture<'r>>>>,
+    /// Animation frames by `ANMSUNIT.FF` member.
+    pub anims: HashMap<String, Option<Anim<'r>>>,
     ui: HashMap<u16, Texture<'r>>,
     text: HashMap<(String, u32, [u8; 3]), Option<Texture<'r>>>,
     portraits: HashMap<String, Option<Texture<'r>>>,
@@ -315,7 +322,9 @@ impl Viewer {
     /// Tile under output pixel `(x, y)` of the minimap or overview picture.
     pub(crate) fn picture_tile(&self, x: i32, y: i32) -> Option<(f64, f64)> {
         let (rect, square) = match self.screen {
-            Screen::Battle | Screen::Deploy | Screen::AiTurn => self.minimap_square(),
+            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated => {
+                self.minimap_square()
+            }
             Screen::Overview | Screen::Briefing => {
                 let (rect, cell) = self.overview_square();
                 let tile = cell as f32;
@@ -878,6 +887,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::Battle => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
         Screen::Deploy | Screen::Confirm => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
         Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
+        Screen::Automated => setup::draw_automated_sidebar(canvas, gfx, viewer)?,
         Screen::Goal => {
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,

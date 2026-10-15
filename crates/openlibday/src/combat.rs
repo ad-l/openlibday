@@ -100,6 +100,9 @@ pub struct Explosion {
     pub len: usize,
     /// Centre (map pixels).
     pub centre: (i32, i32),
+    /// Timeline frame it starts at, if not the shot's `hit` (flak bursts
+    /// around an automated unit).
+    pub start: Option<usize>,
 }
 
 impl Shot {
@@ -137,12 +140,13 @@ impl Shot {
 
     /// Explosions playing at timeline frame `f`, with their frames.
     pub fn explosions(&self, f: usize) -> impl Iterator<Item = (usize, &Explosion, usize)> {
-        let k = f.checked_sub(self.hit);
         self.explosions
             .iter()
             .enumerate()
             .filter_map(move |(i, e)| {
-                let k = k.filter(|&k| k < e.len)?;
+                let k = f
+                    .checked_sub(e.start.unwrap_or(self.hit))
+                    .filter(|&k| k < e.len)?;
                 Some((i, e, e.first + k))
             })
     }
@@ -668,6 +672,15 @@ impl Viewer {
                 self.map.battle.scenario.ruins.extend(s.ruins);
                 self.rebuild();
             }
+            // A transport's second leg follows its first.
+            if !self.supports.is_empty() {
+                let mut next = self.supports.remove(0);
+                next.started = self.clock.now();
+                self.centre_on_tile(next.lands.0 as f64 + 0.5, next.lands.1 as f64 + 0.5);
+                self.shot = Some(next);
+                self.rebuild();
+                return true;
+            }
             // Lock and fire keeps shooting while the shot is clear.
             if s.repeat
                 && matches!(
@@ -789,7 +802,7 @@ impl Viewer {
     }
 
     /// The explosion of something destroyed, if it has one.
-    fn explosion(&self, d: &Destroyed) -> Option<Explosion> {
+    pub(crate) fn explosion(&self, d: &Destroyed) -> Option<Explosion> {
         let ff = self.anims.as_deref()?;
         let size = self.map.battle.scenario.size;
         match d {
@@ -802,6 +815,7 @@ impl Viewer {
                     first: 0,
                     len,
                     centre: tile_center(size, at.0, at.1),
+                    start: None,
                 })
             }
             Destroyed::Building { kind, at } => {
@@ -818,6 +832,7 @@ impl Viewer {
                     first,
                     len,
                     centre: ((a.0 + z.0) / 2, (a.1 + z.1) / 2),
+                    start: None,
                 })
             }
             Destroyed::Mine { kind, at } => {
@@ -828,6 +843,7 @@ impl Viewer {
                     first: 0,
                     len,
                     centre: tile_center(size, at.0, at.1),
+                    start: None,
                 })
             }
         }
@@ -904,6 +920,7 @@ mod tests {
                 first: 1,
                 len: 3,
                 centre: (0, 0),
+                start: None,
             }],
             ruins: Vec::new(),
         }

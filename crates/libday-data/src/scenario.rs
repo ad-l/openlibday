@@ -260,6 +260,20 @@ pub struct ScenarioInfo {
     pub available_automated: Vec<i64>,
     /// `AftermathEnglish`: the campaign's victory text.
     pub aftermath: String,
+    /// `Automated Units`: supports the AI launches for free on their turn.
+    pub supports: Vec<AuthoredSupport>,
+}
+
+/// A row of the scenario's `Automated Units` table: the AI launches
+/// automated unit `kind` at `start` (and `dest` for a transport) when its
+/// phase of turn `turn` begins (`0x46feb0`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AuthoredSupport {
+    pub counter: i64,
+    pub kind: i64,
+    pub start: (i64, i64),
+    pub dest: (i64, i64),
+    pub turn: i64,
 }
 
 /// The scenario goal (`Objective`, `Objectives ID List`, `Objectives Pos
@@ -557,6 +571,7 @@ impl Scenario {
                 available_units: available(db, "One Off Units Available"),
                 available_automated: available(db, "One Off Automated Available"),
                 aftermath: t.text_or(0, "AftermathEnglish")?,
+                supports: authored_supports(db),
             }
         };
         let objective = load_objective(db)?;
@@ -606,6 +621,28 @@ fn available(db: &Database, table: &str) -> Vec<i64> {
         .collect();
     rows.sort_unstable();
     rows.into_iter().map(|(_, e)| e).collect()
+}
+
+/// The `Automated Units` rows, in `Counter` order; empty when the table is
+/// missing.
+fn authored_supports(db: &Database) -> Vec<AuthoredSupport> {
+    let Ok(t) = Records::read(db, "Automated Units") else {
+        return Vec::new();
+    };
+    let mut rows: Vec<AuthoredSupport> = (0..t.len())
+        .filter_map(|r| {
+            let int = |c: &str| t.int_or(r, c, 0).ok();
+            Some(AuthoredSupport {
+                counter: int("Counter")?,
+                kind: t.int(r, "AutomatedType").ok()?,
+                start: (int("StartX")?, int("StartY")?),
+                dest: (int("DestX")?, int("DestY")?),
+                turn: int("TurnArrival")?,
+            })
+        })
+        .collect();
+    rows.sort_by_key(|s| s.counter);
+    rows
 }
 
 /// The `Objective` row and its ID and tile lists, `None` without a row.

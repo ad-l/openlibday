@@ -175,6 +175,17 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         };
         cell(canvas, gfx, left, top, name)?;
     }
+    // An armed support's cursor; a transport's pickup keeps its own.
+    if let Some(a) = viewer.armed_support() {
+        if let Some((x, y)) = viewer.flow.pickup {
+            let (left, top) = sprite_origin(size, x, y);
+            cell(canvas, gfx, left, top, &a.cursor)?;
+        }
+        if let Some((x, y)) = viewer.hover {
+            let (left, top) = sprite_origin(size, x, y);
+            cell(canvas, gfx, left, top, &a.cursor)?;
+        }
+    }
     let diamond = |canvas: &mut Canvas<Window>, tx: i64, ty: i64| -> Result {
         let corners = libday_view::compose::diamond(size, tx, ty);
         let points: Vec<FPoint> = corners

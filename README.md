@@ -157,7 +157,9 @@ animation and interface sounds started),
 I there), `reactions on|off` (whether overwatch spots moving units),
 `ai off|legacy|modern` (how the computer player plays), `win` / `lose`
 (end the battle with that outcome, like the original's cheats), `kill ID`
-(remove a unit or building as if destroyed by the other side), `echo TEXT`,
+(remove a unit or building as if destroyed by the other side),
+`support NAME|ID` (open AUTOMATED UNITS and arm a support, aimed with `tile`),
+`grant ID` / `credits N` (cheats: offer a support, set the credits), `echo TEXT`,
 `quit`. The state also holds the `outcome`, `objective`, battle `report` and
 each player's `totals` (units destroyed, units lost, buildings destroyed,
 buildings lost) and `rank`. A failed `expect` or command exits with
@@ -169,6 +171,8 @@ skirmish from selection to turn 2,
 loss conditions and the battle report,
 [scripts/menu.txt](scripts/menu.txt) the OPTIONS dialog,
 [scripts/reinforce.txt](scripts/reinforce.txt) buying reinforcements,
+[scripts/automated.txt](scripts/automated.txt) automated units (transport,
+mine detector, bomber),
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
 **Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
 turns on it; all are run by
