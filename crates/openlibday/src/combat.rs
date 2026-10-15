@@ -166,6 +166,25 @@ fn remap_target(target: Target, units: &[usize], buildings: &[usize]) -> Option<
     }
 }
 
+/// Whether lock and fire by `unit` still has something to shoot at in
+/// `target`: a tile only while an enemy mine or wall is left on it.
+pub(crate) fn still_hostile(scenario: &Scenario, unit: usize, target: Target) -> bool {
+    let Target::Tile(x, y) = target else {
+        return true;
+    };
+    let Some(owner) = scenario.units.get(unit).map(|u| u.owner) else {
+        return false;
+    };
+    scenario
+        .mines
+        .iter()
+        .any(|m| (m.x, m.y) == (x, y) && m.owner != owner)
+        || scenario
+            .walls
+            .iter()
+            .any(|w| (w.x, w.y) == (x, y) && w.owner != owner)
+}
+
 /// Chebyshev distance between two tiles.
 fn distance(a: (i64, i64), b: (i64, i64)) -> i64 {
     (a.0 - b.0).abs().max((a.1 - b.1).abs())
@@ -671,7 +690,9 @@ impl Viewer {
         if s.repeat
             && f < total
             && f >= s.begin + s.shoot
-            && s.result.is_some()
+            && s.result
+                .as_deref()
+                .is_some_and(|r| still_hostile(r, s.unit, s.target))
             && s.removed_units.is_empty()
             && s.removed_buildings.is_empty()
             && s.explosions.is_empty()
@@ -702,6 +723,7 @@ impl Viewer {
             }
             // Lock and fire keeps shooting while the shot is clear.
             if s.repeat
+                && still_hostile(&self.map.battle.scenario, s.unit, s.target)
                 && matches!(
                     fire::check(&self.map.battle.scenario, &self.defs, s.unit, s.target),
                     Some(Fire::Clear(_))
@@ -763,6 +785,12 @@ impl Viewer {
     /// destroyed in the battle statistics.
     fn swap_in(&mut self, result: Scenario, attacker: i64) {
         let before = std::mem::replace(&mut self.map.battle.scenario, result);
+        // A mine gone shifts the others: stop inspecting mines.
+        if before.mines.len() != self.map.battle.scenario.mines.len()
+            && matches!(self.info, Some(libday_view::inspect::Target::Mine(_)))
+        {
+            self.info = None;
+        }
         self.map.battle.tally(&before, attacker);
     }
 

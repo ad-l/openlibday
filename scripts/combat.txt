@@ -125,4 +125,26 @@ expect units.-1.ap 85
 expect sounds.-3 BLCA\P1\BLCA1T2.SMK
 expect sounds.-2 BLCA\P1\BLCA1T2.SMK
 expect sounds.-1 BJPF\P0\BJPF0E0.SMK
+# Next turn. A seen enemy mine can be inspected; lock and fire on it stops
+# once it has blown up instead of shooting at the bare ground.
+button EndTurn
+idle 3000
+mine 0 2 32 22 seen
+centre 32 22
+inspect 32 22
+expect inspect.kind mine
+expect inspect.lines.0 Mine
+expect inspect.lines.3 Player 2
+tile 35 25
+tile 32 22
+expect lock.target Tile(32, 22)
+centre 32 22
+tile 32 22
+wait 5
+expect shot.repeat true
+idle 8000
+expect shot null
+expect mines []
+expect units.26.ap 195
+expect sounds.-1 MINE\MINE.SMK
 echo combat test passed

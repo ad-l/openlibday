@@ -7,7 +7,7 @@
 use libday_view::fire::{self, Fire, Target};
 use libday_view::movement::{self, Access, executable_steps, move_budget};
 
-use crate::Viewer;
+use crate::{Viewer, combat};
 
 /// Most units selected at once.
 pub(crate) const GROUP_MAX: usize = 5;
@@ -231,10 +231,12 @@ impl Viewer {
     pub(crate) fn next_volley(&mut self) -> bool {
         while !self.volley.is_empty() {
             let (u, target, repeat) = self.volley.remove(0);
-            let clear = matches!(
-                fire::check(&self.map.battle.scenario, &self.defs, u, target),
-                Some(Fire::Clear(_))
-            );
+            let scenario = &self.map.battle.scenario;
+            let clear = (!repeat || combat::still_hostile(scenario, u, target))
+                && matches!(
+                    fire::check(scenario, &self.defs, u, target),
+                    Some(Fire::Clear(_))
+                );
             if clear {
                 self.start_shot(u, target, repeat, false);
                 if self.shot.is_some() {

@@ -403,7 +403,13 @@ impl Viewer {
         if self.options.arrival.is_none() || self.options.terrain_only {
             return None;
         }
-        structure_at(&self.map.battle.scenario, &self.defs, tx, ty)
+        structure_at(
+            &self.map.battle.scenario,
+            &self.defs,
+            tx,
+            ty,
+            self.options.viewer,
+        )
     }
 
     /// Unit on tile `(x, y)` among the shown units.
