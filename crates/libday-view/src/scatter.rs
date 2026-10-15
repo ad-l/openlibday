@@ -110,6 +110,8 @@ mod tests {
             can_overwatch: false,
             move_pix_speed: 8,
             move_animation: false,
+            move_start_animation: false,
+            move_end_animation: false,
             image: String::new(),
             cost: 0,
             cost_to_next: 0,

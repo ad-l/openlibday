@@ -116,4 +116,17 @@ idle
 expect units.57.x 60
 expect units.57.y 70
 expect units.57.ap 290
+# Flyers (and other units with MoveStart/MoveEndAnimation) take off (L, 4
+# frames for the Flyer) before walking and land (N) on arrival (0x41b25e).
+place 122 40 88
+tile 40 88
+expect selected 122
+tile 44 84
+tile 44 84
+expect motion.lead 4
+wait 2
+expect units.122.x 40
+idle
+expect units.122.x 44
+expect units.122.y 84
 echo testing ground test passed

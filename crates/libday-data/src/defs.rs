@@ -111,6 +111,12 @@ pub struct UnitType {
     pub move_pix_speed: i64,
     /// Has a walk animation (`MoveAnimation_Begin` != -1).
     pub move_animation: bool,
+    /// Has a take-off (`L`) animation played before moving
+    /// (`MoveStartAnimation_Begin` != -1).
+    pub move_start_animation: bool,
+    /// Has a landing (`N`) animation played on arrival
+    /// (`MoveEndAnimation_Begin` != -1).
+    pub move_end_animation: bool,
     pub image: String,
     /// Deployment cost (`Cost`).
     pub cost: i64,
@@ -388,6 +394,8 @@ impl Definitions {
                 can_overwatch: t.flag_or(r, "canOverwatch", false)?,
                 move_pix_speed: t.int_or(r, "MoveAnimation_PixSpeed", 8)?,
                 move_animation: t.int_or(r, "MoveAnimation_Begin", -1)? != -1,
+                move_start_animation: t.int_or(r, "MoveStartAnimation_Begin", -1)? != -1,
+                move_end_animation: t.int_or(r, "MoveEndAnimation_Begin", -1)? != -1,
                 image: t.text(r, "facingsImageID")?.to_ascii_uppercase(),
                 cost: t.int_or(r, "Cost", 0)?,
                 cost_to_next: t.int_or(r, "CostToNextTL", 0)?,

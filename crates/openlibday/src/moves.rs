@@ -74,20 +74,38 @@ pub struct Motion {
     /// A teleport: the unit vanishes (`L` animation) where it stands, then
     /// appears (`N`) on its single step, without crossing the map.
     pub teleport: bool,
-    /// Facing while vanishing.
+    /// Facing during the start (`L`) animation: the one stood in.
     pub facing: u8,
+    /// Leading positions of the start (take-off / vanish) animation, one
+    /// per frame, before the walk itself.
+    pub lead: usize,
+    /// Positions of the walk proper; any after them play the end (landing /
+    /// appear, `N`) animation on the last step.
+    pub walk: usize,
 }
 
-/// Frames of the vanish and appear animations, shown one per position.
-const TELEPORT_FRAMES: usize = 10;
-
-/// Teleport queue: [`TELEPORT_FRAMES`] positions at `start`, then as many on
-/// the destination.
-fn teleport_queue(size: usize, start: (i64, i64), to: &Step) -> Vec<((i32, i32), usize)> {
-    let from = tile_center(size, start.0, start.1);
-    let to = tile_center(size, i64::from(to.x), i64::from(to.y));
-    let mut out = vec![(from, 0); TELEPORT_FRAMES];
-    out.extend(std::iter::repeat_n((to, 0), TELEPORT_FRAMES));
+/// The original queues a move as three animation objects (`0x41b25e`): the
+/// start animation in the facing stood in (`0x46aef9`), the walk, and the
+/// end animation in the last step's facing (`0x46bf41`). `lead` and `tail`
+/// are the frame counts of the start and end animations (0: none).
+fn move_queue(
+    size: usize,
+    start: (i64, i64),
+    steps: &[Step],
+    walk: Vec<((i32, i32), usize)>,
+    lead: usize,
+    tail: usize,
+) -> Vec<((i32, i32), usize)> {
+    let last = steps.len().saturating_sub(1);
+    let to = steps
+        .last()
+        .map_or(start, |s| (i64::from(s.x), i64::from(s.y)));
+    let mut out = vec![(tile_center(size, start.0, start.1), 0); lead];
+    out.extend(walk);
+    out.extend(std::iter::repeat_n(
+        (tile_center(size, to.0, to.1), last),
+        tail,
+    ));
     out
 }
 
@@ -267,15 +285,27 @@ impl Viewer {
         });
         let teleport = Movement::from_id(kind.movement) == Movement::Teleport;
         let old_facing = unit.facing.rem_euclid(8) as u8;
-        let positions = if teleport {
+        if teleport {
             // Only the destination counts (`0x42e1c1`); it appears facing a
             // random way (`0x42d9c9`).
             steps.drain(..steps.len() - 1);
             steps[0].facing = self.rng.rand().rem_euclid(8) as u8;
-            teleport_queue(size, start, &steps[0])
+        }
+        let length = |has: bool, letter: char, facing: u8| {
+            let ff = self.anims.as_deref().filter(|_| has)?;
+            let name = movement::move_animation_name(&kind.image, colour, letter, facing);
+            shot::animation_length(ff, &name)
+        };
+        let last_facing = steps.last().map_or(old_facing, |s| s.facing);
+        let lead = length(kind.move_start_animation, 'L', old_facing).unwrap_or(0);
+        let tail = length(kind.move_end_animation, 'N', last_facing).unwrap_or(0);
+        let walk = if teleport {
+            Vec::new()
         } else {
             walk_queue(size, start, &steps, pix_speed)
         };
+        let walk_len = walk.len();
+        let positions = move_queue(size, start, &steps, walk, lead, tail);
         let facing = if teleport {
             i64::from(old_facing)
         } else {
@@ -292,6 +322,8 @@ impl Viewer {
             colour,
             teleport,
             facing: old_facing,
+            lead,
+            walk: walk_len,
         });
         self.map.battle.scenario.units[unit_index].facing = facing;
         self.options.hidden_unit = Some(unit_index);
@@ -475,13 +507,17 @@ impl Viewer {
             _ => tile_center(size, to.0, to.1),
         };
         let unit = &self.map.battle.scenario.units[m.unit];
-        if m.teleport {
+        let walk_end = m.lead + m.walk;
+        let phase = if shown < m.lead {
+            Some(('L', m.facing, m.from, shown, m.lead))
+        } else if m.positions.len() > walk_end && shown >= walk_end {
+            let tail = m.positions.len() - walk_end;
+            Some(('N', step.facing, to, shown - walk_end, tail))
+        } else {
+            None
+        };
+        if let Some((letter, facing, at, frame, frames)) = phase {
             let kind = self.defs.unit(unit.kind)?;
-            let (letter, facing, at, frame) = if shown < TELEPORT_FRAMES {
-                ('L', m.facing, m.from, shown)
-            } else {
-                ('N', step.facing, to, shown - TELEPORT_FRAMES)
-            };
             return Some(Walker {
                 unit: m.unit,
                 centre: tile_center(size, at.0, at.1),
@@ -492,11 +528,11 @@ impl Viewer {
                     letter,
                     facing,
                 )),
-                frame: frame.min(TELEPORT_FRAMES - 1),
+                frame: frame.min(frames - 1),
                 depth: at,
             });
         }
-        let frame = shown;
+        let frame = shown - m.lead;
         let depth = if (to.0 + to.1, to.0) > (m.from.0 + m.from.1, m.from.0) {
             to
         } else {

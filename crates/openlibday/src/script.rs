@@ -556,6 +556,8 @@ pub fn state(viewer: &Viewer) -> Value {
             "unit": m.unit,
             "done": m.done,
             "steps": m.steps.len(),
+            "lead": m.lead,
+            "walk": m.walk,
             "positions": m.positions.iter().map(|((x, y), s)| json!([x, y, s])).collect::<Vec<_>>(),
         })
     });
