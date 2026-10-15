@@ -50,7 +50,9 @@ their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
 footprint).
 Animations play their sound (the Smacker audio track of each walk, shot,
 impact and explosion animation, one chunk per shown frame, mixed through
-SDL3 audio streams).
+SDL3 audio streams). Interface effects come from `SOUNDS\*.WAV`: selecting a
+unit, deploying, recalling and refused deployments (with the original
+messages).
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -116,7 +118,7 @@ as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
 (N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
 phase, turn, selection, hover cursor and fire check code, path preview,
 motion, target lock, shot timeline, deploy zone, every unit and the latest
-animation sounds started),
+animation and interface sounds started),
 `expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
 `units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1), `echo TEXT`,
 `quit`. A failed `expect` or command exits with

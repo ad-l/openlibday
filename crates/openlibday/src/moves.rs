@@ -15,7 +15,7 @@ use sdl3::video::Window;
 
 use crate::Viewer;
 use crate::hud::{self, Gfx, Result};
-use crate::sound::Playing;
+use crate::sound::{Effect, Playing};
 
 /// Path shown after a single click.
 pub struct Preview {
@@ -159,6 +159,7 @@ impl Viewer {
                     self.fire_mode = None;
                 }
                 self.selected = Some(u);
+                self.effect(Effect::Select);
             }
             (Some(sel), None) if self.options.arrival == Some(0) && self.controllable(sel) => {
                 match &self.preview {

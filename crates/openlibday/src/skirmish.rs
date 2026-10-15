@@ -13,6 +13,7 @@ use libday_view::ui::{
 };
 
 use crate::Viewer;
+use crate::sound::Effect;
 
 /// The human player's slot.
 pub const PLAYER: i64 = 1;
@@ -458,12 +459,15 @@ impl Viewer {
         setup.deployed.contains(&id).then_some(i)
     }
 
-    /// A click on map tile `(x, y)` while deploying.
+    /// A click on map tile `(x, y)` while deploying (the original's
+    /// `0x44C27F`: zone, then recall, then deployment, each failure with its
+    /// message and the INVALID sound).
     pub(crate) fn deploy_click(&mut self, x: i64, y: i64) {
-        if let Some(i) = self.unit_at(x, y) {
-            if self.recallable(x, y) != Some(i) {
-                return;
-            }
+        if !self.zone(x, y) {
+            self.refuse("You can only deploy units in the indicated zone");
+            return;
+        }
+        if let Some(i) = self.recallable(x, y) {
             let id = self.map.battle.scenario.units[i].id;
             let (refund, name) = self
                 .kind_of(i)
@@ -474,6 +478,7 @@ impl Viewer {
             }
             *self.credits_mut() += refund;
             self.flow.message = Some(format!("Unit {name} has been recalled"));
+            self.effect(Effect::Recall);
             self.deployed_changed();
             return;
         }
@@ -484,10 +489,11 @@ impl Viewer {
             return;
         };
         if cost > self.credits() {
-            self.flow.message = Some("Not enough resources".into());
+            self.refuse("Need more tactical resource");
             return;
         }
         if !self.can_deploy(kind, tech, x, y) {
+            self.refuse("Can't deploy unit there");
             return;
         }
         let id = self.map.battle.scenario.next_unit_id();
@@ -502,7 +508,14 @@ impl Viewer {
         }
         *self.credits_mut() -= cost;
         self.flow.message = Some(format!("Unit {name} has been deployed"));
+        self.effect(Effect::Deploy);
         self.deployed_changed();
+    }
+
+    /// Shows why an action was refused, with the INVALID sound.
+    fn refuse(&mut self, message: &str) {
+        self.flow.message = Some(message.into());
+        self.effect(Effect::Invalid);
     }
 
     fn deployed_changed(&mut self) {

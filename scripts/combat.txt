@@ -33,8 +33,11 @@ expect units.-1.x 35
 expect units.-1.y 25
 expect units.-1.facing 4
 expect units.-1.ap 75
-# Animation sounds: the walk (one per facing), the shot, the explosion.
-expect sounds.0 BLCA\P1\BLCA1M0.SMK
+# Sounds: two deploys, the selection, then the animations: the walk (one
+# per facing), the shot, the explosion.
+expect sounds.0 DEPLOY.WAV
+expect sounds.2 SELECT.WAV
+expect sounds.3 BLCA\P1\BLCA1M0.SMK
 expect sounds.-2 BLCA\P1\BLCA1T4.SMK
 expect sounds.-1 BFOT\P0\BFOT0E0.SMK
 # The Footman is destroyed: it explodes, leaves its wreck and the unit

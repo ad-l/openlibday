@@ -9,6 +9,13 @@ expect screen Briefing
 key Return
 expect screen Deploy
 deploy Trooper
+tile 20 20
+expect message You can only deploy units in the indicated zone
+expect sounds.-1 INVALIDE.WAV
+tile 44 18
+expect sounds.-1 DEPLOY.WAV
+tile 44 18
+expect sounds.-1 RECALL.WAV
 tile 44 18
 expect units.-1.x 44
 expect units.-1.y 18
@@ -20,6 +27,7 @@ expect phase Player
 expect turn 1
 tile 44 18
 expect selected 27
+expect sounds.-1 SELECT.WAV
 expect units.-1.facing 2
 tile 44 18
 expect units.-1.facing 3

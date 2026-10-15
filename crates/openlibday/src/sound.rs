@@ -2,12 +2,14 @@
 //! Smacker audio track, one chunk per frame, which the original plays as
 //! each frame is shown; so here each newly shown frame of a playing
 //! animation queues its chunk, on one SDL stream per animation so that
-//! simultaneous animations mix.
+//! simultaneous animations mix. Interface events play the `SOUNDS\*.WAV`
+//! effects the original names (`SELECT`, `DEPLOY`, ...).
 
 use std::collections::HashMap;
 use std::time::Duration;
 
-use libday_formats::{Mff, Smacker};
+use libday_data::{Dir, GameData};
+use libday_formats::{Mff, Smacker, Wav};
 use libday_view::movement::WALK_POSITION_MS;
 use sdl3::AudioSubsystem;
 use sdl3::audio::{AudioDevice, AudioFormat, AudioSpec, AudioStreamOwner};
@@ -71,10 +73,35 @@ struct Active {
     stream: Option<usize>,
 }
 
+/// Interface sound effects, by the original's names (the file names in
+/// `SOUNDS\`, except `INVALID`, which is `INVALIDE.WAV`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Effect {
+    /// A unit is selected.
+    Select,
+    /// A unit is deployed.
+    Deploy,
+    /// A deployed unit is recalled.
+    Recall,
+    /// A refused action (deploying outside the zone, without resources).
+    Invalid,
+}
+
+impl Effect {
+    fn file(self) -> &'static str {
+        match self {
+            Effect::Select => "SELECT.WAV",
+            Effect::Deploy => "DEPLOY.WAV",
+            Effect::Recall => "RECALL.WAV",
+            Effect::Invalid => "INVALIDE.WAV",
+        }
+    }
+}
+
 struct Output {
     audio: AudioSubsystem,
     device: AudioDevice,
-    /// Streams and the sample rate each was made for.
+    /// Streams and their source sample rate.
     streams: Vec<(u32, AudioStreamOwner)>,
 }
 
@@ -84,6 +111,7 @@ pub struct Sound {
     /// Opening the device failed: stay silent.
     failed: bool,
     clips: HashMap<String, Option<Clip>>,
+    effects: HashMap<Effect, Option<Wav>>,
     active: Vec<Active>,
     /// 0 (mute) to 100.
     volume: u32,
@@ -100,6 +128,7 @@ impl Sound {
             output: None,
             failed: false,
             clips: HashMap::new(),
+            effects: HashMap::new(),
             active: Vec::new(),
             volume: volume.min(100),
             log: Vec::new(),
@@ -160,22 +189,13 @@ impl Sound {
             .or_insert_with(|| Clip::load(ff, &p.name))
             .as_ref()?;
         if fresh {
-            if self.log.len() == LOG {
-                self.log.remove(0);
-            }
-            self.log.push(p.name.clone());
+            push_log(&mut self.log, &p.name);
         }
-        if self.volume == 0 || self.failed {
-            return stream;
-        }
-        if self.output.is_none() {
-            self.output = self.audio.as_ref().and_then(Output::open);
-            self.failed = self.output.is_none();
-        }
-        let output = self.output.as_mut()?;
+        let volume = self.volume;
+        let output = open(&mut self.output, &mut self.failed, &self.audio, volume)?;
         let index = match stream {
             Some(i) => i,
-            None if fresh => output.idle_stream(clip.rate, busy, self.volume)?,
+            None if fresh => output.idle_stream(anim_rate(clip.rate), busy, volume)?,
             None => return None,
         };
         let mut data = Vec::new();
@@ -189,6 +209,26 @@ impl Sound {
         Some(index)
     }
 
+    /// Plays an interface sound effect.
+    pub fn effect(&mut self, game: &GameData, effect: Effect) {
+        let wav = self.effects.entry(effect).or_insert_with(|| {
+            let bytes = game.read(Dir::Sounds, effect.file()).ok()?;
+            Wav::parse(&bytes).ok().filter(|w| w.channels == 1)
+        });
+        let Some(wav) = wav else {
+            return;
+        };
+        push_log(&mut self.log, effect.file());
+        let busy: Vec<usize> = self.active.iter().filter_map(|a| a.stream).collect();
+        let volume = self.volume;
+        let Some(output) = open(&mut self.output, &mut self.failed, &self.audio, volume) else {
+            return;
+        };
+        if let Some(i) = output.idle_stream(wav.rate, &busy, volume) {
+            let _ = output.streams[i].1.put_data_i16(&wav.samples);
+        }
+    }
+
     /// Stops every sound.
     pub fn stop(&mut self) {
         self.active.clear();
@@ -198,6 +238,30 @@ impl Sound {
             }
         }
     }
+}
+
+/// The output, opened on first use; `None` when muted or without sound.
+fn open<'a>(
+    output: &'a mut Option<Output>,
+    failed: &mut bool,
+    audio: &Option<AudioSubsystem>,
+    volume: u32,
+) -> Option<&'a mut Output> {
+    if volume == 0 || *failed {
+        return None;
+    }
+    if output.is_none() {
+        *output = audio.as_ref().and_then(Output::open);
+        *failed = output.is_none();
+    }
+    output.as_mut()
+}
+
+fn push_log(log: &mut Vec<String>, name: &str) {
+    if log.len() == LOG {
+        log.remove(0);
+    }
+    log.push(name.to_owned());
 }
 
 fn gain(volume: u32) -> f32 {
@@ -218,7 +282,7 @@ impl Output {
         })
     }
 
-    /// A stream for `rate` with nothing left to play, other than `busy`
+    /// A stream from `rate` with nothing left to play, other than `busy`
     /// ones.
     fn idle_stream(&mut self, rate: u32, busy: &[usize], volume: u32) -> Option<usize> {
         let idle = |i: usize| -> bool {
@@ -231,7 +295,8 @@ impl Output {
         if self.streams.len() == MAX_STREAMS {
             return None;
         }
-        let stream = self.audio.new_playback_stream(&spec(rate), None).ok()?;
+        let spec = AudioSpec::new(Some(rate as i32), Some(1), Some(AudioFormat::S16LE));
+        let stream = self.audio.new_playback_stream(&spec, None).ok()?;
         let _ = stream.set_gain(gain(volume));
         self.device.bind_stream(&stream).ok()?;
         self.streams.push((rate, stream));
@@ -239,9 +304,9 @@ impl Output {
     }
 }
 
-/// Smacker chunks hold one frame of 1/15 s; playing them a touch slower
-/// keeps them in step with frames shown every [`WALK_POSITION_MS`].
-fn spec(rate: u32) -> AudioSpec {
-    let rate = rate as u64 * 1000 / 15 / WALK_POSITION_MS;
-    AudioSpec::new(Some(rate as i32), Some(1), Some(AudioFormat::S16LE))
+/// The stream rate for animation sound recorded at `rate`: Smacker chunks
+/// hold one frame of 1/15 s; playing them a touch slower keeps them in step
+/// with frames shown every [`WALK_POSITION_MS`].
+fn anim_rate(rate: u32) -> u32 {
+    (rate as u64 * 1000 / 15 / WALK_POSITION_MS) as u32
 }

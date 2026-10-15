@@ -258,6 +258,11 @@ impl Viewer {
         }
     }
 
+    /// Plays an interface sound effect.
+    fn effect(&mut self, effect: sound::Effect) {
+        self.sound.effect(&self.game, effect);
+    }
+
     /// Per-map state after loading a map.
     fn reset(&mut self) {
         self.sound.stop();
@@ -423,6 +428,7 @@ impl Viewer {
             self.fire_mode = None;
         }
         self.selected = Some(unit);
+        self.effect(sound::Effect::Select);
         self.centre_on_selected();
     }
 
