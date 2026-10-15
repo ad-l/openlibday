@@ -319,7 +319,8 @@ fn nearest(palette: &[[u8; 3]; 256], rgb: [u8; 3]) -> u8 {
     best.1
 }
 
-/// Header summary plus the background key colour (see `Frame::dominant_colour`).
+/// Header summary plus the first frame's background key colour (see
+/// `smacker::key_colours`).
 fn smk_meta(smk: &Smacker) -> Result<Json> {
     let h = &smk.header;
     let key = smk
@@ -343,15 +344,15 @@ fn export_smk(bytes: &[u8], out: &Path) -> Result<usize> {
     let smk = Smacker::parse(bytes)?;
     fs::create_dir_all(out)?;
     let frames = smk.decode_all()?;
-    let key = frames.first().map(|f| f.dominant_colour());
-    for (i, frame) in frames.iter().enumerate() {
+    let keys = smacker::key_colours(&frames);
+    for (i, (frame, key)) in frames.iter().zip(keys).enumerate() {
         write_indexed_png(
             &out.join(format!("frame_{i:03}.png")),
             smk.header.width,
             smk.header.height,
             &frame.palette,
             &frame.pixels,
-            key,
+            Some(key),
         )?;
     }
     fs::write(
@@ -604,18 +605,21 @@ fn run(cli: Cli) -> Result<()> {
             let smk = Smacker::parse(&bytes)?;
             let (w, h) = (smk.header.width as usize, smk.header.height as usize);
             let decoded = smk.decode_all()?;
-            let key = decoded.first().map(|f| f.dominant_colour());
+            let keys = smacker::key_colours(&decoded);
             let mut pixels = Vec::with_capacity(decoded.len());
-            for (i, frame) in decoded.iter().enumerate() {
-                let key_index = key.map(|k| nearest(&frame.palette, k));
+            for (i, (frame, key)) in decoded.iter().zip(keys).enumerate() {
+                let key_index = nearest(&frame.palette, key);
                 pixels.push(
                     match read_png(&frames.join(format!("frame_{i:03}.png")), w, h, true)? {
                         Image::Indexed(p) => p,
                         Image::Rgba(rgba) => rgba
                             .chunks(4)
-                            .map(|p| match key_index {
-                                Some(k) if p[3] < 128 => k,
-                                _ => nearest(&frame.palette, [p[0], p[1], p[2]]),
+                            .map(|p| {
+                                if p[3] < 128 {
+                                    key_index
+                                } else {
+                                    nearest(&frame.palette, [p[0], p[1], p[2]])
+                                }
                             })
                             .collect(),
                     },

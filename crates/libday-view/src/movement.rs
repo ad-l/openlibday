@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use libday_data::{Definitions, Scenario};
+use libday_formats::smacker::key_colours;
 use libday_formats::{Mff, Smacker};
 pub use libday_sim::path::{
     Access, DIRS, Flood, MoveGrid, Movement, Step, Tile, affordable_steps, executable_steps,
@@ -135,18 +136,19 @@ pub fn move_animation_name(image: &str, owner: i64, letter: char, facing: u8) ->
     format!("{image}\\P{owner}\\{image}{owner}{letter}{facing}.SMK")
 }
 
-/// Decodes an animation to RGBA frames, with the background key colour (the
-/// first frame's most frequent colour) transparent.
+/// Decodes an animation to RGBA frames, with the background key colour
+/// (see `smacker::key_colours`) transparent.
 pub fn animation_frames(ff: &[u8], name: &str) -> Option<Vec<Image>> {
     let mff = Mff::parse(ff).ok()?;
     let smk = Smacker::parse(mff.get(name).ok()?).ok()?;
     let frames = smk.decode_all().ok()?;
-    let key = frames.first()?.dominant_colour();
+    let keys = key_colours(&frames);
     let (width, height) = (smk.header.width as usize, smk.header.height as usize);
     Some(
         frames
             .iter()
-            .map(|f| {
+            .zip(keys)
+            .map(|(f, key)| {
                 let mut rgba = Vec::with_capacity(width * height * 4);
                 for &p in &f.pixels {
                     let c = f.palette[p as usize];

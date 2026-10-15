@@ -339,6 +339,34 @@ impl Frame {
             .unwrap_or(0);
         self.palette[index]
     }
+
+    fn contains(&self, colour: [u8; 3]) -> bool {
+        let mut seen = [false; 256];
+        for &p in &self.pixels {
+            seen[p as usize] = true;
+        }
+        (0..256).any(|i| seen[i] && self.palette[i] == colour)
+    }
+}
+
+/// The background key colour of each frame: the first frame's dominant
+/// colour, replaced by a later frame's dominant colour whenever a frame no
+/// longer contains the current key at all. Some full-screen animations
+/// switch background part-way through (the nuke's `HNKE01` turns from
+/// orange to grey at frame 11, the gene bomb's `TBMB01` to pale cyan at 46).
+pub fn key_colours(frames: &[Frame]) -> Vec<[u8; 3]> {
+    let mut key = None;
+    frames
+        .iter()
+        .map(|f| {
+            let k = match key {
+                Some(k) if f.contains(k) => k,
+                _ => f.dominant_colour(),
+            };
+            key = Some(k);
+            k
+        })
+        .collect()
 }
 
 struct BitReader<'a> {
@@ -1196,6 +1224,26 @@ mod tests {
             pixels: vec![9, 7, 7, 7, 9, 0],
         };
         assert_eq!(frame.dominant_colour(), [255, 0, 174]);
+    }
+
+    #[test]
+    fn key_colour_follows_a_background_switch() {
+        let mut palette = [[0u8; 3]; 256];
+        palette[1] = [174, 77, 0];
+        palette[2] = [93, 93, 93];
+        palette[3] = [255, 255, 255];
+        let frame = |pixels: Vec<u8>| Frame { palette, pixels };
+        let frames = [
+            frame(vec![1, 1, 1, 3]),
+            // Mostly explosion, but the background is still there.
+            frame(vec![3, 3, 3, 1]),
+            frame(vec![2, 2, 2, 3]),
+            frame(vec![3, 2, 3, 3]),
+        ];
+        assert_eq!(
+            key_colours(&frames),
+            [[174, 77, 0], [174, 77, 0], [93, 93, 93], [93, 93, 93]]
+        );
     }
 
     #[test]
