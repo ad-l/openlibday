@@ -340,7 +340,7 @@ impl Runner<'_, '_> {
                     return Err("window closed".into());
                 }
             }
-            crate::render(self.canvas, self.gfx, viewer)?;
+            crate::render::render(self.canvas, self.gfx, viewer)?;
             self.canvas.window_mut().set_title(&viewer.title())?;
             self.canvas.present();
         }
@@ -348,7 +348,7 @@ impl Runner<'_, '_> {
     }
 
     fn screenshot(&mut self, viewer: &Viewer, path: &Path) -> Result {
-        crate::render(self.canvas, self.gfx, viewer)?;
+        crate::render::render(self.canvas, self.gfx, viewer)?;
         let surface = self
             .canvas
             .read_pixels(None)?
