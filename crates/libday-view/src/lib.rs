@@ -16,6 +16,7 @@ pub mod scatter;
 pub mod scene;
 pub mod shot;
 pub mod support;
+pub mod tech;
 pub mod text;
 pub mod ui;
 

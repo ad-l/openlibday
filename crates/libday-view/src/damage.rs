@@ -591,6 +591,7 @@ mod tests {
                 explosion: Some((1, 25)),
                 ai_category: 9,
                 cost: 0,
+                tech_reward: 0,
             },
         );
         for id in ["UHRUI233"]

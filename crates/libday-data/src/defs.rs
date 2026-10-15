@@ -79,6 +79,9 @@ pub struct BuildingType {
     pub ai_category: i64,
     /// `Cost`: what destroying one is worth in the battle ranking.
     pub cost: i64,
+    /// `TechReward`: technology found by standing next to it (tech
+    /// centres and ancient ruins); 0 for every other building.
+    pub tech_reward: i64,
 }
 
 impl BuildingType {
@@ -463,6 +466,7 @@ impl Definitions {
                 },
                 ai_category: t.int_or(r, "AIcategory", 0)?,
                 cost: t.int_or(r, "Cost", 0)?,
+                tech_reward: t.int_or(r, "TechReward", 0)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));

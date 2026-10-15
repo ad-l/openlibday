@@ -1,0 +1,42 @@
+# Technology capture (docs/tech.md): a human unit next to a building with a
+# TechReward captures it (bulb over the building, TECH.WAV) and releases it
+# when it leaves; the battle report totals the rewards captured at the end.
+# Run: openlibday --headless --script scripts/tech.txt  (needs LIBDAY_ROOT
+# and the Testing Ground generator installed)
+ai off
+skirmish Testing Ground
+key Return
+key Return
+key Return
+key Y
+expect phase Player
+expect tech.buildings.0 [1000003,6000]
+expect tech.captured []
+expect tech.found 0
+# The 3x3 Tech Center at (64, 10): (63, 11) is on its ring.
+place 77 63 11
+wait 1
+expect tech.captured [1000021]
+expect tech.found 1000
+expect sounds.-1 TECH.WAV
+centre 65 11
+wait 1
+screenshot target/tech_map.png
+key m
+screenshot target/tech_overview.png
+key m
+# Leaving releases it.
+place 77 40 88
+wait 1
+expect tech.captured []
+# The 1x1 Aztek face at (95, 23), taken from its corner.
+place 77 94 24
+wait 1
+expect tech.captured [1000082]
+button Menu
+button OptionsRestart
+button Yes
+expect screen Report
+expect report.tech New technologies found : 250
+screenshot target/tech_report.png
+echo tech test passed

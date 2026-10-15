@@ -27,6 +27,12 @@ const LINE: i32 = 12;
 const GOAL_LINE: i32 = 14;
 const WHITE: [u8; 3] = [255, 255, 255];
 const BLACK: [u8; 3] = [0, 0, 0];
+/// `LBULB` bitmaps of `LIBDAY.EXE` (`0x45a029`): bright, mid, dark, mid.
+const BULB: [u32; 4] = [305, 306, 307, 308];
+/// The bulb's frame period (`0x459530` timer) and its offset from a
+/// building's centre, in original pixels.
+const BULB_MS: u128 = 175;
+const BULB_OFFSET: (i32, i32) = (2, 8);
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn Error>>;
 
@@ -92,16 +98,25 @@ impl<'r> Gfx<'r> {
         }
     }
 
-    /// Loads the unit-info capability icons from the game executable.
+    /// Loads the unit-info capability icons and the overview's blinking
+    /// technology bulb (`LBULB`) from the game executable.
     pub fn load_icons(&mut self, game: &libday_data::GameData) {
-        for id in unit_info::ALL {
+        for id in unit_info::ALL.into_iter().chain(BULB) {
             match game.exe_bitmap(id) {
                 Ok(Some(b)) => {
-                    let image = Image {
+                    let mut image = Image {
                         width: b.width,
                         height: b.height,
                         rgba: b.rgba,
                     };
+                    if BULB.contains(&id) {
+                        // Drawn with black transparent.
+                        for p in image.rgba.as_chunks_mut::<4>().0 {
+                            if p[..3] == [0, 0, 0] {
+                                p[3] = 0;
+                            }
+                        }
+                    }
                     if let Some(t) = texture(self.creator, &image) {
                         self.icons.insert(id, t);
                     }
@@ -388,7 +403,16 @@ impl Viewer {
 
     /// Whether anything on screen animates (needs periodic redraws).
     pub(crate) fn animating(&self) -> bool {
-        self.overview_shown() && self.entry.is_some() || self.flow.ai_until.is_some()
+        self.overview_shown() && (self.entry.is_some() || self.has_tech())
+            || self.flow.ai_until.is_some()
+    }
+
+    /// Whether the map holds a technology building (its overview bulb blinks).
+    fn has_tech(&self) -> bool {
+        let s = &self.map.battle.scenario;
+        s.buildings
+            .iter()
+            .any(|b| libday_view::tech::reward(&self.defs, b).is_some())
     }
 
     /// Whether the full-screen map overview (MAP or the briefing) is shown.
@@ -704,6 +728,42 @@ fn draw_unit_info(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, i
     Ok(())
 }
 
+/// The overview's blinking bulb on every technology building, captured or
+/// not (`0x459bce`, `0x45a162`): each at its footprint's centre less
+/// [`BULB_OFFSET`].
+fn draw_bulbs(
+    canvas: &mut Canvas<Window>,
+    gfx: &Gfx,
+    viewer: &Viewer,
+    square: Square,
+    s: i32,
+) -> Result {
+    let frame = (viewer.clock.since(viewer.started).as_millis() / BULB_MS) as usize % BULB.len();
+    let Some(t) = gfx.icons.get(&BULB[frame]) else {
+        return Ok(());
+    };
+    let (w, h) = (t.width() as f32 * s as f32, t.height() as f32 * s as f32);
+    let (s, defs) = (s as f32, &viewer.defs);
+    for b in &viewer.map.battle.scenario.buildings {
+        if libday_view::tech::reward(defs, b).is_none() {
+            continue;
+        }
+        let (bw, bh) = defs
+            .buildings
+            .get(&b.kind)
+            .map_or((1, 1), |k| (k.width, k.height));
+        let c = square.point(b.x as f64 + bw as f64 / 2.0, b.y as f64 + bh as f64 / 2.0);
+        let at = FRect::new(
+            c.x - BULB_OFFSET.0 as f32 * s,
+            c.y - BULB_OFFSET.1 as f32 * s,
+            w,
+            h,
+        );
+        canvas.copy(t, None, at)?;
+    }
+    Ok(())
+}
+
 fn draw_overview(
     canvas: &mut Canvas<Window>,
     gfx: &mut Gfx,
@@ -740,6 +800,7 @@ fn draw_overview(
         canvas.set_blend_mode(BlendMode::None);
     }
     draw_markers(canvas, viewer, square, true)?;
+    draw_bulbs(canvas, gfx, viewer, square, s)?;
 
     draw_sidebar(canvas, gfx, &layout, frame::OVERVIEW_SIDEBAR)?;
     draw_credits(canvas, gfx, viewer)?;
@@ -872,6 +933,16 @@ fn draw_report(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> R
             gfx.text(canvas, fonts, text, px, WHITE, r.x + x * s, y)?;
         }
     }
+    let y = top + (2 + report.rows.len() as i32 + 1) * line;
+    gfx.text(
+        canvas,
+        fonts,
+        &report.tech,
+        px,
+        WHITE,
+        r.x + ui::REPORT_COLUMNS[0] * s,
+        y,
+    )?;
     Ok(())
 }
 

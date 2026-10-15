@@ -2119,7 +2119,7 @@ replacement engine must load it from the PE file at runtime
 | 184 | radar dish | mine detection (`MineDetectionRange` > 0) |
 | 185 | crossed-out plane | anti-air (`IsAA`) |
 | 309 | yellow star | reduced signature (0 < `Jammer` < 100) |
-| 305–308 | light bulbs | tech centres on the map overview, and a tech centre being captured when a unit is near it (not yet implemented; the variant per state is still to be traced) |
+| 305–308 | `LBULB` light bulb | the blinking bulb on every technology building in the MAP overview: bright, mid, dark, mid, one frame per 175 ms, black transparent (`0x459530`). The captured-building bulb on the map is `LILBULB` in `SYMBOLS.DBI` (see `docs/tech.md`) |
 | 240–243 | coloured flags | not yet identified |
 
 While the right button is held on any unit, the minimap well shows the unit

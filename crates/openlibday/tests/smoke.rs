@@ -62,6 +62,11 @@ fn bridge_script() {
 }
 
 #[test]
+fn tech_script() {
+    play("scripts/tech.txt", "tech test passed");
+}
+
+#[test]
 fn scripted_support_script() {
     play(
         "scripts/scripted_support.txt",

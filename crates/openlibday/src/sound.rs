@@ -90,6 +90,8 @@ pub enum Effect {
     Recall,
     /// A refused action (deploying outside the zone, without resources).
     Invalid,
+    /// A technology building is captured (`tech`, `0x46ac4d`).
+    Tech,
 }
 
 impl Effect {
@@ -99,6 +101,7 @@ impl Effect {
             Effect::Deploy => "DEPLOY.WAV",
             Effect::Recall => "RECALL.WAV",
             Effect::Invalid => "INVALIDE.WAV",
+            Effect::Tech => "TECH.WAV",
         }
     }
 }

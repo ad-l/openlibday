@@ -714,11 +714,10 @@ pub fn state(viewer: &Viewer) -> Value {
         .objective
         .as_ref()
         .map(|o| json!({"kind": o.kind, "turn_number": o.turn_number}));
-    let report = viewer
-        .flow
-        .report
-        .as_ref()
-        .map(|r| json!({"title": r.title, "message": r.message, "rows": r.rows}));
+    let report =
+        viewer.flow.report.as_ref().map(
+            |r| json!({"title": r.title, "message": r.message, "rows": r.rows, "tech": r.tech}),
+        );
     let players: Vec<Value> = battle
         .players
         .iter()
@@ -792,6 +791,18 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    // `tech.buildings`: every technology building and its reward;
+    // `tech.captured`: those the player's units hold; `tech.found`: their
+    // total.
+    state["tech"] = json!({
+        "buildings": scenario
+            .buildings
+            .iter()
+            .filter_map(|b| libday_view::tech::reward(&viewer.defs, b).map(|r| json!([b.id, r])))
+            .collect::<Vec<_>>(),
+        "captured": viewer.flow.tech,
+        "found": viewer.tech_found(),
+    });
     state
 }
 

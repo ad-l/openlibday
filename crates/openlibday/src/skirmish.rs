@@ -1,6 +1,7 @@
 //! Skirmish mode: the selector, technology upgrades, deployment and the turn
 //! rotation between the player and the (still passive) AI.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use libday_data::Battle;
@@ -96,6 +97,8 @@ pub struct Flow {
     pub support_scroll: usize,
     pub pickup: Option<(i64, i64)>,
     pub used_once: Vec<i64>,
+    /// Technology buildings captured by the player's units (ids).
+    pub tech: BTreeSet<i64>,
 }
 
 impl Flow {
@@ -117,6 +120,7 @@ impl Flow {
             support_scroll: 0,
             pickup: None,
             used_once: Vec::new(),
+            tech: BTreeSet::new(),
         }
     }
 }
@@ -647,6 +651,7 @@ impl Viewer {
         self.flow.phase = Phase::Player;
         self.flow.reinforcing = false;
         self.flow.used_once.clear();
+        self.flow.tech.clear();
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.clear();
         }
@@ -747,10 +752,35 @@ impl Viewer {
         true
     }
 
-    /// The turn flow, then the objective: returns whether anything changed.
+    /// The turn flow, technology capture, then the objective: returns
+    /// whether anything changed.
     pub(crate) fn battle_tick(&mut self) -> bool {
         let turned = self.ai_tick();
-        self.judge() || turned
+        let captured = self.capture_tech();
+        self.judge() || turned || captured
+    }
+
+    /// Re-judges which technology buildings the player's units stand next
+    /// to (`0x41ae03`) while nothing plays; a new capture lights its bulb
+    /// with the `tech` sound (`CIsoAnimTech`). Returns whether any changed.
+    pub(crate) fn capture_tech(&mut self) -> bool {
+        if !matches!(self.flow.phase, Phase::Free | Phase::Player | Phase::Ai) || self.busy() {
+            return false;
+        }
+        let now = libday_view::tech::captured(&self.map.battle.scenario, &self.defs);
+        if now == self.flow.tech {
+            return false;
+        }
+        if now.difference(&self.flow.tech).next().is_some() {
+            self.effect(Effect::Tech);
+        }
+        self.flow.tech = now;
+        true
+    }
+
+    /// Technology found: the rewards of the buildings captured now.
+    pub(crate) fn tech_found(&self) -> i64 {
+        libday_view::tech::total(&self.map.battle.scenario, &self.defs, &self.flow.tech)
     }
 
     /// Reinforcements due by now enter the map (`0x416576`, after the AI's
@@ -915,6 +945,8 @@ impl Viewer {
 
     /// The battle is over: the battle report shows.
     pub(crate) fn end_battle(&mut self, outcome: Outcome) {
+        // The final judgement of the technology found (`0x41b07a`).
+        self.flow.tech = libday_view::tech::captured(&self.map.battle.scenario, &self.defs);
         self.flow.phase = Phase::Over;
         self.flow.reinforcing = false;
         self.options.deployment = false;
@@ -975,6 +1007,7 @@ impl Viewer {
                 ],
                 [String::new(), buildings(bd), buildings(bl), String::new()],
             ],
+            tech: count(0x206, "New technologies found : %1!d!", self.tech_found()),
         }
     }
 
@@ -998,6 +1031,9 @@ pub struct Report {
     pub headers: [String; 4],
     /// The player's units row (with the rank) and buildings row.
     pub rows: [[String; 4]; 2],
+    /// Technology found, under the rows (`0x45e4cd`; the original shows it
+    /// in campaigns only).
+    pub tech: String,
 }
 
 /// A freshly deployed unit on `(x, y)` of a `size`-tile map, facing the

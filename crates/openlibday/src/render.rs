@@ -162,6 +162,14 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         let (left, top) = sprite_origin(size, x, y);
         cell(canvas, gfx, left, top, name)?;
     }
+    // A bulb over every technology building the player holds, on its
+    // top-left tile (`CIsoAnimTech`, `0x46ac4d`).
+    for b in &viewer.map.battle.scenario.buildings {
+        if viewer.flow.tech.contains(&b.id) {
+            let (left, top) = sprite_origin(size, b.x, b.y);
+            cell(canvas, gfx, left, top, "LILBULB")?;
+        }
+    }
     moves::draw_shot_effects(canvas, gfx, viewer, &screen_f)?;
     // Deployment cursor, on zone tiles only: a hazard-barred square, or a
     // red-barred one when a click would recall the unit already there.
