@@ -6,8 +6,10 @@ key Return
 expect screen Tech
 key Return
 expect screen Briefing
-key Return
+# Clicking the map picture closes the briefing on that spot.
+click 450 540
 expect screen Deploy
+expect view [24,36]
 deploy Trooper
 tile 20 20
 expect message You can only deploy units in the indicated zone

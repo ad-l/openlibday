@@ -203,11 +203,13 @@ impl Viewer {
                     if index < entries {
                         self.entry = (self.entry != Some(index)).then_some(index);
                     }
-                } else if self.screen == Screen::Overview
-                    && let Some((tx, ty)) = self.picture_tile(ox, oy)
-                {
+                } else if let Some((tx, ty)) = self.picture_tile(ox, oy) {
                     self.centre_on_tile(tx, ty);
-                    self.screen = self.home();
+                    if self.screen == Screen::Briefing {
+                        self.begin_deploy();
+                    } else {
+                        self.screen = self.home();
+                    }
                 }
             }
             Screen::Overview | Screen::Briefing => {}
