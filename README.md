@@ -26,7 +26,9 @@ checks them), move closer, or not enough AP.
 Combat has begun: clicking an enemy locks it as the target (red arrow), with
 a path to the cheapest tile the unit can shoot from when it cannot hit it
 from where it stands; a second click moves there, turns to the target and
-keeps shooting while the target stands and the AP lasts. The FIRE button
+keeps shooting while the target stands and the AP lasts, back to back with
+the weapon kept raised (the fire animation loops, lowered after the last
+shot only). The FIRE button
 arms a single shot instead: any tile can then be targeted (friendly units,
 buildings and bare ground included), and once fired the mode switches off.
 Each shot plays the original raise/fire/lower, projectile (arced, for units

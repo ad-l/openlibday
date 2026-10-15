@@ -125,6 +125,16 @@ impl Shot {
     }
 }
 
+/// `target` once `units` and `buildings` (ascending) are removed, or `None`
+/// if it is one of them.
+fn remap_target(target: Target, units: &[usize], buildings: &[usize]) -> Option<Target> {
+    match target {
+        Target::Unit(i) => damage::remap(i, units).map(Target::Unit),
+        Target::Building(i) => damage::remap(i, buildings).map(Target::Building),
+        t @ Target::Tile(..) => Some(t),
+    }
+}
+
 /// Chebyshev distance between two tiles.
 fn distance(a: (i64, i64), b: (i64, i64)) -> i64 {
     (a.0 - b.0).abs().max((a.1 - b.1).abs())
@@ -226,7 +236,7 @@ impl Viewer {
                         self.lock = None;
                     }
                 }
-                _ => self.start_shot(sel, target, !once),
+                _ => self.start_shot(sel, target, !once, false),
             }
             return;
         }
@@ -287,7 +297,7 @@ impl Viewer {
 
     /// Starts unit `unit` shooting at `target` if it can from where it is;
     /// with `repeat` it shoots again after, while it can.
-    pub(crate) fn start_shot(&mut self, unit: usize, target: Target, repeat: bool) {
+    pub(crate) fn start_shot(&mut self, unit: usize, target: Target, repeat: bool, raised: bool) {
         self.lock = None;
         self.preview = None;
         let scenario = &self.map.battle.scenario;
@@ -317,9 +327,14 @@ impl Viewer {
                 .and_then(|ff| shot::animation_length(ff, &name))
                 .unwrap_or(0)
         };
-        let begin = len(Anim::Begin, anim.begin);
+        // A follow-up shot fires straight away, the weapon already raised.
+        let begin = if raised {
+            0
+        } else {
+            len(Anim::Begin, anim.begin)
+        };
         let shoot = len(Anim::Shoot, anim.shoot);
-        let end = len(Anim::End, anim.end);
+        let mut end = len(Anim::End, anim.end);
         let projectile_len = len(Anim::Projectile, anim.projectile);
         let impact_len = len(Anim::Impact, anim.impact);
         let launch = begin + (anim.proj_begin.max(0) as usize).min(shoot.saturating_sub(1));
@@ -374,6 +389,19 @@ impl Viewer {
             .iter()
             .filter_map(|d| self.explosion(d))
             .collect();
+        // Another shot follows (the target stands, the AP lasts): the
+        // weapon stays raised, as in the original, which loops the fire
+        // animation and lowers it after the last shot only.
+        let removed = &outcome.removed_units;
+        let repeat = repeat
+            && damage::remap(unit, removed).is_some_and(|u| {
+                remap_target(target, removed, &outcome.removed_buildings).is_some_and(|t| {
+                    matches!(fire::check(&result, &self.defs, u, t), Some(Fire::Clear(_)))
+                })
+            });
+        if repeat {
+            end = 0;
+        }
         let blast = explosions.iter().map(|e| e.len).max().unwrap_or(0);
         let total = (begin + shoot + end).max(hit + blast);
         let shot = Shot {
@@ -415,7 +443,7 @@ impl Viewer {
             return;
         };
         if lock.pending {
-            self.start_shot(lock.unit, lock.target, !lock.once);
+            self.start_shot(lock.unit, lock.target, !lock.once, false);
         }
     }
 
@@ -451,7 +479,7 @@ impl Viewer {
                     Some(Fire::Clear(_))
                 )
             {
-                self.start_shot(s.unit, s.target, true);
+                self.start_shot(s.unit, s.target, true, true);
                 return self.shot.is_some();
             }
             return false;
@@ -471,12 +499,7 @@ impl Viewer {
         self.map.battle.scenario = *result;
         let removed = std::mem::take(&mut s.removed_units);
         let removed_buildings = std::mem::take(&mut s.removed_buildings);
-        let target = match s.target {
-            Target::Unit(i) => damage::remap(i, &removed).map(Target::Unit),
-            Target::Building(i) => damage::remap(i, &removed_buildings).map(Target::Building),
-            t @ Target::Tile(..) => Some(t),
-        };
-        match target {
+        match remap_target(s.target, &removed, &removed_buildings) {
             Some(t) => s.target = t,
             // Destroyed: nothing left to shoot at.
             None => s.repeat = false,

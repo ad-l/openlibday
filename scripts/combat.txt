@@ -101,7 +101,11 @@ tile 30 26
 tile 30 26
 wait 5
 expect shot.repeat true
-expect units.27.ap 140
+# The weapon stays raised between shots: no lower, then no raise.
+expect shot.end 0
+wait 28
+expect shot.begin 0
+expect shot.repeat false
 idle 8000
 expect shot null
 expect units.-1.index 26
