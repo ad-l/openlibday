@@ -31,8 +31,8 @@
 //!                       last) is VALUE
 //! echo TEXT             print TEXT
 //! seed N                reseed the game's rand() (scripts start at 1)
-//! mine KIND OWNER X Y    lay an armed mine of type KIND, hidden from all but
-//!                       OWNER
+//! mine KIND OWNER X Y [seen]  lay an armed mine of type KIND, hidden from
+//!                       all but OWNER (from nobody with `seen`)
 //! place I X Y         move unit I (state index) to map tile (X, Y)
 //! reactions on|off    whether overwatch spots moving units (default on)
 //! ai off|legacy|modern  how the computer player plays (default: settings)
@@ -105,6 +105,7 @@ pub enum Command {
         owner: i64,
         x: i64,
         y: i64,
+        seen: bool,
     },
     Quit,
 }
@@ -216,6 +217,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             owner: num(args.get(1))?,
             x: num(args.get(2))?,
             y: num(args.get(3))?,
+            seen: args.get(4).is_some_and(|a| *a == "seen"),
         },
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
@@ -389,7 +391,13 @@ impl Runner<'_, '_> {
             }
             Command::Echo(text) => println!("{text}"),
             Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
-            &Command::Mine { kind, owner, x, y } => {
+            &Command::Mine {
+                kind,
+                owner,
+                x,
+                y,
+                seen,
+            } => {
                 let mines = &mut viewer.map.battle.scenario.mines;
                 let counter = mines.iter().map(|m| m.counter + 1).max().unwrap_or(1);
                 mines.push(libday_data::scenario::Mine {
@@ -399,8 +407,8 @@ impl Runner<'_, '_> {
                     x,
                     y,
                     armed: true,
-                    hidden_ai: owner != 0,
-                    hidden: std::array::from_fn(|p| p as i64 + 1 != owner),
+                    hidden_ai: !seen && owner != 0,
+                    hidden: std::array::from_fn(|p| !seen && p as i64 + 1 != owner),
                 });
                 viewer.rebuild();
             }
@@ -634,6 +642,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "motion": motion,
         "lock": lock,
         "shot": shot,
+        "flights": viewer.flights.len(),
         "reaction": viewer.reaction.as_ref().map(|r| r.target),
         "info": viewer.info,
         "watch": viewer.watch.iter().map(|((x, y), _)| [*x, *y]).collect::<Vec<_>>(),
@@ -642,6 +651,12 @@ pub fn state(viewer: &Viewer) -> Value {
         "buildings": buildings,
         "ruins": ruins,
         "mines": mines,
+        // `terrain.Y.X`: the artwork of each tile, row by row.
+        "terrain": scenario
+            .cells
+            .chunks(scenario.size.max(1))
+            .map(|row| row.iter().map(|c| c.terrain.as_str()).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
         "sounds": viewer.sound.log,
     })
 }

@@ -171,6 +171,8 @@ struct Viewer {
     /// Enemy locked as the selected unit's target, and a shot playing.
     lock: Option<combat::Lock>,
     shot: Option<combat::Shot>,
+    /// Earlier shots of a burst still in the air, in firing order.
+    flights: Vec<combat::Shot>,
     /// Reaction fire at a unit spotted moving.
     reaction: Option<combat::Reaction>,
     /// Overwatch spots moving units (scripts may turn it off).
@@ -293,6 +295,7 @@ impl Viewer {
         self.fire_mode = None;
         self.motion = None;
         self.shot = None;
+        self.flights.clear();
         self.reaction = None;
         self.brain = None;
         self.options.hidden_unit = None;
@@ -771,6 +774,7 @@ fn main() -> Result {
         motion: None,
         lock: None,
         shot: None,
+        flights: Vec::new(),
         reaction: None,
         reactions: true,
         brain: None,

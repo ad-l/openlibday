@@ -166,7 +166,21 @@ fn distance(a: (i64, i64), b: (i64, i64)) -> i64 {
 impl Viewer {
     /// A unit is walking or shooting: orders and selection wait.
     pub(crate) fn busy(&self) -> bool {
-        self.motion.is_some() || self.shot.is_some() || self.reaction.is_some()
+        self.motion.is_some()
+            || self.shot.is_some()
+            || !self.flights.is_empty()
+            || self.reaction.is_some()
+    }
+
+    /// The scenario once every shot in the air has landed: the original's
+    /// server resolves a shot's damage as it fires (`0x41a7a3`), so a
+    /// burst's next shot is decided on it.
+    fn projected<'a>(flights: &'a [Shot], live: &'a Scenario) -> &'a Scenario {
+        flights
+            .iter()
+            .rev()
+            .find_map(|f| f.result.as_deref())
+            .unwrap_or(live)
     }
 
     /// Fire mode (the FIRE button) is on for the selected unit.
@@ -216,22 +230,39 @@ impl Viewer {
         }
     }
 
-    /// Enemy unit or building on tile `(x, y)` for the selected unit.
+    /// Hostile thing on tile `(x, y)` for the selected unit, in the
+    /// original cursor's order (`0x4519cf`): an enemy unit, an enemy
+    /// destructible building, an enemy mine its owner can see, then an
+    /// enemy wall.
     fn enemy_at(&self, x: i64, y: i64) -> Option<Target> {
         let sel = self.selected.filter(|&s| self.controllable(s))?;
         let scenario = &self.map.battle.scenario;
         let owner = scenario.units[sel].owner;
-        match self.unit_at(x, y) {
-            Some(u) if scenario.units[u].owner != owner && !self.controllable(u) => {
-                Some(Target::Unit(u))
-            }
-            Some(_) => None,
-            None => {
-                let b = self.building_at(x, y)?;
-                let o = scenario.buildings[b].owner;
-                (o != 0 && o != owner).then_some(Target::Building(b))
-            }
+        if let Some(u) = self.unit_at(x, y) {
+            return (scenario.units[u].owner != owner && !self.controllable(u))
+                .then_some(Target::Unit(u));
         }
+        if let Some(b) = self.building_at(x, y) {
+            let b2 = &scenario.buildings[b];
+            let destructible = self
+                .defs
+                .buildings
+                .get(&b2.kind)
+                .is_some_and(|t| t.destructible);
+            return (b2.owner != owner && destructible).then_some(Target::Building(b));
+        }
+        if self.options.terrain_only {
+            return None;
+        }
+        let mine = scenario
+            .mines
+            .iter()
+            .any(|m| (m.x, m.y) == (x, y) && m.owner != owner && !m.hidden_to(owner));
+        let wall = scenario
+            .walls
+            .iter()
+            .any(|w| (w.x, w.y) == (x, y) && w.owner != owner);
+        (mine || wall).then_some(Target::Tile(x, y))
     }
 
     /// A click on an enemy: locks it, or confirms the lock.
@@ -323,7 +354,7 @@ impl Viewer {
     pub(crate) fn start_shot(&mut self, unit: usize, target: Target, repeat: bool, raised: bool) {
         self.lock = None;
         self.preview = None;
-        let scenario = &self.map.battle.scenario;
+        let scenario = Self::projected(&self.flights, &self.map.battle.scenario);
         let Some(Fire::Clear(aim)) = fire::check(scenario, &self.defs, unit, target) else {
             return;
         };
@@ -404,7 +435,15 @@ impl Viewer {
         let u = &mut self.map.battle.scenario.units[unit];
         u.facing = facing;
         u.action_points = Some((ap - cost).max(0));
-        let mut result = self.map.battle.scenario.clone();
+        // Shots in the air share the shooter's indices (they removed
+        // nothing): their scenarios spend the AP too.
+        for f in &mut self.flights {
+            if let Some(u) = f.result.as_mut().and_then(|r| r.units.get_mut(unit)) {
+                u.facing = facing;
+                u.action_points = Some((ap - cost).max(0));
+            }
+        }
+        let mut result = Self::projected(&self.flights, &self.map.battle.scenario).clone();
         let outcome = damage::resolve(
             &mut result,
             &self.defs,
@@ -548,11 +587,39 @@ impl Viewer {
 
     /// Advances the shot; returns whether one is playing.
     pub(crate) fn tick_shot(&mut self) -> bool {
+        let now = self.clock.now();
+        // Shots in the air land in firing order.
+        while let Some(i) = self.flights.iter().position(|f| f.result.is_some()) {
+            let f = &mut self.flights[i];
+            if f.frame(now) < f.hit {
+                break;
+            }
+            if let Some(result) = f.result.take() {
+                self.map.battle.scenario = *result;
+                self.rebuild();
+            }
+        }
+        let mut done = Vec::new();
+        self.flights.retain_mut(|f| {
+            let over = f.result.is_none() && f.frame(now) >= f.total;
+            if over {
+                done.append(&mut f.ruins);
+            }
+            !over
+        });
+        if !done.is_empty() {
+            self.map.battle.scenario.ruins.extend(done);
+            self.rebuild();
+        }
+        let landed = self.flights.iter().all(|f| f.result.is_none());
         let Some(s) = &self.shot else {
-            return false;
+            if self.flights.is_empty() && self.reaction.is_some() {
+                return self.next_reaction();
+            }
+            return !self.flights.is_empty();
         };
-        let f = s.frame(self.clock.now());
-        if f >= s.hit && s.result.is_some() {
+        let f = s.frame(now);
+        if landed && f >= s.hit && s.result.is_some() {
             self.apply_hit();
         }
         let Some(s) = &self.shot else {
@@ -563,7 +630,29 @@ impl Viewer {
             self.options.hidden_unit = None;
             self.rebuild();
         }
-        if f >= total {
+        let Some(s) = &self.shot else {
+            return false;
+        };
+        // Lock and fire: as in the original, the next shot leaves once the
+        // fire animation is over, while this one is still in the air, its
+        // damage already decided. Shots that destroy something end the
+        // burst the slow way, keeping the unit indices still.
+        if s.repeat
+            && f < total
+            && f >= s.begin + s.shoot
+            && s.result.is_some()
+            && s.removed_units.is_empty()
+            && s.removed_buildings.is_empty()
+            && s.explosions.is_empty()
+        {
+            if let Some(s) = self.shot.take() {
+                let (unit, target) = (s.unit, s.target);
+                self.flights.push(s);
+                self.start_shot(unit, target, true, true);
+            }
+            return true;
+        }
+        if f >= total && landed {
             let Some(s) = self.shot.take() else {
                 return false;
             };
@@ -579,7 +668,10 @@ impl Viewer {
                 )
             {
                 self.start_shot(s.unit, s.target, true, true);
-                return self.shot.is_some();
+                return self.shot.is_some() || !self.flights.is_empty();
+            }
+            if !self.flights.is_empty() {
+                return true;
             }
             return self.next_reaction();
         }

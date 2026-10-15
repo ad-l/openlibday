@@ -68,4 +68,36 @@ expect units.77.y 30
 expect units.77.ap 190
 expect units.29.ap 10
 expect sounds.-1 TLTK\P0\TLTK0I0.SMK
+# Hostile hover (0x4519cf): AI walls, AI buildings and visible AI mines are
+# targets; hidden mines and our own mines are not.
+place 77 44 86
+tile 44 86
+expect selected 77
+hover 46 86
+expect cursor CTARG
+hover 56 1
+expect cursor CMVSH
+hover 42 84
+expect cursor CMOVE
+hover 40 90
+expect cursor null
+mine 0 0 45 84 seen
+hover 45 84
+expect cursor CTARG
+# Lock and fire overlaps its shots, as in the original: the Light Grav fires
+# again once its fire animation is over, the last projectile still in the
+# air (the damage is settled as each shot leaves, 0x41a7a3).
+place 97 74 33
+tile 74 33
+expect selected 97
+tile 74 26
+tile 74 26
+expect units.97.ap 230
+wait 32
+expect flights 1
+expect units.97.ap 160
+idle
+expect shot null
+expect flights 0
+expect units.97.ap 20
 echo testing ground test passed

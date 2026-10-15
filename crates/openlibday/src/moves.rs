@@ -291,7 +291,7 @@ impl Viewer {
                 frame: w.frame,
             });
         }
-        if let Some(s) = &self.shot {
+        for s in self.flights.iter().chain(&self.shot) {
             let f = s.frame(self.clock.now());
             if s.projectile(f).is_some() {
                 out.push(Playing {
@@ -598,21 +598,21 @@ pub fn draw_shot_effects(
     viewer: &Viewer,
     screen: &dyn Fn(f64, f64) -> (f32, f32),
 ) -> Result {
-    let Some(s) = &viewer.shot else {
-        return Ok(());
-    };
-    let f = s.frame(viewer.clock.now());
-    if let Some((at, frame)) = s.projectile(f) {
-        let name = shot::animation_name(&s.image, s.owner, Anim::Projectile, 0);
-        draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
-    }
-    if let Some(frame) = s.impact(f) {
-        let size = viewer.map.battle.scenario.size;
-        let at = tile_center(size, s.lands.0, s.lands.1);
-        draw_animation(canvas, gfx, viewer, &s.impact_name, frame, at, screen)?;
-    }
-    for (_, e, frame) in s.explosions(f) {
-        draw_animation(canvas, gfx, viewer, &e.name, frame, e.centre, screen)?;
+    let now = viewer.clock.now();
+    for s in viewer.flights.iter().chain(&viewer.shot) {
+        let f = s.frame(now);
+        if let Some((at, frame)) = s.projectile(f) {
+            let name = shot::animation_name(&s.image, s.owner, Anim::Projectile, 0);
+            draw_animation(canvas, gfx, viewer, &name, frame, at, screen)?;
+        }
+        if let Some(frame) = s.impact(f) {
+            let size = viewer.map.battle.scenario.size;
+            let at = tile_center(size, s.lands.0, s.lands.1);
+            draw_animation(canvas, gfx, viewer, &s.impact_name, frame, at, screen)?;
+        }
+        for (_, e, frame) in s.explosions(f) {
+            draw_animation(canvas, gfx, viewer, &e.name, frame, e.centre, screen)?;
+        }
     }
     Ok(())
 }
