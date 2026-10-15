@@ -494,6 +494,7 @@ impl Viewer {
             Button::DeployUp => self.deploy_scroll_ok(-1),
             Button::DeployDown => self.deploy_scroll_ok(1),
             Button::Army | Button::DeployContinue => deploy_ready,
+            Button::Reinforcement => self.can_reinforce(),
             _ => true,
         }
     }
@@ -518,6 +519,7 @@ impl Viewer {
             Button::Up => self.scroll = self.scroll.saturating_sub(1),
             Button::Down => self.scroll += 1,
             Button::EndTurn => self.end_turn(),
+            Button::Reinforcement => self.begin_reinforce(),
             Button::SkirmishUp => self.pick_step(-1),
             Button::SkirmishDown => self.pick_step(1),
             Button::SkirmishBack => self.quit = true,

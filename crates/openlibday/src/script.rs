@@ -699,6 +699,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "turn": battle.clock.turn,
         "player": battle.clock.player,
         "credits": viewer.credits(),
+        "reinforcing": viewer.flow.reinforcing,
         "message": viewer.flow.message,
         "error": viewer.error,
         "skirmish": viewer.flow.pick,

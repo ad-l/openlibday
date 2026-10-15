@@ -245,7 +245,7 @@ pub(super) fn draw_deploy_sidebar(
                 canvas.copy(t, None, frect(Rect::new(r.x + 2 * s, r.y, side, side)))?;
             }
             gfx.text(canvas, fonts, &kind.name, px, WHITE, x, r.y + 2 * s)?;
-            let cost = kind.cost.to_string();
+            let cost = viewer.price(kind.cost).to_string();
             gfx.text(canvas, fonts, &cost, px, WHITE, x, r.y + 21 * s)?;
             if row == setup.row {
                 canvas.set_draw_color(Color::RGB(255, 255, 255));

@@ -64,6 +64,7 @@ impl Viewer {
         let home = self.home();
         match key {
             Keycode::Escape if self.screen != home => self.screen = home,
+            Keycode::Escape if self.flow.reinforcing => self.finish_deploy(),
             Keycode::Escape => return false,
             Keycode::Return | Keycode::KpEnter if self.screen == Screen::Battle => self.end_turn(),
             Keycode::Return | Keycode::KpEnter if self.screen == Screen::Deploy => {

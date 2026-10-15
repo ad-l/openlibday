@@ -305,7 +305,9 @@ impl Viewer {
     pub(crate) fn menu_enabled(&self, button: Button) -> bool {
         match button {
             Button::OptionsRestart => self.flow.phase == Phase::Player,
-            Button::OptionsSave => matches!(self.flow.phase, Phase::Free | Phase::Player),
+            Button::OptionsSave => {
+                matches!(self.flow.phase, Phase::Free | Phase::Player) && !self.flow.reinforcing
+            }
             Button::Menu => matches!(
                 self.screen,
                 Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Options { ask: None }

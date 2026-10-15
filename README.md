@@ -168,6 +168,7 @@ skirmish from selection to turn 2,
 [scripts/objectives.txt](scripts/objectives.txt) reinforcements, win and
 loss conditions and the battle report,
 [scripts/menu.txt](scripts/menu.txt) the OPTIONS dialog,
+[scripts/reinforce.txt](scripts/reinforce.txt) buying reinforcements,
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
 **Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
 turns on it; all are run by

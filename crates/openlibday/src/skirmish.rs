@@ -63,7 +63,8 @@ pub struct Setup {
     /// Selected deployment list row (index into the list) and its scroll.
     pub row: usize,
     pub scroll: usize,
-    /// Units placed during deployment (ids), which may be recalled.
+    /// Units placed during deployment or the current reinforcement
+    /// (ids), which may be recalled.
     pub deployed: Vec<i64>,
 }
 
@@ -84,6 +85,10 @@ pub struct Flow {
     pub outcome: Option<Outcome>,
     /// The battle report's text, once the battle is over.
     pub report: Option<Report>,
+    /// Whether the player is placing reinforcements during their turn,
+    /// and the unit selected before.
+    pub reinforcing: bool,
+    pub resume: Option<usize>,
 }
 
 impl Flow {
@@ -99,6 +104,8 @@ impl Flow {
             forced: None,
             outcome: None,
             report: None,
+            reinforcing: false,
+            resume: None,
         }
     }
 }
@@ -108,6 +115,7 @@ impl Viewer {
     pub(crate) fn home(&self) -> Screen {
         match self.flow.phase {
             Phase::Deploy => Screen::Deploy,
+            Phase::Player if self.flow.reinforcing => Screen::Deploy,
             Phase::Ai => Screen::AiTurn,
             Phase::Over => Screen::Report,
             _ => Screen::Battle,
@@ -118,6 +126,7 @@ impl Viewer {
     pub(crate) fn controllable(&self, i: usize) -> bool {
         match self.flow.phase {
             Phase::Free => true,
+            Phase::Player if self.flow.reinforcing => false,
             Phase::Player => self
                 .map
                 .battle
@@ -404,12 +413,23 @@ impl Viewer {
         list
     }
 
-    /// The unit type selected in the deployment list.
+    /// The unit type selected in the deployment list, with its price.
     fn deploy_choice(&self) -> Option<(i64, i64, i64)> {
         let setup = self.flow.setup.as_ref()?;
         let i = *self.deploy_list().get(setup.row)?;
         let (kind, tl) = self.tech_unit(i)?;
-        Some((kind.id, tl, kind.cost))
+        Some((kind.id, tl, self.price(kind.cost)))
+    }
+
+    /// What a unit of `cost` costs now: its cost while deploying, then 20%
+    /// more per turn as a reinforcement (`0x4363f0`:
+    /// `(int)(Cost * (turn * 0.2f + 1))`).
+    pub(crate) fn price(&self, cost: i64) -> i64 {
+        if !self.flow.reinforcing {
+            return cost;
+        }
+        let turn = self.map.battle.clock.turn as f64;
+        (cost as f64 * (turn * f64::from(0.2f32) + 1.0)) as i64
     }
 
     /// The deployment list row of the unit type named `name`.
@@ -492,7 +512,7 @@ impl Viewer {
             let id = self.map.battle.scenario.units[i].id;
             let (refund, name) = self
                 .kind_of(i)
-                .map_or((0, String::new()), |k| (k.cost, k.name.clone()));
+                .map_or((0, String::new()), |k| (self.price(k.cost), k.name.clone()));
             self.map.battle.scenario.units.remove(i);
             if let Some(setup) = &mut self.flow.setup {
                 setup.deployed.retain(|&d| d != id);
@@ -548,17 +568,76 @@ impl Viewer {
 
     /// CONTINUE on the deployment screen.
     pub(crate) fn finish_deploy(&mut self) {
-        if self.credits() > 0 {
+        if self.flow.reinforcing {
+            self.finish_reinforce();
+        } else if self.credits() > 0 {
             self.screen = Screen::Confirm;
         } else {
             self.start_battle();
         }
     }
 
+    // Reinforcements.
+
+    /// Whether REINFORCEMENT opens the deployment screen.
+    pub(crate) fn can_reinforce(&self) -> bool {
+        self.flow.phase == Phase::Player
+            && !self.flow.reinforcing
+            && self.flow.setup.is_some()
+            && !self.busy()
+    }
+
+    /// REINFORCEMENT: the deployment screen over the battle, where units
+    /// bought with the turn's credits are placed and recalled until
+    /// CONTINUE.
+    pub(crate) fn begin_reinforce(&mut self) {
+        if !self.can_reinforce() {
+            return;
+        }
+        self.flow.reinforcing = true;
+        self.flow.resume = self.selected;
+        if let Some(setup) = &mut self.flow.setup {
+            setup.deployed.clear();
+        }
+        self.preview = None;
+        self.lock = None;
+        self.fire_mode = None;
+        self.selected = None;
+        self.screen = Screen::Deploy;
+        self.options.deployment = true;
+        self.rebuild();
+        self.flow.message = None;
+    }
+
+    /// CONTINUE while reinforcing: the placed units join the battle with
+    /// no action points left this turn.
+    fn finish_reinforce(&mut self) {
+        let placed = self
+            .flow
+            .setup
+            .as_mut()
+            .map(|s| std::mem::take(&mut s.deployed))
+            .unwrap_or_default();
+        for unit in &mut self.map.battle.scenario.units {
+            if placed.contains(&unit.id) {
+                unit.action_points = Some(0);
+            }
+        }
+        self.flow.reinforcing = false;
+        self.options.deployment = false;
+        self.selected = self.flow.resume.take();
+        self.screen = Screen::Battle;
+        self.rebuild();
+    }
+
     // Turns.
 
     pub(crate) fn start_battle(&mut self) {
         self.flow.phase = Phase::Player;
+        self.flow.reinforcing = false;
+        if let Some(setup) = &mut self.flow.setup {
+            setup.deployed.clear();
+        }
         self.options.deployment = false;
         let reinf = self.map.battle.scenario.info.reinf_res;
         *self.credits_mut() = reinf;
@@ -588,7 +667,7 @@ impl Viewer {
     }
 
     pub(crate) fn can_end_turn(&self) -> bool {
-        self.flow.phase == Phase::Player && self.motion.is_none()
+        self.flow.phase == Phase::Player && !self.flow.reinforcing && self.motion.is_none()
     }
 
     pub(crate) fn end_turn(&mut self) {
@@ -789,7 +868,10 @@ impl Viewer {
     /// Judges the objective while the battle is on and nothing plays,
     /// ending the battle on an outcome; returns whether it ended.
     pub(crate) fn judge(&mut self) -> bool {
-        if !matches!(self.flow.phase, Phase::Player | Phase::Ai) || self.busy() {
+        if !matches!(self.flow.phase, Phase::Player | Phase::Ai)
+            || self.flow.reinforcing
+            || self.busy()
+        {
             return false;
         }
         let turn = self.objective_turn();
@@ -819,6 +901,8 @@ impl Viewer {
     /// The battle is over: the battle report shows.
     pub(crate) fn end_battle(&mut self, outcome: Outcome) {
         self.flow.phase = Phase::Over;
+        self.flow.reinforcing = false;
+        self.options.deployment = false;
         self.flow.outcome = Some(outcome);
         self.flow.ai_until = None;
         self.brain = None;

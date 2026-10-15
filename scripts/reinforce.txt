@@ -1,0 +1,63 @@
+# Reinforcements: REINFORCEMENT reopens the deployment screen during the
+# player's turn; the turn's credits buy units at a price that grows 20% per
+# turn, placed units can be recalled until CONTINUE, which commits them
+# with no action points left this turn.
+# Run: openlibday --headless --script scripts/reinforce.txt  (needs LIBDAY_ROOT)
+ai off
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Grenadier
+tile 44 18
+key Return
+key Y
+# Leftover deployment points are lost: the battle starts with ReinfRes.
+expect screen Battle
+expect turn 1
+expect credits 37
+expect selected 0
+button Reinforcement
+expect screen Deploy
+expect reinforcing true
+# Turn 1: a Trooper (cost 5) costs (int)(5 * 1.2f) = 6.
+deploy Trooper
+tile 44 20
+expect message Unit Trooper has been deployed
+expect credits 31
+expect units.-1.name Trooper
+# Recalled for the same price.
+tile 44 20
+expect message Unit Trooper has been recalled
+expect credits 37
+expect units.-1.name Grenadier
+# Units already in the battle stay.
+tile 44 18
+expect message Can't deploy unit there
+expect units.-1.name Grenadier
+deploy Trooper
+tile 44 20
+expect credits 31
+screenshot target/reinforce.png
+# CONTINUE: no confirmation; the Trooper has no AP until next turn.
+key Return
+expect screen Battle
+expect reinforcing false
+expect selected 0
+expect units.-1.name Trooper
+expect units.-1.ap 0
+# Credits carry over and grow by ReinfRes each turn.
+button EndTurn
+idle 3000
+expect turn 2
+expect credits 68
+expect units.-1.ap 80
+# Turn 2: (int)(5 * 1.4f) = 7.
+button Reinforcement
+deploy Trooper
+tile 45 18
+expect credits 61
+key Escape
+expect screen Battle
+expect units.-1.ap 0
+echo reinforce test passed

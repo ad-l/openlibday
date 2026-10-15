@@ -61,6 +61,22 @@ probability 100) replacing its targets:
 The arrival message is openlibday's own wording. Scheduled support
 (`Automated Units`) is not implemented yet.
 
+## Player reinforcements
+
+Observed in the original (Crime and Punishment) and `0x4363f0`:
+
+- Credits (player record +8) are set to the scenario's `ReinfRes` when the
+  battle starts (leftover deployment points are lost) and grow by
+  `ReinfRes` at every turn; unspent credits carry over. No difficulty or
+  building modifier was found for skirmishes.
+- REINFORCEMENT, during the player's turn, opens the deployment sidebar and
+  start zone with no BACK. A unit costs `(int)(Cost * (turn * 0.2f + 1))`
+  (Trooper, cost 5: 6 on turn 1, 7 on turn 2).
+- Units placed now can be recalled for the same price; units already in the
+  battle cannot (their tile is occupied).
+- CONTINUE (no confirmation, `Escape` too) returns to the battle and the
+  selection; the new units have 0 AP until the next turn.
+
 ## Statistics and rank
 
 Each destroyed unit or building counts as lost for its owner and destroyed
