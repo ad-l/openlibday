@@ -40,6 +40,9 @@ pub(crate) struct Walker {
     frame: usize,
     /// Tile whose depth the unit is drawn at.
     pub(crate) depth: (i64, i64),
+    /// Tile in the row in front whose top corner a sideways (grid-diagonal)
+    /// step crosses: its flat ground is drawn before the unit, not over it.
+    pub(crate) under: Option<(i64, i64)>,
     /// Sound slot of its animation.
     slot: usize,
     started: Duration,
@@ -654,6 +657,7 @@ impl Viewer {
                 unit.x + kind.width.max(1) - 1,
                 unit.y + kind.height.max(1) - 1,
             ),
+            under: None,
             slot: 0,
             started: s.started,
         })
@@ -678,6 +682,7 @@ impl Viewer {
                 )),
                 frame: frame.min(l.frames - 1),
                 depth: l.at,
+                under: None,
                 slot,
                 started: l.started,
             });
@@ -713,6 +718,7 @@ impl Viewer {
                 )),
                 frame: frame.min(frames - 1),
                 depth: at,
+                under: None,
                 slot,
                 started: m.started,
             });
@@ -723,9 +729,14 @@ impl Viewer {
         } else {
             m.from
         };
-        let anim = self
-            .defs
-            .unit(unit.kind)
+        let kind = self.defs.unit(unit.kind);
+        // A NE/SW step runs along a screen row, over the top corner of the
+        // tile below the front of the footprint.
+        let under = (to.0 + to.1 == m.from.0 + m.from.1 && to != m.from).then(|| {
+            let (w, h) = kind.map_or((1, 1), |k| (k.width.max(1), k.height.max(1)));
+            (to.0.max(m.from.0) + w - 1, to.1.max(m.from.1) + h - 1)
+        });
+        let anim = kind
             .filter(|k| k.move_animation)
             .map(|k| movement::walk_animation_name(&k.image, m.colour, step.facing));
         Some(Walker {
@@ -735,6 +746,7 @@ impl Viewer {
             anim,
             frame,
             depth,
+            under,
             slot,
             started: m.started,
         })

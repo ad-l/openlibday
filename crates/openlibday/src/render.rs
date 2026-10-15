@@ -117,7 +117,29 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         .collect();
     overlays.sort_by_key(|&(x, y, _)| (x + y, x));
     let mut overlays = overlays.into_iter().peekable();
-    for item in &viewer.map.scene.items {
+    let items = &viewer.map.scene.items;
+    let flat =
+        |item: &libday_view::scene::DrawItem| matches!(item.layer, Layer::Terrain | Layer::Road);
+    let draw_item = |canvas: &mut Canvas<Window>,
+                     gfx: &mut Gfx,
+                     item: &libday_view::scene::DrawItem|
+     -> Result {
+        let (left, top) = sprite_origin(size, item.x, item.y);
+        let (x0, y0) = screen(left, top);
+        let (x1, y1) = screen(left + 54, top + 56);
+        if x1 < 0.0 || y1 < 0.0 || x0 > ow || y0 > oh {
+            return Ok(());
+        }
+        if let Some(texture) = gfx.sprite(&viewer.art, item.sheet, &item.sprite) {
+            // Whole output pixels, so neighbouring tiles never leave seams.
+            let (x0, y0, x1, y1) = (x0.floor(), y0.floor(), x1.floor(), y1.floor());
+            canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
+        }
+        Ok(())
+    };
+    // Ground already drawn under a walker crossing its corner.
+    let mut hoisted: Vec<(i64, i64)> = Vec::new();
+    for item in items {
         while let Some(w) =
             walkers.next_if(|w| (item.x + item.y, item.x) > (w.depth.0 + w.depth.1, w.depth.0))
         {
@@ -126,6 +148,16 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             while let Some((x, y, name)) = overlays.next_if(|&(x, y, _)| (x + y, x) <= depth) {
                 let (left, top) = sprite_origin(size, x, y);
                 cell(canvas, gfx, left, top, name)?;
+            }
+            if let Some((ux, uy)) = w.under.filter(|t| !hoisted.contains(t)) {
+                let key = (ux + uy, ux);
+                let from = items.partition_point(|i| (i.x + i.y, i.x) < key);
+                for i in items[from..].iter().take_while(|i| (i.x, i.y) == (ux, uy)) {
+                    if flat(i) {
+                        draw_item(canvas, gfx, i)?;
+                    }
+                }
+                hoisted.push((ux, uy));
             }
             moves::draw_walker(canvas, gfx, viewer, &w, &screen_f)?;
         }
@@ -137,17 +169,10 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             let (left, top) = sprite_origin(size, x, y);
             cell(canvas, gfx, left, top, name)?;
         }
-        let (left, top) = sprite_origin(size, item.x, item.y);
-        let (x0, y0) = screen(left, top);
-        let (x1, y1) = screen(left + 54, top + 56);
-        if x1 < 0.0 || y1 < 0.0 || x0 > ow || y0 > oh {
+        if flat(item) && hoisted.contains(&(item.x, item.y)) {
             continue;
         }
-        if let Some(texture) = gfx.sprite(&viewer.art, item.sheet, &item.sprite) {
-            // Whole output pixels, so neighbouring tiles never leave seams.
-            let (x0, y0, x1, y1) = (x0.floor(), y0.floor(), x1.floor(), y1.floor());
-            canvas.copy(texture, None, Some(FRect::new(x0, y0, x1 - x0, y1 - y0)))?;
-        }
+        draw_item(canvas, gfx, item)?;
     }
     for w in walkers {
         let depth = (w.depth.0 + w.depth.1, w.depth.0);
