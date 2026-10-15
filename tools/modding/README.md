@@ -588,8 +588,8 @@ validation (`Apply -ResizeMap square -BridgeTerrain banks`). Layout (x, y):
 
 The scenario has 100 turns, 0 deployment points (the original lists
 skirmishes `ORDER BY [One Off Deployment]`, so this puts it first; the
-stock minimum is 150) and every skirmish unit
-type available. It also gets an **openlibday-only** `TechPoints` column
+stock minimum is 150), 5000 reinforcement credits per turn (`ReinfRes`)
+and every skirmish unit type available. It also gets an **openlibday-only** `TechPoints` column
 in `Scenario Info` (LONG, 0): the original game ignores it, but openlibday
 uses it in place of the technology points derived from `One Off
 Deployment`, and skips the technology screen when it is 0. The four
