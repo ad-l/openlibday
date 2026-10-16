@@ -887,12 +887,17 @@ fn draw_overview(
     let owner = viewer.players.get(viewer.player).copied().unwrap_or(0);
     canvas.set_blend_mode(BlendMode::Blend);
     if viewer.screen == Screen::Briefing {
-        let [r, g, b] = minimap::owner_colour(owner);
-        canvas.set_draw_color(Color::RGBA(r, g, b, 110));
-        for d in &viewer.map.battle.scenario.deployments {
-            if viewer.zone(d.x, d.y) {
-                canvas.fill_rect(square.tile_rect(d.x, d.y, 1, 1))?;
-            }
+        for d in viewer
+            .map
+            .battle
+            .scenario
+            .deployments
+            .iter()
+            .filter(|d| d.is_start_zone())
+        {
+            let [r, g, b] = minimap::owner_colour(d.player);
+            canvas.set_draw_color(Color::RGBA(r, g, b, 110));
+            canvas.fill_rect(square.tile_rect(d.x, d.y, 1, 1))?;
         }
     }
     // The objective's area (capture, hold, defend...).

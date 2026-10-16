@@ -956,10 +956,26 @@ impl Viewer {
         }
         self.flow.ai_budget -= cost;
         let s = &self.map.battle.scenario;
-        let targets: Vec<(i64, i64, i64, i64)> = s
-            .units
+        let mut hostiles: Vec<&Unit> = s.units.iter().filter(|u| hostile(&self.defs, u)).collect();
+        // With several humans, the nearest one's units come first (the
+        // original, with one, takes them in the scenario's order).
+        let near = |u: &Unit| (u.x - unit.x).abs().max((u.y - unit.y).abs());
+        let humans: std::collections::BTreeSet<i64> = hostiles
             .iter()
-            .filter(|u| hostile(&self.defs, u))
+            .map(|u| u.owner)
+            .filter(|&o| o != AI)
+            .collect();
+        if humans.len() > 1
+            && let Some(owner) = hostiles
+                .iter()
+                .filter(|u| u.owner != AI)
+                .min_by_key(|u| near(u))
+                .map(|u| u.owner)
+        {
+            hostiles.sort_by_key(|u| u.owner != owner);
+        }
+        let targets: Vec<(i64, i64, i64, i64)> = hostiles
+            .into_iter()
             .map(|u| {
                 let (w, h) = self
                     .defs

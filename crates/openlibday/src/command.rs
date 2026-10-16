@@ -259,7 +259,33 @@ impl Viewer {
                 peer.link.send(&message);
             }
         }
+        if self.net.follows() && entry.player == AI {
+            self.watch_ai(&entry.command);
+        }
         self.apply(entry.player, entry.command)
+    }
+
+    /// A client follows the AI's actions as the host's view does: the end
+    /// of a walk (a group's first one), or a unit firing where it stands.
+    fn watch_ai(&mut self, command: &Command) {
+        let tile = match command {
+            Command::Walk { steps, .. } => steps.last().map(|s| (i64::from(s.0), i64::from(s.1))),
+            Command::Batch { walks } => walks
+                .first()
+                .and_then(|(_, steps, _)| steps.last())
+                .map(|s| (i64::from(s.0), i64::from(s.1))),
+            Command::Shoot { unit, .. } => self
+                .map
+                .battle
+                .scenario
+                .units
+                .get(*unit)
+                .map(|u| (u.x, u.y)),
+            _ => None,
+        };
+        if let Some((x, y)) = tile {
+            self.centre_on_tile(x as f64 + 0.5, y as f64 + 0.5);
+        }
     }
 
     /// Takes in what the links brought: a host queues its clients'
