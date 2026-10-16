@@ -23,6 +23,14 @@ key Return
 key Y
 expect phase Player
 expect turn 1
+# With fewer AP than its overwatch shot (after firing), a unit moves on
+# all of them, and its path preview says so.
+ap 41 15
+tile 14 66
+expect selected 41
+tile 13 66
+expect preview.affordable 1
+ap 41 120
 # Towers fire their own animations: the OutPost (3x3, drawn in alien
 # colours only) turns to its target, a player's alien Plasma Tower uses the
 # alien artwork.

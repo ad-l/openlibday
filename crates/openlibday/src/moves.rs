@@ -276,8 +276,9 @@ impl Viewer {
         let grid = movement::move_grid(&self.map.battle.scenario, &self.defs, unit)?;
         let steps = grid.find_path((u.x as i32, u.y as i32), (target.0 as i32, target.1 as i32))?;
         let ap = self.action_points(unit)?.0.max(0) as u32;
-        // The preview always keeps the overwatch shot back.
-        let budget = ap.saturating_sub(self.reserve(unit).unwrap_or(0));
+        // The same budget the move spends: the overwatch shot is kept back
+        // only while the unit can still afford it.
+        let budget = move_budget(ap, self.reserve(unit));
         Some(Preview {
             unit,
             target,
