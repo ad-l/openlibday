@@ -859,6 +859,7 @@ fn menu_state(viewer: &Viewer) -> Value {
         "question": viewer.menu.question,
         "volume": viewer.settings.volume,
         "scroll_speed": viewer.settings.scroll.name(),
+        "move_speed": viewer.settings.moves.name(),
     })
 }
 

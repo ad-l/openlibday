@@ -17,6 +17,7 @@ use sdl3::video::Window;
 
 use crate::Viewer;
 use crate::hud::{self, Gfx, Result};
+use crate::settings::MoveSpeed;
 use crate::sound::{Effect, Playing};
 
 /// Path shown after a single click.
@@ -94,6 +95,49 @@ pub struct Motion {
     /// One of a player's group moves: a unit fired on or hitting a mine
     /// stops the whole group (`0x416cf1` breaks out of the batch).
     pub halts: bool,
+    /// How the walk is animated (the option when it started).
+    pub speed: MoveSpeed,
+}
+
+impl Motion {
+    /// Index of the queued position shown `elapsed` after the walk started.
+    fn shown(&self, elapsed: Duration) -> usize {
+        shown_position(
+            self.speed,
+            self.lead,
+            self.walk,
+            self.positions.len(),
+            elapsed,
+        )
+    }
+}
+
+/// Index of the queued position shown `elapsed` into a walk of `len`
+/// positions: `lead` start animation frames, `walk` walk positions, then the
+/// end animation. [`MoveSpeed::Fast`] shows two walk positions per frame;
+/// [`MoveSpeed::Instant`] is over at once.
+fn shown_position(
+    speed: MoveSpeed,
+    lead: usize,
+    walk: usize,
+    len: usize,
+    elapsed: Duration,
+) -> usize {
+    let tick = u128::from(WALK_POSITION_MS);
+    match speed {
+        MoveSpeed::Normal => (elapsed.as_millis() / tick) as usize,
+        MoveSpeed::Instant => len,
+        MoveSpeed::Fast => {
+            let halves = (elapsed.as_millis() * 2 / tick) as usize;
+            if halves < 2 * lead {
+                halves / 2
+            } else if halves - 2 * lead < walk {
+                halves - lead
+            } else {
+                lead + walk + (halves - 2 * lead - walk) / 2
+            }
+        }
+    }
 }
 
 /// Animation ticks between the starts of a batch's moves (`0x41b25e`).
@@ -420,6 +464,7 @@ impl Viewer {
             walk: walk_len,
             landing: None,
             halts,
+            speed: self.settings.moves,
         });
         self.map.battle.scenario.units[unit_index].facing = facing;
         self.options.hidden_units.push(unit_index);
@@ -537,8 +582,7 @@ impl Viewer {
             }
             return true;
         }
-        let shown =
-            (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
+        let shown = m.shown(self.clock.since(m.started));
         // Steps whose positions have all been shown are walked.
         let walked = m.positions.get(shown).map_or(m.steps.len(), |&(_, s)| s);
         while self.motions[k].done < walked {
@@ -611,7 +655,7 @@ impl Viewer {
         let now = self.clock.now();
         let m = &mut self.motions[k];
         let frames = m.positions.len().saturating_sub(m.lead + m.walk);
-        if frames > 0 && m.done < m.steps.len() {
+        if frames > 0 && m.done < m.steps.len() && m.speed != MoveSpeed::Instant {
             m.steps.truncate(m.done);
             m.landing = Some(Landing {
                 started: now,
@@ -750,8 +794,7 @@ impl Viewer {
         }
         let step = m.steps.get(m.done)?;
         let to = (i64::from(step.x), i64::from(step.y));
-        let shown =
-            (self.clock.since(m.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize;
+        let shown = m.shown(self.clock.since(m.started));
         let centre = match m.positions.get(shown) {
             Some(&(p, s)) if s == m.done => p,
             _ => tile_center(size, to.0, to.1),
@@ -1048,4 +1091,30 @@ pub fn path_dots(viewer: &Viewer) -> Vec<(i64, i64, &'static str)> {
         .as_ref()
         .map(|p| dots(&p.steps, p.affordable))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_speeds() {
+        let ms = |n: u64| Duration::from_millis(n * WALK_POSITION_MS);
+        let half = Duration::from_millis(WALK_POSITION_MS.div_ceil(2));
+        // 2 start frames, 6 walk positions, 3 end frames.
+        let at = |speed, t| shown_position(speed, 2, 6, 11, t);
+        assert_eq!(at(MoveSpeed::Normal, ms(5)), 5);
+        // Fast: the start animation at normal speed...
+        assert_eq!(at(MoveSpeed::Fast, ms(1)), 1);
+        assert_eq!(at(MoveSpeed::Fast, ms(2)), 2);
+        // ...the walk two positions a frame...
+        assert_eq!(at(MoveSpeed::Fast, ms(2) + half), 3);
+        assert_eq!(at(MoveSpeed::Fast, ms(4)), 6);
+        assert_eq!(at(MoveSpeed::Fast, ms(5)), 8);
+        // ...and the end animation at normal speed again.
+        assert_eq!(at(MoveSpeed::Fast, ms(5) + half), 8);
+        assert_eq!(at(MoveSpeed::Fast, ms(6)), 9);
+        assert_eq!(at(MoveSpeed::Fast, ms(8)), 11);
+        assert_eq!(at(MoveSpeed::Instant, Duration::ZERO), 11);
+    }
 }

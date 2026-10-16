@@ -7,7 +7,7 @@ use libday_view::ui::{Ask, Button, OPTIONS_ROWS, Rect, Screen};
 use sdl3::keyboard::Keycode;
 
 use crate::Viewer;
-use crate::settings::{self, AiMode, ScrollSpeed};
+use crate::settings::{self, AiMode, MoveSpeed, ScrollSpeed};
 use crate::skirmish::Phase;
 
 /// A row of the options table.
@@ -20,11 +20,12 @@ pub enum Item {
     Zoom,
     Grid,
     TerrainOnly,
+    Moves,
     Volume,
     Ai,
 }
 
-pub const ITEMS: [Item; 12] = [
+pub const ITEMS: [Item; 13] = [
     Item::Heading("INTERFACE"),
     Item::Scale,
     Item::Fullscreen,
@@ -33,6 +34,7 @@ pub const ITEMS: [Item; 12] = [
     Item::Zoom,
     Item::Grid,
     Item::TerrainOnly,
+    Item::Moves,
     Item::Heading("SOUND"),
     Item::Volume,
     Item::Heading("COMPUTER PLAYER"),
@@ -60,6 +62,7 @@ impl Item {
             Item::Zoom => "Default zoom",
             Item::Grid => "Tile grid",
             Item::TerrainOnly => "Terrain only",
+            Item::Moves => "Unit moves",
             Item::Volume => "Volume",
             Item::Ai => "Behaviour",
         }
@@ -129,6 +132,15 @@ impl Viewer {
             }
             Item::Grid => Value::Check(self.grid),
             Item::TerrainOnly => Value::Check(self.options.terrain_only),
+            Item::Moves => {
+                let all = MoveSpeed::ALL;
+                let i = all.iter().position(|&m| m == self.settings.moves);
+                choice(
+                    self.settings.moves.name().to_uppercase(),
+                    i.unwrap_or(0),
+                    all.len(),
+                )
+            }
             Item::Volume => {
                 let v = self.settings.volume as i32;
                 let text = if v == 0 {
@@ -181,6 +193,11 @@ impl Viewer {
                 self.options.terrain_only ^= true;
                 self.rebuild();
                 save = false;
+            }
+            Item::Moves => {
+                let all = MoveSpeed::ALL;
+                let i = all.iter().position(|&m| m == self.settings.moves);
+                self.settings.moves = all[stepped(i.unwrap_or(0), all.len(), step)];
             }
             Item::Volume => {
                 let v = (self.settings.volume as i32 + step * VOLUME_STEP).clamp(0, 100);

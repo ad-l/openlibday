@@ -170,6 +170,7 @@ skirmish from selection to turn 2,
 [scripts/objectives.txt](scripts/objectives.txt) reinforcements, win and
 loss conditions and the battle report,
 [scripts/menu.txt](scripts/menu.txt) the OPTIONS dialog,
+[scripts/move_speed.txt](scripts/move_speed.txt) the unit move speeds,
 [scripts/reinforce.txt](scripts/reinforce.txt) buying reinforcements,
 [scripts/automated.txt](scripts/automated.txt) automated units (transport,
 mine detector, bomber),
@@ -185,7 +186,10 @@ cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
 ```
 
 Options (interface scale, default 2x; initial window size; fullscreen;
-arrow-key scroll speed; start-up map zoom, 200% by default; sound volume; AI mode, `modern` by default or `legacy` for the original's
+arrow-key scroll speed; start-up map zoom, 200% by default; unit move
+animations, `normal` by default, `fast` (the walk between the start and end
+animations at double speed) or `instant` (none: the unit appears at its
+destination); sound volume; AI mode, `modern` by default or `legacy` for the original's
 quirks, see [docs/ai.md](docs/ai.md)) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),

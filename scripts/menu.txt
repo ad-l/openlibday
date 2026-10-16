@@ -36,6 +36,16 @@ key Space
 expect menu.values.Grid true
 key Down
 key Down
+expect menu.focus Moves
+expect menu.values.Moves NORMAL
+key Right
+expect menu.move_speed fast
+key Right
+expect menu.values.Moves INSTANT
+key Left
+key Left
+expect menu.move_speed normal
+key Down
 expect menu.focus Volume
 key Left
 expect menu.volume 90

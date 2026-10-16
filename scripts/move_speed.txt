@@ -1,0 +1,50 @@
+# The Unit moves option: a walk takes half the frames when fast and none
+# when instant, ending in the same place with the same AP.
+# Run: openlibday --headless --script scripts/move_speed.txt  (needs LIBDAY_ROOT)
+reactions off
+ai off
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+deploy Beast Wagon
+tile 44 20
+deploy Beast Wagon
+tile 44 24
+key Return
+key Y
+# Normal: 12 steps, 42 positions, 84 frames.
+expect menu.move_speed normal
+tile 44 20
+tile 35 25
+tile 35 25
+wait 80
+expect motion.unit 27
+idle
+expect units.27.x 35
+expect units.27.y 25
+expect units.27.ap 130
+# Fast: 9 steps, 37 positions in 37 frames.
+option Moves
+expect menu.move_speed fast
+tile 44 24
+tile 35 29
+tile 35 29
+wait 35
+expect motion.unit 28
+wait 4
+expect motion null
+expect units.28.x 35
+expect units.28.y 29
+expect units.28.ap 160
+# Instant: there at once.
+option Moves
+expect menu.move_speed instant
+tile 35 25
+tile 37 26
+tile 37 26
+wait 1
+expect motion null
+expect units.27.x 37
+expect units.27.y 26
+echo move speed test passed

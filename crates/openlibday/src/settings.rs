@@ -24,6 +24,8 @@ pub struct Settings {
     /// Map zoom at start-up, in percent of the original map pixels (one of
     /// [`ZOOMS`]).
     pub zoom: u32,
+    /// How unit moves are animated.
+    pub moves: MoveSpeed,
     /// `0` means fit to the screen.
     pub width: u32,
     pub height: u32,
@@ -96,12 +98,44 @@ impl ScrollSpeed {
     }
 }
 
+/// How unit moves are animated (the original could only turn them off).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MoveSpeed {
+    /// Every animation at its normal speed.
+    #[default]
+    Normal,
+    /// The start and end animations at normal speed, the walk between
+    /// them twice as fast.
+    Fast,
+    /// No animation: the unit appears at its destination.
+    Instant,
+}
+
+impl MoveSpeed {
+    pub const ALL: [Self; 3] = [Self::Normal, Self::Fast, Self::Instant];
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|m| m.name().eq_ignore_ascii_case(value))
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Fast => "fast",
+            Self::Instant => "instant",
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             scale: 2,
             scroll: ScrollSpeed::Normal,
             zoom: 200,
+            moves: MoveSpeed::Normal,
             width: 0,
             height: 0,
             fullscreen: false,
@@ -142,6 +176,9 @@ impl Settings {
                 .map(|z| settings.zoom = z)
                 .is_some()
         });
+        read("interface", "moves", &mut |v| {
+            MoveSpeed::parse(v).map(|m| settings.moves = m).is_some()
+        });
         read("window", "width", &mut |v| {
             v.parse().map(|w| settings.width = w).is_ok()
         });
@@ -177,6 +214,10 @@ scroll = {scroll}
 ; Map zoom at start-up, in percent: 25, 50, 75, 100, 150, 200, 300, 400 or
 ; 600. The mouse wheel and +/- change the zoom in game.
 zoom = {zoom}
+; Unit move animations: normal; fast (the start and end animations at normal
+; speed, the walk between them twice as fast); or instant (no animation, the
+; unit appears at its destination).
+moves = {moves}
 
 [window]
 ; Initial window size in screen pixels; 0 fits the window to the screen.
@@ -197,6 +238,7 @@ mode = {ai}
             scale = self.scale,
             scroll = self.scroll.name(),
             zoom = self.zoom,
+            moves = self.moves.name(),
             width = self.width,
             height = self.height,
             fullscreen = self.fullscreen,
@@ -270,6 +312,7 @@ mod tests {
             scale: 3,
             scroll: ScrollSpeed::Fast,
             zoom: 300,
+            moves: MoveSpeed::Instant,
             width: 1600,
             height: 900,
             fullscreen: true,
@@ -282,7 +325,7 @@ mod tests {
     #[test]
     fn values_and_invalid_values() {
         let (s, warnings) = Settings::parse(
-            "[Interface]\nScale = 1\nzoom = 150\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n[ai]\nmode = Legacy\n",
+            "[Interface]\nScale = 1\nzoom = 150\nmoves = Fast\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n[ai]\nmode = Legacy\n",
         );
         assert_eq!(
             s,
@@ -290,6 +333,7 @@ mod tests {
                 scale: 1,
                 scroll: ScrollSpeed::Normal,
                 zoom: 150,
+                moves: MoveSpeed::Fast,
                 width: 1600,
                 height: 0,
                 fullscreen: true,
@@ -298,7 +342,10 @@ mod tests {
             }
         );
         assert_eq!(warnings.len(), 1);
-        let (s, warnings) = Settings::parse("[interface]\nscale = 9\nzoom = 120\n");
-        assert_eq!((s.scale, s.zoom, warnings.len()), (2, 200, 2));
+        let (s, warnings) = Settings::parse("[interface]\nscale = 9\nzoom = 120\nmoves = slow\n");
+        assert_eq!(
+            (s.scale, s.zoom, s.moves, warnings.len()),
+            (2, 200, MoveSpeed::Normal, 3)
+        );
     }
 }
