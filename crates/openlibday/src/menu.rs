@@ -17,6 +17,7 @@ pub enum Item {
     Scale,
     Fullscreen,
     Scroll,
+    Intro,
     Zoom,
     Grid,
     TerrainOnly,
@@ -26,11 +27,12 @@ pub enum Item {
     Ai,
 }
 
-pub const ITEMS: [Item; 14] = [
+pub const ITEMS: [Item; 15] = [
     Item::Heading("INTERFACE"),
     Item::Scale,
     Item::Fullscreen,
     Item::Scroll,
+    Item::Intro,
     Item::Heading("MAP VIEW"),
     Item::Zoom,
     Item::Grid,
@@ -61,6 +63,7 @@ impl Item {
             Item::Scale => "Interface scale",
             Item::Fullscreen => "Fullscreen",
             Item::Scroll => "Scroll speed",
+            Item::Intro => "Intro video",
             Item::Zoom => "Default zoom",
             Item::Grid => "Tile grid",
             Item::TerrainOnly => "Terrain only",
@@ -136,6 +139,7 @@ impl Viewer {
                 let i = i.unwrap_or(0);
                 choice(format!("{}%", self.settings.zoom), i, settings::ZOOMS.len())
             }
+            Item::Intro => Value::Check(self.settings.intro),
             Item::Grid => Value::Check(self.grid),
             Item::OverwatchZone => Value::Check(self.settings.overwatch_zone),
             Item::TerrainOnly => Value::Check(self.options.terrain_only),
@@ -192,6 +196,7 @@ impl Viewer {
                 let i = all.iter().position(|&z| z == self.settings.zoom);
                 self.settings.zoom = all[stepped(i.unwrap_or(0), all.len(), step)];
             }
+            Item::Intro => self.settings.intro ^= true,
             Item::OverwatchZone => {
                 self.settings.overwatch_zone ^= true;
                 self.watch.clear();

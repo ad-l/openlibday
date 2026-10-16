@@ -47,7 +47,7 @@
 //! ap I N              set unit I's remaining action points to N
 //! reactions on|off    whether overwatch spots moving units (default on)
 //! ai off|legacy|modern  how the computer player plays (default: settings)
-//! option NAME [STEP]    change an OPTIONS table setting (Scale, Fullscreen,
+//! option NAME [STEP]    change an OPTIONS table setting (Scale, Fullscreen, Intro,
 //!                       Scroll, Grid, TerrainOnly, Volume, Ai) by STEP
 //!                       (default 1; check boxes toggle)
 //! quit                  end the program
