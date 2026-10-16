@@ -1,4 +1,4 @@
-# Dimming: the player's units that cannot afford a step or a shot are darkened.
+# Dimming: units of any side that cannot afford a step or a shot are darkened.
 # Run: openlibday --headless --script scripts/dim.txt  (needs LIBDAY_ROOT)
 reactions off
 ai off
@@ -21,7 +21,8 @@ place 1 26 46
 expect units.1.dimmed true
 ap 1 80
 expect units.1.dimmed false
-# Enemies are never dimmed.
-ap 3 0
+# Enemies out of AP are dimmed too.
 expect units.3.dimmed false
+ap 3 0
+expect units.3.dimmed true
 echo dim test passed
