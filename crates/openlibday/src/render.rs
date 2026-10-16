@@ -381,6 +381,7 @@ pub(crate) fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer
     canvas.clear();
     let home_strategic = matches!(viewer.home(), Screen::Strategic { .. });
     if !viewer.screen.is_dialog()
+        && !viewer.menu.over_main
         && !home_strategic
         && !matches!(viewer.screen, Screen::Overview | Screen::Briefing)
     {
