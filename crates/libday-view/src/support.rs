@@ -295,6 +295,30 @@ pub fn valid_target(
     }
 }
 
+/// Tiles over which unit `unit` fires at automated units: `[x - R, x + R)`
+/// on both axes, `R` its weapon range, as [`anti_air`] tests (empty for a
+/// unit without anti-aircraft fire).
+pub fn anti_air_zone(
+    scenario: &Scenario,
+    defs: &Definitions,
+    unit: usize,
+) -> std::collections::BTreeSet<(i64, i64)> {
+    let Some(u) = scenario.units.get(unit) else {
+        return Default::default();
+    };
+    let Some(k) = defs
+        .unit_tech(u.kind, u.tech)
+        .filter(|k| k.anti_air && k.can_overwatch)
+    else {
+        return Default::default();
+    };
+    let r = k.range;
+    (u.x - r..u.x + r)
+        .flat_map(|x| (u.y - r..u.y + r).map(move |y| (x, y)))
+        .filter(|&(x, y)| scenario.contains(x, y))
+        .collect()
+}
+
 /// Anti-aircraft fire at a support of `player` over `at`: the units that
 /// fire, each spending a shot's AP, while `taken` is below `armor`.
 fn anti_air(
@@ -824,6 +848,11 @@ mod tests {
         s.units.push(unit(5, 9, 0, 4, 8));
         let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
         assert_eq!(legs[0].anim, 1);
+        // The zone is the same square.
+        let zone = anti_air_zone(&s, &d, 0);
+        assert_eq!(zone.len(), 4 * 4 * 4);
+        assert!(zone.contains(&(0, 4)) && zone.contains(&(7, 11)));
+        assert!(!zone.contains(&(8, 8)));
     }
 
     #[test]

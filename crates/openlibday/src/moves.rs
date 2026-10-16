@@ -663,6 +663,7 @@ impl Viewer {
     /// animation frame counter and the tile whose depth each is drawn at.
     pub(crate) fn walkers(&self) -> Vec<Walker> {
         let mut out: Vec<Walker> = self.shooter().into_iter().collect();
+        out.extend(self.gunners());
         for (k, m) in self.motions.iter().enumerate() {
             let slot = if k == 0 { 0 } else { 100 + k };
             out.extend(self.motion_walker(m, slot));
@@ -692,6 +693,35 @@ impl Viewer {
             slot: 0,
             started: s.started,
         })
+    }
+
+    /// Anti-aircraft units firing at an automated unit.
+    fn gunners(&self) -> Vec<Walker> {
+        let Some(s) = &self.shot else {
+            return Vec::new();
+        };
+        let scenario = &self.map.battle.scenario;
+        s.gunners(s.frame(self.clock.now()))
+            .enumerate()
+            .filter_map(|(k, (g, frame))| {
+                let unit = scenario.units.get(g.unit)?;
+                let kind = self.defs.unit(unit.kind)?;
+                Some(Walker {
+                    unit: g.unit,
+                    centre: tile_center(scenario.size, unit.x, unit.y),
+                    facing: g.facing,
+                    anim: Some(g.name.clone()),
+                    frame,
+                    depth: (
+                        unit.x + kind.width.max(1) - 1,
+                        unit.y + kind.height.max(1) - 1,
+                    ),
+                    under: None,
+                    slot: 200 + k,
+                    started: s.started,
+                })
+            })
+            .collect()
     }
 
     fn motion_walker(&self, m: &Motion, slot: usize) -> Option<Walker> {

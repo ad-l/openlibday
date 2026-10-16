@@ -5,15 +5,16 @@
 //! [`libday_view::support`].
 
 use libday_data::defs::{AutomatedCategory, AutomatedType, auto_prop};
-use libday_data::scenario::Scenario;
+use libday_data::scenario::{Scenario, facing_toward};
+use libday_view::damage;
 use libday_view::fire::Target;
 use libday_view::shot::{self, Anim};
 use libday_view::support::{self, Leg};
-use libday_view::tile_center;
 use libday_view::ui::{DEPLOY_ROWS, Screen};
+use libday_view::{tile_center, tile_coords};
 
 use crate::Viewer;
-use crate::combat::{Explosion, Shot};
+use crate::combat::{Explosion, Gunner, Shot};
 use crate::skirmish::{AI, PLAYER, Phase};
 
 /// Frames between two flak bursts (`0x41bc04` staggers the shooters).
@@ -215,7 +216,11 @@ impl Viewer {
             .filter_map(|d| self.explosion(d))
             .collect();
         let blast = explosions.iter().map(|e| e.len).max().unwrap_or(0);
+        let mut gunners: Vec<Gunner> = Vec::new();
         if let Some(ff) = ff {
+            // Toward the flak, as `0x43430b` turns each gunner.
+            let (fx, fy) = tile_coords(size, flak_at.0 as f64, flak_at.1 as f64);
+            let flak_tile = ((fx * 1000.0) as i64, (fy * 1000.0) as i64);
             for (i, &s) in leg.shooters.iter().enumerate() {
                 let Some(u) = before.units.get(s) else {
                     continue;
@@ -223,7 +228,20 @@ impl Viewer {
                 let Some(k) = self.defs.unit(u.kind) else {
                     continue;
                 };
+                let start = aa + FLAK_STEP * i;
                 let colour = shot::animation_owner(ff, &k.image, u.owner);
+                let facing = facing_toward((u.x * 1000 + 500, u.y * 1000 + 500), flak_tile)
+                    .rem_euclid(8) as u8;
+                let fire = shot::animation_name(&k.image, colour, Anim::Shoot, facing);
+                if let Some(len) = shot::animation_length(ff, &fire).filter(|&n| n > 0) {
+                    gunners.push(Gunner {
+                        unit: s,
+                        facing,
+                        name: fire,
+                        start,
+                        len,
+                    });
+                }
                 let name = shot::animation_name(&k.image, colour, Anim::Impact, 0);
                 let Some(len) = shot::animation_length(ff, &name).filter(|&n| n > 0) else {
                     continue;
@@ -233,13 +251,23 @@ impl Viewer {
                     first: 0,
                     len,
                     centre: flak_at,
-                    start: Some(aa + FLAK_STEP * i),
+                    start: Some(start),
                 });
+            }
+        }
+        // The gunners stay turned toward the flak.
+        let mut result = leg.scenario.clone();
+        for g in &gunners {
+            if let Some(i) = damage::remap(g.unit, &leg.removed_units)
+                && let Some(u) = result.units.get_mut(i)
+            {
+                u.facing = i64::from(g.facing);
             }
         }
         let flak_end = explosions
             .iter()
             .filter_map(|e| e.start.map(|s| s + e.len))
+            .chain(gunners.iter().map(|g| g.start + g.len))
             .max()
             .unwrap_or(0);
         let hit = action.min(impact_len.saturating_sub(1)).max(aa);
@@ -264,12 +292,13 @@ impl Viewer {
             impact_name,
             hit,
             damage: 0,
-            result: Some(Box::new(leg.scenario.clone())),
+            result: Some(Box::new(result)),
             removed_units: leg.removed_units.clone(),
             removed_buildings: leg.removed_buildings.clone(),
             explosions,
             repeat: false,
             ruins: leg.ruins.clone(),
+            gunners,
         }
     }
 

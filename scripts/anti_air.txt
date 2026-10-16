@@ -1,0 +1,30 @@
+# Anti-aircraft on the Testing Ground: an automated bomber flown over the
+# alien AA vehicles draws their flak; each gunner turns toward its flak and
+# plays its fire animation, and holding the right button on an AA unit shows
+# its range in red.
+# Run: openlibday --headless --script scripts/anti_air.txt  (needs LIBDAY_ROOT
+# and the Testing Ground generator installed)
+ai off
+skirmish Testing Ground
+key Return
+key Return
+key Return
+key Y
+expect phase Player
+# The AA vehicle at (80,18) covers the 18x18 square around it.
+inspect 80 18
+expect info 10
+expect watch.0 [71,9]
+expect watch.-1 [88,26]
+tile 80 18
+expect watch []
+credits 1000
+support Bomber
+tile 76 20
+wait 1
+expect shot.gunners.0.0 20
+expect shot.gunners.0.1 TTAA\P0\TTAA0T3.SMK
+idle
+expect shot null
+expect units.20.facing 3
+echo anti-air test passed

@@ -88,4 +88,5 @@ fn testing_ground_script() {
     }
     play("scripts/testing_ground.txt", "testing ground test passed");
     play("scripts/ai.txt", "ai test passed");
+    play("scripts/anti_air.txt", "anti-air test passed");
 }

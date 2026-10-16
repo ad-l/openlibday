@@ -174,9 +174,10 @@ loss conditions and the battle report,
 [scripts/automated.txt](scripts/automated.txt) automated units (transport,
 mine detector, bomber),
 [scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
-**Testing Ground** sandbox and [scripts/ai.txt](scripts/ai.txt) plays AI
-turns on it; all are run by
-`cargo test` when `LIBDAY_ROOT` is set (the last two only once
+**Testing Ground** sandbox, [scripts/ai.txt](scripts/ai.txt) plays AI
+turns on it and [scripts/anti_air.txt](scripts/anti_air.txt) checks AA
+gunners and their red range on inspect; all are run by
+`cargo test` when `LIBDAY_ROOT` is set (the last three only once
 `tools/modding/make_testing_ground.py --install` has run):
 
 ```powershell

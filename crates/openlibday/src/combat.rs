@@ -90,6 +90,19 @@ pub struct Shot {
     pub repeat: bool,
     /// Wreckage, added once the shot is over.
     pub ruins: Vec<Ruin>,
+    /// Anti-aircraft units firing at an automated unit.
+    pub gunners: Vec<Gunner>,
+}
+
+/// An anti-aircraft unit firing at an automated unit (`0x41be62`): turned
+/// toward the flak, it plays its fire (`T`) animation once.
+pub struct Gunner {
+    pub unit: usize,
+    pub facing: u8,
+    pub name: String,
+    /// Timeline frame it starts at, and its frame count.
+    pub start: usize,
+    pub len: usize,
 }
 
 /// An explosion of something destroyed, played from the shot's `hit`.
@@ -149,6 +162,14 @@ impl Shot {
                     .filter(|&k| k < e.len)?;
                 Some((i, e, e.first + k))
             })
+    }
+
+    /// Gunners firing at timeline frame `f`, with their frames.
+    pub fn gunners(&self, f: usize) -> impl Iterator<Item = (&Gunner, usize)> {
+        self.gunners.iter().filter_map(move |g| {
+            let k = f.checked_sub(g.start).filter(|&k| k < g.len)?;
+            Some((g, k))
+        })
     }
 
     fn animating_shooter(&self) -> bool {
@@ -547,6 +568,7 @@ impl Viewer {
             explosions,
             repeat,
             ruins: outcome.ruins,
+            gunners: Vec::new(),
         };
         if shot.animating_shooter() {
             self.options.hidden_units.push(unit);
@@ -631,6 +653,7 @@ impl Viewer {
             explosions,
             repeat: false,
             ruins: outcome.ruins,
+            gunners: Vec::new(),
         });
     }
 
@@ -676,7 +699,23 @@ impl Viewer {
             return false;
         };
         let (unit, total) = (s.unit, s.total);
-        if s.shooter(f).is_none() && self.options.hidden_units.contains(&unit) {
+        let shooter_done = s.shooter(f).is_none();
+        // Anti-aircraft gunners show their animation instead while firing.
+        let firing: Vec<usize> = s.gunners(f).map(|(g, _)| g.unit).collect();
+        let gunners: Vec<usize> = s.gunners.iter().map(|g| g.unit).collect();
+        let hidden = self.options.hidden_units.clone();
+        self.options
+            .hidden_units
+            .retain(|u| !gunners.contains(u) || firing.contains(u));
+        for u in firing {
+            if !self.options.hidden_units.contains(&u) {
+                self.options.hidden_units.push(u);
+            }
+        }
+        if self.options.hidden_units != hidden {
+            self.rebuild();
+        }
+        if shooter_done && self.options.hidden_units.contains(&unit) {
             self.options.hidden_units.retain(|&u| u != unit);
             self.rebuild();
         }
@@ -708,6 +747,12 @@ impl Viewer {
             let Some(s) = self.shot.take() else {
                 return false;
             };
+            if !s.gunners.is_empty() {
+                self.options
+                    .hidden_units
+                    .retain(|u| !s.gunners.iter().any(|g| g.unit == *u));
+                self.rebuild();
+            }
             if !s.ruins.is_empty() {
                 self.map.battle.scenario.ruins.extend(s.ruins);
                 self.rebuild();
@@ -828,6 +873,13 @@ impl Viewer {
                 s.repeat = false;
             }
         }
+        s.gunners = std::mem::take(&mut s.gunners)
+            .into_iter()
+            .filter_map(|mut g| {
+                g.unit = damage::remap(g.unit, &removed)?;
+                Some(g)
+            })
+            .collect();
         if let Some(r) = &mut self.reaction {
             r.queue = r
                 .queue
@@ -989,6 +1041,7 @@ mod tests {
                 start: None,
             }],
             ruins: Vec::new(),
+            gunners: Vec::new(),
         }
     }
 

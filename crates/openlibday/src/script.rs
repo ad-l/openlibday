@@ -699,6 +699,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "repeat": s.repeat,
             "explosions": s.explosions.iter().map(|e| json!([e.name, e.first, e.len])).collect::<Vec<_>>(),
             "ruins": s.ruins.iter().map(|r| json!([r.id, r.x, r.y])).collect::<Vec<_>>(),
+            "gunners": s.gunners.iter().map(|g| json!([g.unit, g.name, g.start, g.len])).collect::<Vec<_>>(),
         })
     });
     let buildings: Vec<Value> = scenario

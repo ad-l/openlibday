@@ -278,8 +278,9 @@ impl Viewer {
     }
 
     /// Shows unit `i`'s info while the right button is held and, for an
-    /// enemy ready to fire on overwatch, the tiles it covers (a convenience
-    /// the original lacks).
+    /// enemy ready to fire on overwatch, the tiles it covers, joined for an
+    /// anti-aircraft unit by those over which it fires at automated units
+    /// (conveniences the original lacks).
     pub(crate) fn inspect(&mut self, i: usize) {
         self.info = Some(libday_view::inspect::Target::Unit(i));
         let scenario = &self.map.battle.scenario;
@@ -287,15 +288,14 @@ impl Viewer {
             .units
             .get(i)
             .is_some_and(|u| self.options.viewer.is_none_or(|v| u.owner != v));
-        self.watch = if enemy {
-            let tiles = libday_view::overwatch::zone(scenario, &self.defs, i);
-            libday_view::scene::zone_sprites(&tiles, 2)
-                .into_iter()
-                .map(|(at, name)| (at, format!("{}{name}", crate::render::RED)))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let mut tiles = libday_view::support::anti_air_zone(scenario, &self.defs, i);
+        if enemy {
+            tiles.extend(libday_view::overwatch::zone(scenario, &self.defs, i));
+        }
+        self.watch = libday_view::scene::zone_sprites(&tiles, 2)
+            .into_iter()
+            .map(|(at, name)| (at, format!("{}{name}", crate::render::RED)))
+            .collect();
     }
 
     pub(crate) fn mouse_motion(&mut self, x: f32, y: f32) {
