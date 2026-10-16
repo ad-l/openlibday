@@ -22,13 +22,18 @@ use crate::skirmish::{AI, Phase, Setup};
 pub const FIRST_ATTACK_TECH: i64 = 150;
 /// The campaign save in the saves directory.
 const SAVE: &str = "campaign.json";
+/// A network campaign's autosave, on the host.
+const SAVE_ONLINE: &str = "campaign_online.json";
 const FORMAT: &str = "openlibday-campaign";
-const VERSION: u32 = 1;
+/// 2: per-player credits and technology ([`Member`]).
+const VERSION: u32 = 2;
 /// Headquarters building type.
 pub const HQ: i64 = 130;
 /// Deployment points per owned building (`0x47D4E7`): the HQ and Deploy
 /// Mk1-4.
 const DEPLOY_POINTS: [(i64, i64); 5] = [(HQ, 50), (131, 100), (173, 110), (174, 120), (175, 130)];
+/// Deployment points percentage for 1 to 4 players (`0x41EF17`).
+const PLAYERS_PERCENT: [i64; 4] = [100, 75, 65, 55];
 /// Player zone: tiles within this many of an owned building (`0x47F8E7`).
 const ZONE_RADIUS: i64 = 3;
 /// AI zone: tiles this far from the player's zone and units (`0x47C737`:
@@ -78,7 +83,7 @@ pub struct BaseLayout {
 }
 
 impl BaseLayout {
-    /// What `now` holds over the shipped base map `base`. The player's
+    /// What `now` holds over the shipped base map `base`. The players'
     /// surviving defence towers turn back into their tower buildings.
     pub fn capture(now: &Scenario, base: &Scenario, defs: &Definitions) -> Self {
         let terrain = now
@@ -95,11 +100,7 @@ impl BaseLayout {
             .collect();
         let mut buildings = now.buildings.clone();
         let mut id = buildings.iter().map(|b| b.id + 1).max().unwrap_or(1);
-        for u in now
-            .units
-            .iter()
-            .filter(|u| u.owner == CAMPAIGN_PLAYER && u.arrival == 0)
-        {
+        for u in now.units.iter().filter(|u| u.owner != AI && u.arrival == 0) {
             let tower = defs
                 .buildings
                 .iter()
@@ -109,7 +110,7 @@ impl BaseLayout {
                     counter: 0,
                     id,
                     kind,
-                    owner: CAMPAIGN_PLAYER,
+                    owner: u.owner,
                     armor: k.armor,
                     x: u.x,
                     y: u.y,
@@ -163,6 +164,33 @@ impl BaseLayout {
     }
 }
 
+/// A human player of the campaign: their credits and technology (the
+/// original's per-player `Server Mode Campaign` records).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Member {
+    /// The player's slot (1 to 4) and colour.
+    pub slot: i64,
+    pub name: String,
+    /// Base-building budget.
+    pub credits: i64,
+    /// Technology points to spend in ARMY.
+    pub tech: i64,
+    /// Technology level per unit type.
+    pub unit_tech: BTreeMap<i64, i64>,
+}
+
+impl Member {
+    fn new(slot: i64, name: &str) -> Self {
+        Self {
+            slot,
+            name: name.into(),
+            credits: 0,
+            tech: 0,
+            unit_tech: BTreeMap::new(),
+        }
+    }
+}
+
 /// A campaign in progress (the original's `Player Campaign` and
 /// `Server Mode Campaign`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,45 +201,68 @@ pub struct State {
     pub difficulty: i64,
     /// Index of the continent being played.
     pub continent: usize,
-    /// Base-building budget.
-    pub credits: i64,
-    /// Technology points to spend in ARMY.
-    pub tech: i64,
-    /// Technology level per unit type.
-    pub unit_tech: BTreeMap<i64, i64>,
+    /// The human players, in slot order (one but in a network game).
+    pub members: Vec<Member>,
     pub provinces: Vec<ProvinceState>,
     /// `None` until the base first changes from the shipped map.
     pub base: Option<BaseLayout>,
+    /// The structures built since base building opened (single player) or
+    /// since the last battle: recycled for their full cost.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fresh: Vec<crate::base_editor::Placed>,
     pub stage: Stage,
 }
 
 impl State {
-    /// A new campaign on the first continent; `roll` is the game's `rand()`.
+    /// A new campaign on the first continent for the humans `players`
+    /// (slot and name, the first naming the campaign); `roll` is the
+    /// game's `rand()`.
     pub fn new(
         campaign: &Campaign,
-        name: &str,
+        players: &[(i64, String)],
         difficulty: i64,
         roll: impl FnMut() -> i64,
     ) -> Self {
+        let mut members: Vec<Member> = players
+            .iter()
+            .map(|(slot, name)| Member::new(*slot, name))
+            .collect();
+        if members.is_empty() {
+            members.push(Member::new(CAMPAIGN_PLAYER, ""));
+        }
         let mut state = Self {
             format: FORMAT.into(),
             version: VERSION,
-            name: name.into(),
+            name: members[0].name.clone(),
             difficulty,
             continent: 0,
-            credits: 0,
-            tech: 0,
-            unit_tech: BTreeMap::new(),
+            members,
             provinces: Vec::new(),
             base: None,
+            fresh: Vec::new(),
             stage: Stage::FirstAttack,
         };
         state.enter_continent(campaign, 0, roll);
         state
     }
 
-    /// Starts continent `index` (`0x47E269`): its start cash replaces the
-    /// credits, each province gets a random variant, the base variant 1.
+    /// The human player in `slot`.
+    pub fn member(&self, slot: i64) -> Option<&Member> {
+        self.members.iter().find(|m| m.slot == slot)
+    }
+
+    pub fn member_mut(&mut self, slot: i64) -> Option<&mut Member> {
+        self.members.iter_mut().find(|m| m.slot == slot)
+    }
+
+    /// How many humans play.
+    pub fn humans(&self) -> usize {
+        self.members.len().clamp(1, 4)
+    }
+
+    /// Starts continent `index` (`0x47E269`): its start cash replaces
+    /// everyone's credits, each province gets a random variant, the base
+    /// variant 1.
     pub fn enter_continent(
         &mut self,
         campaign: &Campaign,
@@ -222,8 +273,11 @@ impl State {
             return;
         };
         self.continent = index;
-        self.credits = c.start_cash;
+        for m in &mut self.members {
+            m.credits = c.start_cash;
+        }
         self.base = None;
+        self.fresh.clear();
         self.provinces = c
             .provinces
             .iter()
@@ -271,13 +325,35 @@ impl State {
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let state: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        Self::from_value(serde_json::from_str(text).map_err(|e| e.to_string())?)
+    }
+
+    /// The state in `value`, of any version.
+    pub fn from_value(mut value: serde_json::Value) -> Result<Self, String> {
+        // Version 1 kept one player's credits and technology at the top.
+        if let Some(obj) = value.as_object_mut()
+            && !obj.contains_key("members")
+        {
+            let member = serde_json::json!({
+                "slot": CAMPAIGN_PLAYER,
+                "name": obj.get("name").cloned().unwrap_or_default(),
+                "credits": obj.remove("credits").unwrap_or(0.into()),
+                "tech": obj.remove("tech").unwrap_or(0.into()),
+                "unit_tech": obj.remove("unit_tech").unwrap_or(serde_json::json!({})),
+            });
+            obj.insert("members".into(), serde_json::json!([member]));
+        }
+        let mut state: Self = serde_json::from_value(value).map_err(|e| e.to_string())?;
         if state.format != FORMAT || state.version == 0 || state.version > VERSION {
             return Err(format!(
                 "unsupported campaign save {} v{}",
                 state.format, state.version
             ));
         }
+        if state.members.is_empty() {
+            return Err("campaign save without players".into());
+        }
+        state.version = VERSION;
         Ok(state)
     }
 }
@@ -362,7 +438,8 @@ fn distances(size: i64, zone: &[(i64, i64)]) -> Vec<i64> {
 
 impl Viewer {
     pub(crate) fn campaign_save_path(&self) -> Option<PathBuf> {
-        self.saves.as_ref().map(|d| d.join(SAVE))
+        let name = if self.networked() { SAVE_ONLINE } else { SAVE };
+        self.saves.as_ref().map(|d| d.join(name))
     }
 
     /// Whether a campaign save exists for LOAD CAMPAIGN.
@@ -370,7 +447,11 @@ impl Viewer {
         self.campaign_save_path().is_some_and(|p| p.is_file())
     }
 
+    /// Keeps the campaign on disk (a client leaves it to the host).
     pub(crate) fn save_campaign(&mut self) {
+        if self.net.host.is_some() {
+            return;
+        }
         let (Some(path), Some(session)) = (self.campaign_save_path(), &self.campaign) else {
             return;
         };
@@ -384,7 +465,23 @@ impl Viewer {
         }
     }
 
+    /// The campaign has ended: back to the main menu, or to the lobby
+    /// online.
+    fn campaign_over(&mut self) {
+        self.campaign = None;
+        self.strategic = None;
+        self.base_editor = None;
+        if self.networked() {
+            self.open_lobby();
+        } else {
+            self.open_main_menu();
+        }
+    }
+
     fn delete_campaign_save(&mut self) {
+        if self.net.host.is_some() {
+            return;
+        }
         if let Some(path) = self.campaign_save_path() {
             let _ = std::fs::remove_file(path);
         }
@@ -400,11 +497,91 @@ impl Viewer {
             }
         };
         let rng = &mut self.rng;
-        let state = State::new(&data, name, difficulty, || rng.rand());
+        let state = State::new(
+            &data,
+            &[(CAMPAIGN_PLAYER, name.to_owned())],
+            difficulty,
+            || rng.rand(),
+        );
         self.campaign = Some(Session { data, state });
         self.save_campaign();
         self.begin_base_battle();
         // The first continent's introduction (`0x47ef17`).
+        self.play_continent_intro();
+    }
+
+    /// START in Campaign mode (host): a new co-op campaign for everyone in
+    /// the waiting area, at the chosen difficulty.
+    pub(crate) fn start_online_campaign(&mut self, difficulty: i64) {
+        let online = self.net.online.as_ref();
+        let players: Vec<(i64, String)> = self
+            .seats
+            .humans()
+            .map(|slot| {
+                let name = online.and_then(|o| o.names.get(&slot).cloned());
+                (
+                    slot,
+                    name.unwrap_or_else(|| libday_view::minimap::player_name(slot)),
+                )
+            })
+            .collect();
+        let data = match self.game.original_campaign() {
+            Ok(data) => data,
+            Err(e) => {
+                self.error = Some(format!("campaign: {e}"));
+                return;
+            }
+        };
+        let rng = &mut self.rng;
+        let state = State::new(&data, &players, difficulty, || rng.rand());
+        let seed = match &mut self.net.seeds {
+            Some(seeds) => seeds.rand() as u32,
+            None => self.rng.rand() as u32,
+        };
+        self.seats.local = self.seats.first_local();
+        if let Some(online) = &mut self.net.online {
+            online.started = true;
+        }
+        self.net.log.clear();
+        self.net.desync = None;
+        let humans = players.len();
+        let text = state.to_json();
+        for peer in &self.net.peers {
+            peer.link.send(&crate::link::ToClient::Campaign {
+                state: text.clone(),
+                humans,
+                slot: peer.slot,
+                seed,
+            });
+        }
+        self.join_campaign(Session { data, state }, seed);
+    }
+
+    /// A client starts the host's co-op campaign.
+    pub(crate) fn follow_campaign(&mut self, state: &str, humans: usize, slot: i64, seed: u32) {
+        if let Some(online) = &mut self.net.online {
+            online.slot = slot;
+            online.started = true;
+        }
+        self.seats = Players::online(humans, slot);
+        let session = State::from_json(state).and_then(|state| {
+            self.game
+                .original_campaign()
+                .map(|data| Session { data, state })
+                .map_err(|e| e.to_string())
+        });
+        match session {
+            Ok(session) => self.join_campaign(session, seed),
+            Err(e) => self.error = Some(format!("the host's campaign: {e}")),
+        }
+    }
+
+    /// Every player starts the same campaign the same way.
+    fn join_campaign(&mut self, session: Session, seed: u32) {
+        self.rng = libday_view::scatter::Rand::new(seed);
+        self.campaign = Some(session);
+        self.save_campaign();
+        self.begin_base_battle();
         self.play_continent_intro();
     }
 
@@ -462,10 +639,13 @@ impl Viewer {
     /// An owner's name: the campaign's player name for the human player,
     /// "Player N" in skirmishes and "Alien" for the computer.
     pub(crate) fn player_name(&self, owner: i64) -> String {
-        match &self.campaign {
-            Some(c) if owner == CAMPAIGN_PLAYER && !c.state.name.trim().is_empty() => {
-                c.state.name.clone()
-            }
+        let named = self
+            .campaign
+            .as_ref()
+            .and_then(|c| c.state.member(owner))
+            .filter(|m| !m.name.trim().is_empty());
+        match named {
+            Some(m) => m.name.clone(),
             _ => self
                 .online_name(owner)
                 .filter(|_| self.seats.human(owner))
@@ -541,12 +721,13 @@ impl Viewer {
             }
         };
         battle.scenario.restore(&self.defs);
+        let humans = session.state.humans();
         let s = &mut battle.scenario;
         match &session.state.base {
             Some(layout) => layout.apply(s),
             None => {
-                // The other players' bases are for multiplayer.
-                let mine = |o: i64| !(2..=4).contains(&o);
+                // The bases of players not playing.
+                let mine = |o: i64| !(humans as i64 + 1..=4).contains(&o);
                 s.buildings.retain(|b| mine(b.owner));
                 s.roads.retain(|r| mine(r.owner));
                 s.walls.retain(|w| mine(w.owner));
@@ -554,7 +735,7 @@ impl Viewer {
             }
         }
         s.units.clear();
-        s.merge_players(1);
+        s.merge_players(humans);
         // Base battles only (0x47e5be → 0x47fb4e): towers become units.
         if transform {
             s.transform_buildings(&self.defs);
@@ -563,12 +744,18 @@ impl Viewer {
         Some(battle)
     }
 
-    /// Tiles of the player's zone: within [`ZONE_RADIUS`] of an owned
-    /// building.
-    fn base_zone(&self, s: &Scenario) -> Vec<(i64, i64)> {
+    /// The campaign's human slots.
+    pub(crate) fn campaign_humans(&self) -> Vec<i64> {
+        let n = self.campaign.as_ref().map_or(1, |c| c.state.humans());
+        (1..=n as i64).collect()
+    }
+
+    /// Tiles of `player`'s zone: within [`ZONE_RADIUS`] of a building of
+    /// theirs.
+    fn base_zone(&self, s: &Scenario, player: i64) -> Vec<(i64, i64)> {
         let size = s.size as i64;
         let mut tiles = vec![false; (size * size) as usize];
-        for b in s.buildings.iter().filter(|b| b.owner == CAMPAIGN_PLAYER) {
+        for b in s.buildings.iter().filter(|b| b.owner == player) {
             let (w, h) = self
                 .defs
                 .buildings
@@ -588,8 +775,9 @@ impl Viewer {
             .collect()
     }
 
-    /// Deployment points from the owned buildings (`0x47D4E7`).
-    pub(crate) fn campaign_deploy_points(&self, s: &Scenario) -> i64 {
+    /// `player`'s deployment points from their buildings (`0x47D4E7`),
+    /// less with more players.
+    pub(crate) fn campaign_deploy_points(&self, s: &Scenario, player: i64) -> i64 {
         let Some(session) = &self.campaign else {
             return 0;
         };
@@ -598,7 +786,7 @@ impl Viewer {
         };
         let mut hq = false;
         let mut sum = 0;
-        for b in s.buildings.iter().filter(|b| b.owner == CAMPAIGN_PLAYER) {
+        for b in s.buildings.iter().filter(|b| b.owner == player) {
             if let Some(&(_, p)) = DEPLOY_POINTS.iter().find(|(k, _)| *k == b.kind) {
                 if b.kind == HQ {
                     if hq {
@@ -609,15 +797,16 @@ impl Viewer {
                 sum += p;
             }
         }
-        sum * session.state.deploy_percent(c) / 100
+        let players = PLAYERS_PERCENT[session.state.humans() - 1];
+        sum * session.state.deploy_percent(c) / 100 * players / 100
     }
 
-    /// Building types the player owns.
-    pub(crate) fn owned_buildings(&self, s: &Scenario) -> Vec<i64> {
+    /// Building types `player` owns.
+    pub(crate) fn owned_buildings(&self, s: &Scenario, player: i64) -> Vec<i64> {
         let mut kinds: Vec<i64> = s
             .buildings
             .iter()
-            .filter(|b| b.owner == CAMPAIGN_PLAYER)
+            .filter(|b| b.owner == player)
             .map(|b| b.kind)
             .collect();
         kinds.sort_unstable();
@@ -698,11 +887,7 @@ impl Viewer {
         let roster = session.roster();
         let size = s.size as i64;
         let mut sources = zone.to_vec();
-        for u in s
-            .units
-            .iter()
-            .filter(|u| u.owner == CAMPAIGN_PLAYER && u.arrival == 0)
-        {
+        for u in s.units.iter().filter(|u| u.owner != AI && u.arrival == 0) {
             let (w, h) = self
                 .defs
                 .unit(u.kind)
@@ -752,25 +937,28 @@ impl Viewer {
             return;
         };
         let s = &mut battle.scenario;
-        let zone = self.base_zone(s);
-        s.deployments = zone
-            .iter()
-            .enumerate()
-            .map(|(i, &(x, y))| Deployment {
-                counter: i as i64 + 1,
-                player: CAMPAIGN_PLAYER,
-                x,
-                y,
-                turn: 0,
-            })
-            .collect();
-        self.place_attackers(s, &zone);
-        let points = self.campaign_deploy_points(s);
-        s.info.points = points;
-        let owned = self.owned_buildings(s);
+        let mut all = Vec::new();
+        s.deployments.clear();
+        let mut points = Vec::new();
+        for player in self.campaign_humans() {
+            let zone = self.base_zone(s, player);
+            for &(x, y) in &zone {
+                s.deployments.push(Deployment {
+                    counter: s.deployments.len() as i64 + 1,
+                    player,
+                    x,
+                    y,
+                    turn: 0,
+                });
+            }
+            all.extend(zone);
+            points.push((player, self.campaign_deploy_points(s, player)));
+        }
+        self.place_attackers(s, &all);
+        let owned = self.owned_buildings(s, self.seats.local);
         let units = self.campaign_units(&owned);
         let automated = self.campaign_automated(&owned);
-        self.begin_campaign_battle(battle, units, automated);
+        self.begin_campaign_battle(battle, units, automated, points);
     }
 
     /// Attacks province `n` (`CServerPhaseTactic`): its scenario, the
@@ -779,8 +967,12 @@ impl Viewer {
         let Some(base) = self.load_base(false) else {
             return;
         };
-        let points = self.campaign_deploy_points(&base.scenario);
-        let owned = self.owned_buildings(&base.scenario);
+        let points: Vec<(i64, i64)> = self
+            .campaign_humans()
+            .into_iter()
+            .map(|p| (p, self.campaign_deploy_points(&base.scenario, p)))
+            .collect();
+        let owned = self.owned_buildings(&base.scenario, self.seats.local);
         let Some(session) = &self.campaign else {
             return;
         };
@@ -788,6 +980,7 @@ impl Viewer {
             return;
         };
         let difficulty = session.state.difficulty;
+        let humans = session.state.humans();
         let mut battle = match Battle::start(&self.game, &file) {
             Ok(b) => b,
             Err(e) => {
@@ -796,31 +989,44 @@ impl Viewer {
             }
         };
         battle.scenario.restore(&self.defs);
-        battle.scenario.merge_players(1);
+        battle.scenario.merge_players(humans);
         battle.difficulty = difficulty;
-        battle.scenario.info.points = points;
         let units = self.campaign_units(&owned);
         let automated = self.campaign_automated(&owned);
         if let Some(session) = &mut self.campaign {
             session.state.stage = Stage::Tactic { province: n };
         }
         self.save_campaign();
-        self.begin_campaign_battle(battle, units, automated);
+        self.begin_campaign_battle(battle, units, automated, points);
     }
 
-    /// Shows `battle` and opens its briefing with the campaign's army.
-    fn begin_campaign_battle(&mut self, battle: Battle, units: Vec<i64>, automated: Vec<i64>) {
+    /// Shows `battle` and opens its briefing with the campaign's army, the
+    /// humans' deployment `points`.
+    fn begin_campaign_battle(
+        &mut self,
+        mut battle: Battle,
+        units: Vec<i64>,
+        automated: Vec<i64>,
+        points: Vec<(i64, i64)>,
+    ) {
+        self.base_editor = None;
+        battle.scenario.info.points = points.first().map_or(0, |&(_, p)| p);
         self.show_campaign_map(battle);
-        let (tech, points) = self.campaign.as_ref().map_or((Vec::new(), 0), |c| {
-            let t = &c.state.unit_tech;
-            (
-                units
-                    .iter()
-                    .map(|k| t.get(k).copied().unwrap_or(0))
-                    .collect(),
-                c.state.tech,
-            )
-        });
+        self.flow.campaign_points = points;
+        let me = self.seats.local;
+        let (tech, points) = self
+            .campaign
+            .as_ref()
+            .and_then(|c| c.state.member(me))
+            .map_or((Vec::new(), 0), |m| {
+                (
+                    units
+                        .iter()
+                        .map(|k| m.unit_tech.get(k).copied().unwrap_or(0))
+                        .collect(),
+                    m.tech,
+                )
+            });
         self.flow.setup = Some(Setup {
             units,
             tech,
@@ -834,7 +1040,9 @@ impl Viewer {
             scroll: 0,
             deployed: Vec::new(),
         });
-        self.seats = Players::default();
+        if !self.networked() {
+            self.seats = Players::default();
+        }
         self.players = self.seats.overview();
         self.player = 0;
         self.begin_briefing();
@@ -860,12 +1068,17 @@ impl Viewer {
         let defs = &self.defs;
         for u in &mut self.map.battle.scenario.units {
             let tower = defs.unit(u.kind).is_some_and(|k| k.movement == 0);
-            if u.owner == CAMPAIGN_PLAYER && !tower {
+            if u.owner != AI && !tower {
                 u.action_points = Some(0);
             }
         }
         self.map.battle.clock.turn = 0;
-        self.apply_end_turn(CAMPAIGN_PLAYER);
+        while self.flow.phase == Phase::Player {
+            let player = self.map.battle.clock.player;
+            if !self.apply_end_turn(player) {
+                break;
+            }
+        }
     }
 
     /// The campaign's say on a battle's outcome: a base battle goes on while
@@ -878,7 +1091,7 @@ impl Viewer {
         if !s
             .buildings
             .iter()
-            .any(|b| b.owner == CAMPAIGN_PLAYER && b.kind == HQ)
+            .any(|b| (1..=4).contains(&b.owner) && b.kind == HQ)
         {
             return Some(Outcome::Lost);
         }
@@ -919,7 +1132,7 @@ impl Viewer {
         let state = &mut session.state;
         match (state.stage, outcome) {
             (Stage::FirstAttack, Some(Outcome::Won)) => {
-                state.tech += reward;
+                state.members.iter_mut().for_each(|m| m.tech += reward);
                 if let Some(base) = base {
                     let mut layout =
                         BaseLayout::capture(&self.map.battle.scenario, &base, &self.defs);
@@ -929,7 +1142,7 @@ impl Viewer {
                 state.stage = Stage::Strategic;
             }
             (Stage::CounterAttack { province }, Some(Outcome::Won)) => {
-                state.tech += reward;
+                state.members.iter_mut().for_each(|m| m.tech += reward);
                 if let Some(base) = base {
                     let mut layout =
                         BaseLayout::capture(&self.map.battle.scenario, &base, &self.defs);
@@ -942,14 +1155,17 @@ impl Viewer {
             // Losing the base ends the campaign.
             (Stage::FirstAttack | Stage::CounterAttack { .. }, _) => {
                 let video = session.data.videos.lost.clone();
-                self.campaign = None;
                 self.delete_campaign_save();
-                self.open_main_menu();
+                self.campaign_over();
                 self.play_video(&video);
                 return;
             }
             (Stage::Tactic { province }, Some(Outcome::Won)) => {
-                session.state.tech += reward;
+                session
+                    .state
+                    .members
+                    .iter_mut()
+                    .for_each(|m| m.tech += reward);
                 let data = session.continent().and_then(|c| c.province(province));
                 let credits = data.map_or(0, |p| p.credits);
                 let variant = session.state.province(province).map_or(1, |p| p.variant);
@@ -958,7 +1174,7 @@ impl Viewer {
                     .is_some_and(|s| s.counter_attack);
                 let state = &mut session.state;
                 let pay = state.reward(credits);
-                state.credits += pay;
+                state.members.iter_mut().for_each(|m| m.credits += pay);
                 if let Some(p) = state.province_mut(province) {
                     p.captured = true;
                 }
@@ -1047,7 +1263,7 @@ impl Viewer {
                 // The campaign is won.
                 let video = session.data.videos.won.clone();
                 self.delete_campaign_save();
-                self.open_main_menu();
+                self.campaign_over();
                 self.notice = Some("campaign won".into());
                 self.play_video(&video);
                 return;
@@ -1118,12 +1334,11 @@ mod tests {
             name: String::new(),
             difficulty: 0,
             continent: 0,
-            credits: 0,
-            tech: 0,
-            unit_tech: BTreeMap::new(),
+            members: vec![Member::new(1, "")],
             provinces: Vec::new(),
             base: None,
             stage: Stage::Strategic,
+            fresh: Vec::new(),
         };
         assert_eq!(s.reward(400), 500);
         s.difficulty = 10;
@@ -1133,6 +1348,21 @@ mod tests {
         s.difficulty = 10;
         let json = s.to_json();
         assert_eq!(State::from_json(&json).unwrap(), s);
+    }
+
+    #[test]
+    fn version_1_saves_become_one_member() {
+        let json = r#"{"format":"openlibday-campaign","version":1,"name":"Max",
+            "difficulty":4,"continent":1,"credits":300,"tech":20,
+            "unit_tech":{"2":1},"provinces":[],"base":null,
+            "stage":{"stage":"strategic"}}"#;
+        let s = State::from_json(json).unwrap();
+        assert_eq!(s.version, VERSION);
+        assert_eq!(s.members.len(), 1);
+        let m = &s.members[0];
+        assert_eq!((m.slot, m.name.as_str()), (1, "Max"));
+        assert_eq!((m.credits, m.tech), (300, 20));
+        assert_eq!(m.unit_tech.get(&2), Some(&1));
     }
 
     #[test]

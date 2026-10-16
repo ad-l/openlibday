@@ -15,6 +15,7 @@ use libday_view::scatter::Rand;
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
+use crate::base_editor::{Piece, Placed};
 use crate::link::{HostLink, Peer, ToClient, ToHost};
 use crate::skirmish::{AI, Phase};
 
@@ -148,6 +149,32 @@ pub enum Command {
     },
     /// The AI's turn is over: the next human turn begins.
     EndAiTurn,
+    /// Builds `piece` on the campaign base at `at` (a road or wall
+    /// dragged from `start`).
+    BaseBuild {
+        piece: Piece,
+        start: Option<(i64, i64)>,
+        at: (i64, i64),
+    },
+    /// Moves a structure of the campaign base onto `to`.
+    BaseMove {
+        thing: Placed,
+        to: (i64, i64),
+    },
+    /// Sells a structure of the campaign base.
+    BaseRecycle {
+        thing: Placed,
+    },
+    /// Buys the next technology level of unit type `kind` (ARMY screen).
+    ArmyUpgrade {
+        kind: i64,
+    },
+    /// The host invades campaign province `province`.
+    Invade {
+        province: i64,
+    },
+    /// The host closes the campaign battle report.
+    Proceed,
 }
 
 /// A command as run: who gave it and the seed `rand()` restarted from.
@@ -413,6 +440,16 @@ impl Viewer {
                 self.apply_end_ai_turn();
                 true
             }
+            Command::BaseBuild { piece, start, at } => {
+                self.apply_base_build(player, piece, start, at)
+            }
+            Command::BaseMove { thing, to } => self.apply_base_move(player, thing, to),
+            Command::BaseRecycle { thing } => self.apply_base_recycle(player, thing),
+            Command::ArmyUpgrade { kind } => self.apply_army_upgrade(player, kind),
+            Command::Invade { province } => {
+                player == self.seats.first_human() && self.apply_invade(province)
+            }
+            Command::Proceed => player == self.seats.first_human() && self.apply_proceed(),
         }
     }
 

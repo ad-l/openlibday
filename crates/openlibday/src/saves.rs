@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
 use crate::campaign::{Session, Stage, State};
-use crate::players::{CAMPAIGN_PLAYER, Players};
+use crate::players::Players;
 use crate::skirmish::{Phase, Setup};
 
 const FORMAT: &str = "openlibday-save";
@@ -72,6 +72,16 @@ struct Turn {
     deploy_points: i64,
 }
 
+/// A saved campaign state of any version ([`State::from_value`]).
+fn campaign_state<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<State>, D::Error> {
+    let value: Option<serde_json::Value> = Option::deserialize(d)?;
+    value
+        .filter(|v| !v.is_null())
+        .map(State::from_value)
+        .transpose()
+        .map_err(serde::de::Error::custom)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SaveFile {
     format: String,
@@ -79,7 +89,7 @@ struct SaveFile {
     /// Unix seconds.
     created: i64,
     summary: Summary,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "campaign_state")]
     campaign: Option<State>,
     /// Saved in the base editor (reopened on load).
     #[serde(default)]
@@ -246,10 +256,15 @@ impl Viewer {
     /// Whether SAVE can save now: in a campaign between battles, or during
     /// one's own turn of a game at this computer.
     pub(crate) fn can_save(&self) -> bool {
-        if self.networked() || self.saves.is_none() || self.busy() {
+        if self.saves.is_none() || self.busy() {
             return false;
         }
-        if self.campaign.is_some() && (self.strategic.is_some() || self.base_editor.is_some()) {
+        let between = self.strategic.is_some() || self.base_editor.is_some();
+        if self.networked() {
+            // The host saves an online campaign between battles.
+            return self.net.host.is_none() && self.campaign.is_some() && between;
+        }
+        if self.campaign.is_some() && between {
             return true;
         }
         match self.flow.phase {
@@ -271,7 +286,7 @@ impl Viewer {
                 .unwrap_or_default(),
             captured: state.provinces.iter().filter(|p| p.captured).count(),
             total: state.provinces.len(),
-            players: 1,
+            players: state.members.len(),
             difficulty: state.difficulty,
             title: String::new(),
             turn: 0,
@@ -281,17 +296,14 @@ impl Viewer {
     /// The base's picture: of the base editor's map, else the campaign's
     /// base.
     fn base_picture(&mut self) -> Option<Image> {
+        let me = Some(self.seats.local);
         if self.base_editor.is_some() {
-            return Some(picture(
-                &self.map.battle.scenario,
-                &self.defs,
-                Some(CAMPAIGN_PLAYER),
-            ));
+            return Some(picture(&self.map.battle.scenario, &self.defs, me));
         }
         let error = self.error.clone();
         let base = self.load_base(false);
         self.error = error;
-        Some(picture(&base?.scenario, &self.defs, Some(CAMPAIGN_PLAYER)))
+        Some(picture(&base?.scenario, &self.defs, me))
     }
 
     /// Reads the saves, newest first; the campaign's own save too when
@@ -559,10 +571,7 @@ impl Viewer {
                 .unwrap_or_default(),
         };
         let between = self.strategic.is_some() || self.base_editor.is_some();
-        let mut campaign = self.campaign.as_ref().map(|c| c.state.clone());
-        if let (Some(state), Some(layout)) = (&mut campaign, self.base_layout_now()) {
-            state.base = Some(layout);
-        }
+        let campaign = self.campaign.as_ref().map(|c| c.state.clone());
         let mut summary = match (&campaign, &self.campaign) {
             (Some(state), Some(session)) => self.campaign_summary(state, &session.data),
             _ => Summary {
@@ -658,6 +667,9 @@ impl Viewer {
     }
 
     fn restore(&mut self, file: SaveFile) -> Result<(), String> {
+        if file.campaign.as_ref().is_some_and(|c| c.members.len() > 1) {
+            return Err("an online campaign cannot be resumed alone".into());
+        }
         let battle = match &file.battle {
             Some(value) => {
                 let text = value.to_string();

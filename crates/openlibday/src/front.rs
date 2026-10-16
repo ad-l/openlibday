@@ -150,11 +150,7 @@ impl Viewer {
 
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
-            Button::LobbyStart => self
-                .net
-                .online
-                .as_ref()
-                .is_some_and(|o| o.is_host() && o.settings.mode == crate::lobby::Mode::Skirmish),
+            Button::LobbyStart => self.net.online.as_ref().is_some_and(|o| o.is_host()),
             Button::LobbySend => !self.front.chat.trim().is_empty(),
             Button::HostGame | Button::JoinGame => {
                 !self.front.name.trim().is_empty()

@@ -69,10 +69,10 @@ pub(super) fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) 
             gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
         }
     }
-    let state = &session.state;
+    let me = session.state.member(viewer.seats.local);
     for (field, value) in [
-        (Field::StrategicTech, state.tech),
-        (Field::StrategicCredits, state.credits),
+        (Field::StrategicTech, me.map_or(0, |m| m.tech)),
+        (Field::StrategicCredits, me.map_or(0, |m| m.credits)),
         (Field::StrategicZero, 0),
     ] {
         let r = layout.field(field);

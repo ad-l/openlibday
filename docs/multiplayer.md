@@ -129,7 +129,7 @@ Single player must pass all existing tests and scripts after each step.
   humans give hotseat play (script `humans N`, `scripts/hotseat.txt`):
   they deploy one after the other (CONTINUE hands over) and take their
   turns in order. Still shared: the skirmish tech setup. The campaign
-  stays one human (`CAMPAIGN_PLAYER`).
+  had one human (`CAMPAIGN_PLAYER`) until MP6.
 - MP1, `link.rs`: `ToHost::Request { command }` and `ToClient::Start {
   map, humans, slot }` / `ToClient::Run { entry }`, JSON over an mpsc
   `loopback()` pair. The host keeps a `Peer` per client in `net.peers`
@@ -168,8 +168,7 @@ Single player must pass all existing tests and scripts after each step.
   a skirmish between two processes and compare state hashes.
 - Waiting-area game information: the host's LAN address (`IP:port`) and
   a WAN address (empty until UPnP), each with a COPY button; game mode
-  (Skirmish / Campaign; campaign is not playable yet, START stays
-  disabled), difficulty (campaign only) and turn limit (1–20 min or
+  (Skirmish / Campaign), difficulty (campaign only) and turn limit (1–20 min or
   unlimited). Only the host's arrows change them; `Settings` messages keep
   the clients in step (protocol 3). With a limit, the bottom bar counts
   down the human turn (red in the last 30 s), otherwise it shows the time
@@ -204,6 +203,34 @@ Single player must pass all existing tests and scripts after each step.
     SESSIONS) and `sleep MS` (real time, for network threads); state
     `online.lan`, `online.wan`, `online.wan_note` and `games`. The TCP
     scripts find the host by discovery and join it from the list.
+- MP6, co-op campaign (protocol 5):
+  - START in Campaign mode makes a new campaign for everyone in the
+    waiting area at the chosen difficulty and sends it with
+    `ToClient::Campaign { state, humans, slot, seed }`; every copy starts
+    from the same state and `rand()` seed (`start_online_campaign`,
+    `follow_campaign`).
+  - `campaign::State` v2 keeps a `Member` per human (slot, name, credits,
+    technology points, unit levels); v1 saves become one member. The
+    continent, provinces, base layout and stage are shared.
+  - Battles: each human defends their own headquarters and deploys in
+    their own zone with their own deployment points (the sum of their HQ
+    and Deploy buildings, scaled by `PLAYERS_PERCENT`) and unit levels.
+    The base is lost only when every human HQ falls.
+  - Base building runs in parallel: building, moving and recycling are
+    the commands `BaseBuild`, `BaseMove`, `BaseRecycle`, paid from the
+    player's own credits; each player builds next to their own roads.
+    ARMY upgrades are `ArmyUpgrade`, paid from the player's own points
+    and needing their own Research Ctr.
+  - The host chooses the province (`Invade`) and closes the battle
+    reports (`Proceed`); clients are told to wait. Rewards (credits and
+    technology) go to every member in full.
+  - Only the host saves (between battles, into `campaign_online.json` and
+    the save list); an online campaign save cannot yet be resumed (alone
+    or online). Winning or losing the campaign returns to the waiting
+    area.
+  - Script command `mpcampaign [DIFFICULTY]`; `scripts/mp_campaign.txt`
+    plays the first attack, parallel base building, an upgrade and a
+    province with two copies in step.
 
 ## Transport
 
@@ -300,15 +327,14 @@ this is not a cheating concern.
 | MP3 | Lobby UI, slots (human/closed), zone merge, turn timer | 3–4 players against the AI from the menu |
 | MP4 | LAN discovery, UPnP/NAT-PMP, join code (done; awaiting a game between two homes) | internet game between two homes |
 | MP5 | Disconnect/reconnect, resync, host saves/loads | fault-injection tests pass |
-| MP6 | Co-op campaign: shared continent, bases, counterattacks | a continent played by two players |
+| MP6 | Co-op campaign: shared continent, bases, counterattacks (done; resuming online saves to do) | a continent played by two players |
 | later | Player versus player (`SCENS\DEATHM.ZIP`) | not planned yet |
 
 ## Open questions
 
-- **Co-op campaign:** the original has `CMenuNewCampaignMulti` and
-  `CServerModeCampaign`, and the campaign data contains "the other players'
-  bases" (`campaign.rs`). We need to find out how the continent, money and
-  research are shared before designing MP6.
+- **Co-op campaign:** answered for MP6 (see above): one shared continent
+  and base, per-player money and research, host-chosen provinces. Still
+  open: resuming a saved online campaign in the waiting area.
 - **Turn order with several humans:** do all human players move before the
   AI, one after the other, or at the same time?
 

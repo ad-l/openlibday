@@ -46,6 +46,12 @@ fn loopback_script() {
     play("scripts/loopback.txt", "hash ");
 }
 
+/// A host and a client in one process play the co-op campaign in step.
+#[test]
+fn mp_campaign_script() {
+    play("scripts/mp_campaign.txt", "mp campaign test passed");
+}
+
 /// A host and a client, two processes joined over TCP, play a battle in
 /// step and end with the same state hash.
 #[test]

@@ -37,6 +37,14 @@ impl Viewer {
     /// restarts from its seed.
     pub(crate) fn state_hash(&self) -> u64 {
         let mut h = Fnv::new();
+        if let Some(c) = &self.campaign
+            && self.campaign_battle().is_none()
+        {
+            // Between battles each player looks at their own screen (the
+            // overview, base building, ARMY): the campaign is all they share.
+            let _ = write!(h, "{:?}", c.state);
+            return h.finish();
+        }
         let b = &self.map.battle;
         let f = &self.flow;
         let mut scenario = b.scenario.clone();
@@ -62,11 +70,16 @@ impl Viewer {
             self.campaign.as_ref().map(|c| &c.state),
         );
         if let Some(s) = &f.setup {
-            let _ = write!(
-                h,
-                "|{:?}|{:?}|{}|{:?}",
-                s.units, s.tech, s.points, s.deployed
-            );
+            if self.campaign.is_some() {
+                // Each player's army is their own.
+                let _ = write!(h, "|{:?}", s.deployed);
+            } else {
+                let _ = write!(
+                    h,
+                    "|{:?}|{:?}|{}|{:?}",
+                    s.units, s.tech, s.points, s.deployed
+                );
+            }
         }
         h.finish()
     }

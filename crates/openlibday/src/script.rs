@@ -65,6 +65,7 @@
 //!                       in-process link and plays the next human slot
 //! as N COMMAND          run COMMAND in the copy playing slot N (1: the
 //!                       host); `wait` and `idle` always run every copy
+//! mpcampaign [DIFF]     the host starts a co-op campaign with every copy
 //! synced                fail unless every copy has the host's state hash
 //! name NAME             the player's name (for network games)
 //! host [PORT]           host a network game (default port 41530)
@@ -180,6 +181,8 @@ pub enum Command {
     /// Another copy of the game joins this one, the host, over a loopback
     /// link.
     Join,
+    /// The host starts a co-op campaign at a difficulty with every copy.
+    MpCampaign(i64),
     /// A command run by the copy playing slot N.
     As(i64, Box<Command>),
     /// Every copy has the host's state hash.
@@ -342,6 +345,10 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         "lose" => Command::Force(libday_data::objective::Outcome::Lost),
         "kill" => Command::Kill(num(args.first())?),
         "join" => Command::Join,
+        "mpcampaign" => Command::MpCampaign(match args.first() {
+            None => i64::from(crate::front::DIFFICULTY_DEFAULT),
+            n => num(n)?,
+        }),
         "as" => {
             let (slot, inner) = rest
                 .split_once(char::is_whitespace)
@@ -794,6 +801,7 @@ impl Runner<'_, '_> {
                 peer.net.inbox = Some(Default::default());
                 self.peers.push((slot, peer));
             }
+            Command::MpCampaign(difficulty) => viewer.start_online_campaign(*difficulty),
             Command::As(slot, inner) => {
                 if matches!(
                     **inner,
@@ -1209,7 +1217,14 @@ pub fn state(viewer: &Viewer) -> Value {
     );
     state["video"] = json!(viewer.cutscene.as_ref().map(|c| &c.name));
     state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
-        serde_json::to_value(&c.state).unwrap_or(Value::Null)
+        let mut v = serde_json::to_value(&c.state).unwrap_or(Value::Null);
+        // The local member's purse, as `campaign.tech` and so on.
+        if let Some(m) = c.state.member(viewer.seats.local) {
+            v["credits"] = json!(m.credits);
+            v["tech"] = json!(m.tech);
+            v["unit_tech"] = serde_json::to_value(&m.unit_tech).unwrap_or(Value::Null);
+        }
+        v
     });
     state["strategic"] = viewer.strategic.as_ref().map_or(
         Value::Null,

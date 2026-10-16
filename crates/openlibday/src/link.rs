@@ -51,6 +51,15 @@ pub enum ToClient {
         humans: usize,
         slot: i64,
     },
+    /// A co-op campaign starts with `humans` players, the client playing
+    /// `slot`: the campaign's state as JSON, and the seed `rand()` starts
+    /// from.
+    Campaign {
+        state: String,
+        humans: usize,
+        slot: i64,
+        seed: u32,
+    },
     /// A command the host ran, for the client to run in turn.
     Run { entry: Entry },
     /// The game's settings, as the host chose them.
@@ -95,7 +104,7 @@ pub struct Peer {
 }
 
 /// Version of the messages above; both ends must speak the same.
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
 /// The port a host listens on unless told otherwise.
 pub const DEFAULT_PORT: u16 = 41530;
 /// Longest message accepted (a corrupt or hostile length otherwise

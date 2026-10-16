@@ -231,16 +231,17 @@ impl Viewer {
             return 0;
         }
         let kind = a.int_or(auto_prop::UNIT_ID_DROP, 0);
-        let bought = self.flow.setup.as_ref().and_then(|s| {
+        let researched = self
+            .campaign_battle()
+            .and(self.campaign.as_ref())
+            .and_then(|c| c.state.member(player))
+            .map(|m| m.unit_tech.get(&kind).copied().unwrap_or(0));
+        let bought = || {
+            let s = self.flow.setup.as_ref()?;
             let i = s.units.iter().position(|&k| k == kind)?;
             s.tech.get(i).copied()
-        });
-        let researched = || {
-            self.campaign
-                .as_ref()
-                .and_then(|c| c.state.unit_tech.get(&kind).copied())
         };
-        let tech = bought.or_else(researched).unwrap_or(0);
+        let tech = researched.or_else(bought).unwrap_or(0);
         // A level the type lacks would leave no unit at all.
         (0..=tech)
             .rev()

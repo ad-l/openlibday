@@ -106,8 +106,11 @@ the SIL Open Font License 1.1.
 
 ## Multiplayer
 
-Co-operative skirmishes for 2–4 humans against the AI, without a central
-server. One player hosts (MULTI PLAYER, enter a name, HOST); the others
+Co-operative skirmishes and campaigns for 2–4 humans against the AI,
+without a central server. In a co-op campaign (choose Campaign in the
+waiting area) everyone shares the continent and the base, builds and
+researches with their own credits and technology, and the host picks
+the provinces to invade. One player hosts (MULTI PLAYER, enter a name, HOST); the others
 JOIN with the host's address. Games on the local network are listed in
 the SESSIONS dialog: click one, then JOIN. Everyone needs the same
 openlibday build and game data.

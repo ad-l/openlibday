@@ -243,7 +243,20 @@ impl Viewer {
             self.strategic_message(text);
             return;
         }
+        if self.net.host.is_some() {
+            self.strategic_message("The host chooses the province to invade".into());
+            return;
+        }
+        self.order(crate::command::Command::Invade { province: n });
+    }
+
+    /// [`crate::command::Command::Invade`].
+    pub(crate) fn apply_invade(&mut self, n: i64) -> bool {
+        if self.campaign.is_none() || self.campaign_battle().is_some() || !self.attackable(n) {
+            return false;
+        }
         self.begin_tactic(n);
+        true
     }
 
     /// INTELLIGENCE: the province's report over the greyed continent; the

@@ -328,8 +328,14 @@ impl Viewer {
         self.front.clipboard = Some(text);
     }
 
-    /// START (host): the skirmish selector, whose choice starts everyone.
+    /// START (host): the skirmish selector, whose choice starts everyone,
+    /// or the co-op campaign.
     pub(crate) fn lobby_start(&mut self) {
+        let settings = self.net.online.as_ref().map(|o| o.settings);
+        if let Some(settings) = settings.filter(|s| s.mode == Mode::Campaign) {
+            self.start_online_campaign(i64::from(settings.difficulty));
+            return;
+        }
         if let Err(e) = self.open_selector() {
             self.error = Some(e);
         }
@@ -608,6 +614,12 @@ impl Viewer {
                 }
                 self.join_skirmish(&map, humans, slot);
             }
+            ToClient::Campaign {
+                state,
+                humans,
+                slot,
+                seed,
+            } => self.follow_campaign(&state, humans, slot, seed),
             ToClient::Welcome { slot } => {
                 let Some(online) = &mut self.net.online else {
                     return;

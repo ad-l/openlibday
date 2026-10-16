@@ -1,0 +1,156 @@
+# MP6 co-op campaign: a host and a client (in-process copies) start the
+# campaign together. Both defend their headquarters in the first attack,
+# then each builds their own base part with their own credits and buys
+# their own upgrades; the host picks the province to invade and closes the
+# reports, and every player gets the rewards.
+# Run: openlibday --headless --script scripts/mp_campaign.txt  (needs LIBDAY_ROOT)
+seeds 7
+join
+mpcampaign 4
+wait 1
+expect video Intro1
+as 2 expect video Intro1
+key Escape
+as 2 key Escape
+wait 1
+expect video null
+as 2 expect video null
+idle
+expect screen Briefing
+as 2 expect screen Briefing
+expect map s1-1-1.mdb
+as 2 expect map s1-1-1.mdb
+synced
+expect local 1
+as 2 expect local 2
+expect campaign.stage.stage first_attack
+as 2 expect campaign.stage.stage first_attack
+expect units.0.owner 1
+expect buildings.0.owner 1
+key Return
+as 2 key Return
+idle
+synced
+deploy Trooper
+tile 22 57
+as 2 deploy Trooper
+as 2 tile 50 28
+idle
+synced
+expect units.-1.owner 2
+key Return
+key Y
+idle
+as 2 key Return
+as 2 key Y
+idle
+expect phase Player
+as 2 expect phase Player
+synced
+win
+wait 1
+expect phase Over
+as 2 expect phase Over
+synced
+wait 500
+idle
+expect screen Report
+as 2 expect screen Report
+as 2 key Return
+expect screen Report
+key Return
+idle
+synced
+expect campaign.stage.stage strategic
+as 2 expect campaign.stage.stage strategic
+expect screen Strategic
+as 2 expect screen Strategic
+button StrategicContinue
+as 2 button StrategicContinue
+expect screen BaseEditor
+as 2 expect screen BaseEditor
+as 2 build Paved Road
+as 2 expect message Click on starting point
+as 2 tile 52 26
+idle
+as 2 expect message Click on ending point of segment
+as 2 tile 52 32
+idle
+build Deploy Mk1
+tile 26 62
+expect message Deploy Mk1 has been built for 200 credits
+as 2 build Deploy Mk1
+as 2 tile 50 26
+idle
+as 2 expect message Deploy Mk1 has been built for 200 credits
+as 2 build Barracks
+as 2 tile 53 28
+idle
+as 2 expect message Barracks has been built for 100 credits
+as 2 build Paved Road
+as 2 tile 52 25
+as 2 tile 52 19
+idle
+as 2 build Research Ctr
+as 2 tile 50 21
+idle
+as 2 expect message Research Ctr has been built for 150 credits
+synced
+expect campaign.members.0.credits 425
+expect campaign.members.1.credits 154
+expect buildings.-1.owner 2
+# ARMY: player 2 upgrades Troopers with their own technology points.
+as 2 button BaseArmy
+as 2 expect screen Army
+as 2 button TechUpgrade
+idle
+as 2 expect setup.tech.0 1
+expect campaign.members.0.tech 150
+expect campaign.members.1.tech 145
+expect campaign.members.1.unit_tech.2 1
+as 2 expect campaign.unit_tech.2 1
+synced
+as 2 button TechBack
+button Campaign
+as 2 button Campaign
+expect screen Strategic
+as 2 expect screen Strategic
+# Only the host chooses the province.
+as 2 province 3
+as 2 button Attack
+as 2 expect strategic.text.0 The host chooses the province to invade
+as 2 expect screen Strategic
+province 3
+button Attack
+idle
+expect screen Briefing
+as 2 expect screen Briefing
+as 2 expect campaign.stage.stage tactic
+as 2 expect campaign.stage.province 3
+synced
+key Return
+as 2 key Return
+key Return
+key Y
+as 2 key Return
+as 2 key Y
+wait 2000
+idle
+synced
+win
+wait 500
+idle
+expect screen Report
+as 2 key Return
+idle
+as 2 expect screen Report
+key Return
+idle
+expect screen Strategic
+as 2 expect screen Strategic
+expect campaign.provinces.2.captured true
+as 2 expect campaign.provinces.2.captured true
+expect campaign.members.0.credits 897
+expect campaign.members.1.credits 626
+synced
+echo mp campaign test passed

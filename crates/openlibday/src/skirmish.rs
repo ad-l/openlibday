@@ -97,6 +97,8 @@ pub struct Flow {
     pub tech: BTreeSet<i64>,
     /// The humans done deploying.
     pub ready: BTreeSet<i64>,
+    /// A campaign battle's deployment points, per human.
+    pub campaign_points: Vec<(i64, i64)>,
 }
 
 impl Flow {
@@ -121,6 +123,7 @@ impl Flow {
             ai_budget: 0,
             tech: BTreeSet::new(),
             ready: BTreeSet::new(),
+            campaign_points: Vec::new(),
         }
     }
 }
@@ -191,9 +194,9 @@ impl Viewer {
     /// Human `player`'s credits: the campaign's in the base editor.
     pub(crate) fn credits_of(&self, player: i64) -> i64 {
         if self.base_editor.is_some()
-            && let Some(c) = &self.campaign
+            && let Some(m) = self.campaign.as_ref().and_then(|c| c.state.member(player))
         {
-            return c.state.credits;
+            return m.credits;
         }
         self.map
             .battle
@@ -204,10 +207,18 @@ impl Viewer {
     }
 
     pub(crate) fn credits_mut_of(&mut self, player: i64) -> &mut i64 {
-        if self.base_editor.is_some()
-            && let Some(c) = &mut self.campaign
+        let member = self.base_editor.is_some()
+            && self
+                .campaign
+                .as_ref()
+                .is_some_and(|c| c.state.member(player).is_some());
+        if member
+            && let Some(m) = self
+                .campaign
+                .as_mut()
+                .and_then(|c| c.state.member_mut(player))
         {
-            return &mut c.state.credits;
+            return &mut m.credits;
         }
         let players = &mut self.map.battle.players;
         let i = match players.iter().position(|p| p.player == player) {
@@ -378,7 +389,7 @@ impl Viewer {
         let Some(setup) = &self.flow.setup else {
             return false;
         };
-        if self.net.host.is_some() {
+        if self.net.host.is_some() && self.screen != Screen::Army {
             return false;
         }
         let open = match self.screen {
@@ -395,7 +406,17 @@ impl Viewer {
         if !self.can_upgrade() {
             return;
         }
-        let cell = self.flow.setup.as_ref().map_or(0, |s| s.cell);
+        let Some(setup) = &self.flow.setup else {
+            return;
+        };
+        if self.screen == Screen::Army {
+            let Some(&kind) = setup.units.get(setup.cell) else {
+                return;
+            };
+            self.order(Command::ArmyUpgrade { kind });
+            return;
+        }
+        let cell = setup.cell;
         self.order(Command::Upgrade { cell });
     }
 
@@ -410,7 +431,6 @@ impl Viewer {
         setup.points -= cost;
         setup.tech[cell] += 1;
         self.effect(Effect::Cashout);
-        self.army_sync();
         true
     }
 
@@ -508,6 +528,9 @@ impl Viewer {
         self.seats.local = self.seats.first_local();
         let info_points = self.map.battle.scenario.info.points;
         self.credit_humans(info_points);
+        for (player, points) in self.flow.campaign_points.clone() {
+            *self.credits_mut_of(player) = points;
+        }
         self.centre_on_zone();
     }
 
@@ -720,7 +743,14 @@ impl Viewer {
             return false;
         };
         let (name, cost) = (k.name.clone(), self.price(k.cost));
-        if !self.deploying(player)
+        let researched = self.campaign_battle().is_none()
+            || self
+                .campaign
+                .as_ref()
+                .and_then(|c| c.state.member(player))
+                .is_some_and(|m| tech <= m.unit_tech.get(&kind).copied().unwrap_or(0));
+        if !researched
+            || !self.deploying(player)
             || cost > self.credits_of(player)
             || !self.can_deploy(player, kind, tech, x, y)
         {
@@ -1326,12 +1356,25 @@ impl Viewer {
 
     /// CONTINUE on the battle report: back to the skirmish selector, or on
     /// with the campaign.
+    /// [`Command::Proceed`]: on from a campaign battle's report.
+    pub(crate) fn apply_proceed(&mut self) -> bool {
+        if self.campaign_battle().is_none() || self.flow.report.is_none() {
+            return false;
+        }
+        self.campaign_report_closed();
+        self.flow.outcome = None;
+        self.flow.forced = None;
+        self.flow.report = None;
+        true
+    }
+
     pub(crate) fn close_report(&mut self) {
         if self.campaign_battle().is_some() {
-            self.campaign_report_closed();
-            self.flow.outcome = None;
-            self.flow.forced = None;
-            self.flow.report = None;
+            if self.net.host.is_some() {
+                self.flow.message = Some("Waiting for the host".into());
+                return;
+            }
+            self.order(Command::Proceed);
             return;
         }
         self.flow.outcome = None;

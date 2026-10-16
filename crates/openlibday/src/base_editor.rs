@@ -9,10 +9,11 @@ use libday_view::Scene;
 use libday_view::base::{self, Item, Refusal};
 use libday_view::support::building_at;
 use libday_view::ui::{BASE_ROWS, Button, Screen};
+use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
 use crate::campaign::BaseLayout;
-use crate::players::CAMPAIGN_PLAYER;
+use crate::command::Command;
 
 /// String ids (`LIBDAYEN.DLL`).
 const CANT_MOVE_HQ: u32 = 391;
@@ -42,12 +43,47 @@ enum Thing {
     Mine(Mine),
 }
 
-/// Identifies a structure across moves: a building by id, the others by
-/// type and tile.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Key {
+/// Identifies a structure of the base, in the campaign save and over the
+/// network: a building by id, the others by type and tile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Placed {
     Building(i64),
-    Tile(Item, (i64, i64)),
+    Road(i64, (i64, i64)),
+    Wall(i64, (i64, i64)),
+    Mine(i64, (i64, i64)),
+}
+
+/// What may be built ([`Item`]), over the network.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Piece {
+    Building(i64),
+    Road(i64),
+    Wall(i64),
+    Mine(i64),
+}
+
+impl From<Item> for Piece {
+    fn from(item: Item) -> Self {
+        match item {
+            Item::Building(k) => Piece::Building(k),
+            Item::Road(k) => Piece::Road(k),
+            Item::Wall(k) => Piece::Wall(k),
+            Item::Mine(k) => Piece::Mine(k),
+        }
+    }
+}
+
+impl From<Piece> for Item {
+    fn from(piece: Piece) -> Self {
+        match piece {
+            Piece::Building(k) => Item::Building(k),
+            Piece::Road(k) => Item::Road(k),
+            Piece::Wall(k) => Item::Wall(k),
+            Piece::Mine(k) => Item::Mine(k),
+        }
+    }
 }
 
 impl Thing {
@@ -76,10 +112,48 @@ impl Thing {
         }
     }
 
-    fn key(&self) -> Key {
+    fn key(&self) -> Placed {
         match self {
-            Thing::Building(b) => Key::Building(b.id),
-            _ => Key::Tile(self.item(), self.at()),
+            Thing::Building(b) => Placed::Building(b.id),
+            Thing::Road(r) => Placed::Road(r.kind, (r.x, r.y)),
+            Thing::Wall(w) => Placed::Wall(w.kind, (w.x, w.y)),
+            Thing::Mine(m) => Placed::Mine(m.kind, (m.x, m.y)),
+        }
+    }
+
+    /// The structure `key` of `s`.
+    fn find(s: &Scenario, key: Placed) -> Option<Thing> {
+        match key {
+            Placed::Building(id) => s
+                .buildings
+                .iter()
+                .find(|b| b.id == id)
+                .map(|b| Thing::Building(b.clone())),
+            Placed::Road(kind, at) => s
+                .roads
+                .iter()
+                .find(|r| r.kind == kind && (r.x, r.y) == at)
+                .map(|r| Thing::Road(r.clone())),
+            Placed::Wall(kind, at) => s
+                .walls
+                .iter()
+                .find(|w| w.kind == kind && (w.x, w.y) == at)
+                .map(|w| Thing::Wall(w.clone())),
+            Placed::Mine(kind, at) => s
+                .mines
+                .iter()
+                .find(|m| m.kind == kind && (m.x, m.y) == at)
+                .map(|m| Thing::Mine(m.clone())),
+        }
+    }
+
+    /// Takes structure `key` off `s`.
+    fn remove(s: &mut Scenario, key: Placed) {
+        match key {
+            Placed::Building(id) => s.buildings.retain(|b| b.id != id),
+            Placed::Road(..) => s.roads.retain(|r| Thing::Road(r.clone()).key() != key),
+            Placed::Wall(..) => s.walls.retain(|w| Thing::Wall(w.clone()).key() != key),
+            Placed::Mine(..) => s.mines.retain(|m| Thing::Mine(m.clone()).key() != key),
         }
     }
 
@@ -114,16 +188,13 @@ pub struct BaseEditor {
     pub scroll: usize,
     pub selected: Option<Item>,
     pub mode: Mode,
-    /// The structure MOVE lifted, and whether it was built this session.
-    picked: Option<(Thing, bool)>,
+    /// The structure MOVE lifted (off the shown map only: the campaign's
+    /// base keeps it until it is dropped).
+    picked: Option<Thing>,
     /// A road or wall segment's first tile.
     start: Option<(i64, i64)>,
-    /// Built this session: recycled for their full cost.
-    placed: Vec<Key>,
     /// Recycling asked for confirmation (a structure of an earlier session).
-    confirm: Option<Key>,
-    /// The shipped base map, for [`BaseLayout::capture`].
-    original: Option<Scenario>,
+    confirm: Option<Placed>,
     /// The scene shows a placement preview.
     ghosted: bool,
 }
@@ -134,7 +205,11 @@ impl Viewer {
         let Some(battle) = self.load_base(false) else {
             return;
         };
-        let original = battle.source.load(&self.game).ok();
+        if !self.networked()
+            && let Some(c) = &mut self.campaign
+        {
+            c.state.fresh.clear();
+        }
         self.show_campaign_map(battle);
         self.base_editor = Some(BaseEditor {
             defenses: false,
@@ -143,16 +218,15 @@ impl Viewer {
             mode: Mode::Build,
             picked: None,
             start: None,
-            placed: Vec::new(),
             confirm: None,
-            original,
             ghosted: false,
         });
+        let me = self.seats.local;
         let s = &self.map.battle.scenario;
         let hq = s
             .buildings
             .iter()
-            .find(|b| b.owner == CAMPAIGN_PLAYER && b.kind == base::HQ);
+            .find(|b| b.owner == me && b.kind == base::HQ);
         if let Some(b) = hq {
             let (w, h) = Item::Building(b.kind).size(&self.defs);
             let centre = (b.x as f64 + w as f64 / 2.0, b.y as f64 + h as f64 / 2.0);
@@ -161,48 +235,70 @@ impl Viewer {
         self.screen = self.home();
     }
 
-    /// The base as edited so far (with a structure being moved put back),
-    /// for a saved game.
-    pub(crate) fn base_layout_now(&self) -> Option<BaseLayout> {
-        let e = self.base_editor.as_ref()?;
-        let original = e.original.as_ref()?;
-        let mut s = self.map.battle.scenario.clone();
-        if let Some((thing, _)) = &e.picked {
-            thing.clone().add(&mut s);
-        }
-        Some(BaseLayout::capture(&s, original, &self.defs))
-    }
-
-    /// CAMPAIGN: keeps the base and returns to the continent overview.
+    /// CAMPAIGN: returns to the continent overview (the base is kept as it
+    /// is built).
     fn close_base_editor(&mut self) {
         self.base_put_back();
-        let layout = self.base_editor.as_ref().and_then(|e| {
-            let original = e.original.as_ref()?;
-            Some(BaseLayout::capture(
-                &self.map.battle.scenario,
-                original,
-                &self.defs,
-            ))
-        });
-        if let (Some(session), Some(layout)) = (&mut self.campaign, layout) {
-            session.state.base = Some(layout);
-        }
         self.base_editor = None;
         self.save_campaign();
         self.open_strategic();
     }
 
-    /// What the shown list offers.
-    pub(crate) fn base_list(&self) -> Vec<Item> {
-        let (Some(e), Some(session)) = (&self.base_editor, &self.campaign) else {
+    /// The campaign's base as a scenario, and the shipped base map.
+    pub(crate) fn base_now(&mut self) -> Option<(Scenario, Scenario)> {
+        let battle = self.load_base(false)?;
+        let original = battle.source.load(&self.game).ok()?;
+        Some((battle.scenario, original))
+    }
+
+    /// Keeps `s` as the campaign's base.
+    fn base_store(&mut self, s: &Scenario, original: &Scenario) {
+        let layout = BaseLayout::capture(s, original, &self.defs);
+        if let Some(c) = &mut self.campaign {
+            c.state.base = Some(layout);
+        }
+    }
+
+    /// Shows the campaign's base in an open base editor, a lifted
+    /// structure still lifted.
+    fn base_reload(&mut self) {
+        let Some(picked) = self
+            .base_editor
+            .as_ref()
+            .map(|e| e.picked.as_ref().map(Thing::key))
+        else {
+            return;
+        };
+        let Some(battle) = self.load_base(false) else {
+            return;
+        };
+        self.map.battle.scenario = battle.scenario;
+        if let Some(key) = picked {
+            Thing::remove(&mut self.map.battle.scenario, key);
+        }
+        self.rebuild();
+        self.base_refresh();
+    }
+
+    /// What base building offers `player` with `s` built.
+    fn offered(&self, player: i64, s: &Scenario, defenses: bool) -> Vec<Item> {
+        let Some(session) = &self.campaign else {
             return Vec::new();
         };
         let available = session
             .continent()
             .map(|c| c.buildings.clone())
             .unwrap_or_default();
-        let owned = self.owned_buildings(&self.map.battle.scenario);
-        base::offered(&self.defs, &available, &owned, e.defenses)
+        let owned = self.owned_buildings(s, player);
+        base::offered(&self.defs, &available, &owned, defenses)
+    }
+
+    /// What the shown list offers.
+    pub(crate) fn base_list(&self) -> Vec<Item> {
+        let Some(e) = &self.base_editor else {
+            return Vec::new();
+        };
+        self.offered(self.seats.local, &self.map.battle.scenario, e.defenses)
     }
 
     pub(crate) fn base_enabled(&self, button: Button) -> bool {
@@ -328,12 +424,9 @@ impl Viewer {
 
     /// Returns a lifted structure to where it was.
     fn base_put_back(&mut self) {
-        let Some((thing, fresh)) = self.base_editor.as_mut().and_then(|e| e.picked.take()) else {
+        let Some(thing) = self.base_editor.as_mut().and_then(|e| e.picked.take()) else {
             return;
         };
-        if fresh && let Some(e) = &mut self.base_editor {
-            e.placed.push(thing.key());
-        }
         thing.add(&mut self.map.battle.scenario);
         self.rebuild();
     }
@@ -352,12 +445,12 @@ impl Viewer {
         self.flow.message = Some(text);
     }
 
-    /// A new structure of the player's.
-    fn new_thing(&self, s: &Scenario, item: Item, (x, y): (i64, i64)) -> Thing {
+    /// A new structure of `player`'s.
+    fn new_thing(&self, s: &Scenario, player: i64, item: Item, (x, y): (i64, i64)) -> Thing {
         let surface = |list: &[Surface], kind: i64, armor: i64| Surface {
             counter: list.iter().map(|r| r.counter + 1).max().unwrap_or(1),
             kind,
-            owner: CAMPAIGN_PLAYER,
+            owner: player,
             x,
             y,
             armor,
@@ -368,7 +461,7 @@ impl Viewer {
                 counter: s.buildings.iter().map(|b| b.counter + 1).max().unwrap_or(1),
                 id: s.buildings.iter().map(|b| b.id + 1).max().unwrap_or(1),
                 kind,
-                owner: CAMPAIGN_PLAYER,
+                owner: player,
                 armor: self.defs.buildings.get(&kind).map_or(1, |b| b.armor),
                 x,
                 y,
@@ -387,31 +480,32 @@ impl Viewer {
             Item::Mine(kind) => Thing::Mine(Mine {
                 counter: s.mines.iter().map(|m| m.counter + 1).max().unwrap_or(1),
                 kind,
-                owner: CAMPAIGN_PLAYER,
+                owner: player,
                 x,
                 y,
                 armed: true,
-                // Hidden from the AI, seen by the player.
+                // Hidden from the AI, seen by the players.
                 hidden_ai: true,
                 hidden: [false; 4],
             }),
         }
     }
 
-    /// Whether `item` may be built on `at` of `s` with `credits` left.
+    /// Whether `player` may build `item` on `at` of `s` with `credits` left.
     fn buildable(
         &self,
         s: &Scenario,
+        player: i64,
         item: Item,
         at: (i64, i64),
         credits: i64,
     ) -> Result<(), Refusal> {
-        base::check(s, &self.defs, CAMPAIGN_PLAYER, item, at)?;
+        base::check(s, &self.defs, player, item, at)?;
         if let Item::Building(kind) = item
             && base::DEPLOY_CENTRES.contains(&kind)
             && s.buildings
                 .iter()
-                .filter(|b| b.owner == CAMPAIGN_PLAYER && base::DEPLOY_CENTRES.contains(&b.kind))
+                .filter(|b| b.owner == player && base::DEPLOY_CENTRES.contains(&b.kind))
                 .count()
                 >= base::MAX_DEPLOY_CENTRES
         {
@@ -423,15 +517,32 @@ impl Viewer {
         Ok(())
     }
 
+    /// `player`'s campaign credits.
+    fn member_credits(&self, player: i64) -> i64 {
+        self.campaign
+            .as_ref()
+            .and_then(|c| c.state.member(player))
+            .map_or(0, |m| m.credits)
+    }
+
+    /// Whether `key` was built since the last battle (single player: since
+    /// base building opened).
+    fn base_fresh(&self, key: Placed) -> bool {
+        self.campaign
+            .as_ref()
+            .is_some_and(|c| c.state.fresh.contains(&key))
+    }
+
     /// What a click on `at` would place: the lifted structure, or the
     /// selected item (a segment from its start, stopping at the first tile
     /// refused).
     fn base_plan(&self, at: (i64, i64)) -> Option<Plan> {
         let e = self.base_editor.as_ref()?;
+        let me = self.seats.local;
         let mut scenario = self.map.battle.scenario.clone();
-        if let Some((thing, _)) = &e.picked {
+        if let Some(thing) = &e.picked {
             let item = thing.item();
-            let r = base::check(&scenario, &self.defs, CAMPAIGN_PLAYER, item, at);
+            let r = base::check(&scenario, &self.defs, me, item, at);
             let thing = thing.clone().moved(at);
             thing.clone().add(&mut scenario);
             return Some(Plan {
@@ -453,13 +564,13 @@ impl Viewer {
         for t in tiles {
             let r = match refused {
                 Some(r) => Err(r),
-                None => self.buildable(&scenario, item, t, credits),
+                None => self.buildable(&scenario, me, item, t, credits),
             };
             match r {
                 Ok(()) => credits -= item.cost(&self.defs),
                 Err(r) => refused = Some(r),
             }
-            let thing = self.new_thing(&scenario, item, t);
+            let thing = self.new_thing(&scenario, me, item, t);
             thing.clone().add(&mut scenario);
             things.push((thing, r));
         }
@@ -492,8 +603,10 @@ impl Viewer {
         let Some(item) = e.selected else {
             return;
         };
-        if item.segment() && e.start.is_none() {
-            match self.buildable(&self.map.battle.scenario, item, at, self.credits()) {
+        let start = e.start.filter(|_| item.segment());
+        if item.segment() && start.is_none() {
+            let me = self.seats.local;
+            match self.buildable(&self.map.battle.scenario, me, item, at, self.credits()) {
                 Ok(()) => {
                     if let Some(e) = &mut self.base_editor {
                         e.start = Some(at);
@@ -510,44 +623,81 @@ impl Viewer {
         if let Some(e) = &mut self.base_editor {
             e.start = None;
         }
-        let built: Vec<Thing> = plan
-            .things
-            .iter()
-            .take_while(|(_, r)| r.is_ok())
-            .map(|(t, _)| t.clone())
-            .collect();
-        if built.is_empty() {
-            if let Some(&(_, Err(r))) = plan.things.first().as_ref().map(|(t, r)| (t, *r)).as_ref()
-            {
-                self.refusal(r);
+        match plan.things.first() {
+            Some((_, Ok(()))) => {
+                self.order(Command::BaseBuild {
+                    piece: item.into(),
+                    start,
+                    at,
+                });
             }
-            return;
+            Some(&(_, Err(r))) => self.refusal(r),
+            None => {}
         }
-        let cost = item.cost(&self.defs) * built.len() as i64;
-        *self.credits_mut() -= cost;
-        for thing in built {
-            if let Some(e) = &mut self.base_editor {
-                e.placed.push(thing.key());
-            }
-            thing.add(&mut self.map.battle.scenario);
-        }
-        let name = item.name(&self.defs);
-        if cost > 0 {
-            self.base_message(
-                BUILT_FOR,
-                "%1 has been built for %2!d! credits",
-                &name,
-                cost,
-            );
-        } else {
-            self.base_message(BUILT, "%1 has been built", &name, 0);
-        }
-        self.effect(crate::sound::Effect::Build);
-        self.rebuild();
     }
 
-    /// The structure on `at` the player may move or recycle: its index in
-    /// its list (mines first, then buildings, walls and roads).
+    /// [`Command::BaseBuild`]: `player` builds `piece` on `at`, a road or
+    /// wall from `start` as far as it may.
+    pub(crate) fn apply_base_build(
+        &mut self,
+        player: i64,
+        piece: Piece,
+        start: Option<(i64, i64)>,
+        at: (i64, i64),
+    ) -> bool {
+        let item = Item::from(piece);
+        let Some((mut s, original)) = self.base_now() else {
+            return false;
+        };
+        let offered = [false, true]
+            .into_iter()
+            .any(|d| self.offered(player, &s, d).contains(&item));
+        let tiles = match start {
+            Some(start) if item.segment() => base::segment(start, at),
+            _ => vec![at],
+        };
+        let mut credits = self.member_credits(player);
+        let mut built = Vec::new();
+        for t in tiles {
+            if !offered || self.buildable(&s, player, item, t, credits).is_err() {
+                break;
+            }
+            credits -= item.cost(&self.defs);
+            let thing = self.new_thing(&s, player, item, t);
+            built.push(thing.key());
+            thing.add(&mut s);
+        }
+        if built.is_empty() {
+            return false;
+        }
+        let cost = item.cost(&self.defs) * built.len() as i64;
+        if let Some(c) = &mut self.campaign {
+            if let Some(m) = c.state.member_mut(player) {
+                m.credits -= cost;
+            }
+            c.state.fresh.extend(built);
+        }
+        self.base_store(&s, &original);
+        self.base_reload();
+        if player == self.seats.local && self.base_editor.is_some() {
+            let name = item.name(&self.defs);
+            if cost > 0 {
+                self.base_message(
+                    BUILT_FOR,
+                    "%1 has been built for %2!d! credits",
+                    &name,
+                    cost,
+                );
+            } else {
+                self.base_message(BUILT, "%1 has been built", &name, 0);
+            }
+            self.effect(crate::sound::Effect::Build);
+        }
+        true
+    }
+
+    /// The structure on `at` the player may move or recycle (mines first,
+    /// then buildings, walls and roads).
     fn structure_on(&self, at: (i64, i64)) -> Option<Thing> {
         let s = &self.map.battle.scenario;
         if let Some(m) = s.mines.iter().find(|m| (m.x, m.y) == at) {
@@ -565,24 +715,9 @@ impl Viewer {
             .map(|r| Thing::Road(r.clone()))
     }
 
-    /// Removes `thing` from the map.
-    fn remove(&mut self, thing: &Thing) {
-        let s = &mut self.map.battle.scenario;
-        let key = thing.key();
-        match thing {
-            Thing::Building(b) => s.buildings.retain(|o| o.id != b.id),
-            Thing::Road(_) => s.roads.retain(|r| Thing::Road(r.clone()).key() != key),
-            Thing::Wall(_) => s.walls.retain(|w| Thing::Wall(w.clone()).key() != key),
-            Thing::Mine(_) => s.mines.retain(|m| Thing::Mine(m.clone()).key() != key),
-        }
-        if let Some(e) = &mut self.base_editor {
-            e.placed.retain(|&k| k != key);
-        }
-    }
-
     /// Why the player may not move or recycle `thing`.
     fn untouchable(&mut self, thing: &Thing, hq: (u32, &str)) -> bool {
-        if thing.owner() != CAMPAIGN_PLAYER {
+        if thing.owner() != self.seats.local {
             self.base_message(NOT_YOURS, "Can't recycle other's structure", "", 0);
             return true;
         }
@@ -593,6 +728,11 @@ impl Viewer {
         false
     }
 
+    /// Whether `player` may move or recycle `thing`.
+    fn movable(thing: &Thing, player: i64) -> bool {
+        thing.owner() == player && thing.item() != Item::Building(base::HQ)
+    }
+
     fn base_lift(&mut self, at: (i64, i64)) {
         let Some(thing) = self.structure_on(at) else {
             return;
@@ -600,13 +740,9 @@ impl Viewer {
         if self.untouchable(&thing, (CANT_MOVE_HQ, "Can't move HQ")) {
             return;
         }
-        let fresh = self
-            .base_editor
-            .as_ref()
-            .is_some_and(|e| e.placed.contains(&thing.key()));
-        self.remove(&thing);
+        Thing::remove(&mut self.map.battle.scenario, thing.key());
         if let Some(e) = &mut self.base_editor {
-            e.picked = Some((thing, fresh));
+            e.picked = Some(thing);
         }
         self.flow.message = None;
         self.rebuild();
@@ -616,24 +752,58 @@ impl Viewer {
         let Some(plan) = self.base_plan(at) else {
             return;
         };
-        let Some((thing, r)) = plan.things.into_iter().next() else {
+        let Some((_, r)) = plan.things.into_iter().next() else {
             return;
         };
         if let Err(r) = r {
             self.refusal(r);
             return;
         }
-        let Some((_, fresh)) = self.base_editor.as_mut().and_then(|e| e.picked.take()) else {
+        let Some(key) = self
+            .base_editor
+            .as_ref()
+            .and_then(|e| e.picked.as_ref().map(Thing::key))
+        else {
             return;
         };
-        if fresh && let Some(e) = &mut self.base_editor {
-            e.placed.push(thing.key());
+        self.order(Command::BaseMove { thing: key, to: at });
+    }
+
+    /// [`Command::BaseMove`]: `player` moves their structure `key` to `to`.
+    pub(crate) fn apply_base_move(&mut self, player: i64, key: Placed, to: (i64, i64)) -> bool {
+        let local = player == self.seats.local;
+        if local && let Some(e) = &mut self.base_editor {
+            e.picked = None;
         }
-        let name = thing.item().name(&self.defs);
-        thing.add(&mut self.map.battle.scenario);
-        self.base_message(MOVED, "%1 has been moved", &name, 0);
-        self.effect(crate::sound::Effect::Click);
-        self.rebuild();
+        let moved = self.base_shift(player, key, to);
+        self.base_reload();
+        let Some(name) = moved else {
+            return false;
+        };
+        if local && self.base_editor.is_some() {
+            self.base_message(MOVED, "%1 has been moved", &name, 0);
+            self.effect(crate::sound::Effect::Click);
+        }
+        true
+    }
+
+    /// Moves `player`'s structure `key` to `to`; its name if it moved.
+    fn base_shift(&mut self, player: i64, key: Placed, to: (i64, i64)) -> Option<String> {
+        let (mut s, original) = self.base_now()?;
+        let thing = Thing::find(&s, key).filter(|t| Self::movable(t, player))?;
+        Thing::remove(&mut s, key);
+        base::check(&s, &self.defs, player, thing.item(), to).ok()?;
+        let moved = thing.moved(to);
+        let new = moved.key();
+        let name = moved.item().name(&self.defs);
+        moved.add(&mut s);
+        if let Some(c) = &mut self.campaign {
+            for k in c.state.fresh.iter_mut().filter(|k| **k == key) {
+                *k = new;
+            }
+        }
+        self.base_store(&s, &original);
+        Some(name)
     }
 
     fn base_recycle(&mut self, at: (i64, i64)) {
@@ -644,10 +814,10 @@ impl Viewer {
             return;
         }
         let key = thing.key();
+        let fresh = self.base_fresh(key);
         let Some(e) = &mut self.base_editor else {
             return;
         };
-        let fresh = e.placed.contains(&key);
         if !fresh && e.confirm != Some(key) {
             // The original asks in a dialog; here a second click confirms.
             e.confirm = Some(key);
@@ -660,18 +830,39 @@ impl Viewer {
             return;
         }
         e.confirm = None;
+        self.order(Command::BaseRecycle { thing: key });
+    }
+
+    /// [`Command::BaseRecycle`]: `player` recycles their structure `key`,
+    /// for its full cost if it is fresh.
+    pub(crate) fn apply_base_recycle(&mut self, player: i64, key: Placed) -> bool {
+        let Some((mut s, original)) = self.base_now() else {
+            return false;
+        };
+        let Some(thing) = Thing::find(&s, key).filter(|t| Self::movable(t, player)) else {
+            return false;
+        };
         let item = thing.item();
-        let refund = if fresh {
+        let refund = if self.base_fresh(key) {
             item.cost(&self.defs)
         } else {
             item.recycle(&self.defs)
         };
-        self.remove(&thing);
-        *self.credits_mut() += refund;
-        let name = item.name(&self.defs);
-        self.base_message(RECYCLED, "%1 has been recycled", &name, 0);
-        self.effect(crate::sound::Effect::Cashin);
-        self.rebuild();
+        Thing::remove(&mut s, key);
+        if let Some(c) = &mut self.campaign {
+            c.state.fresh.retain(|&k| k != key);
+            if let Some(m) = c.state.member_mut(player) {
+                m.credits += refund;
+            }
+        }
+        self.base_store(&s, &original);
+        self.base_reload();
+        if player == self.seats.local && self.base_editor.is_some() {
+            let name = item.name(&self.defs);
+            self.base_message(RECYCLED, "%1 has been recycled", &name, 0);
+            self.effect(crate::sound::Effect::Cashin);
+        }
+        true
     }
 
     /// The prompt for the first click of a segment.

@@ -8,7 +8,7 @@
 
 pub use crate::skirmish::AI;
 
-/// The campaign's human slot: campaigns have one human until MP6.
+/// The campaign's first human slot (the only one in single-player campaigns).
 pub const CAMPAIGN_PLAYER: i64 = 1;
 
 /// Who gives a seat's orders.
