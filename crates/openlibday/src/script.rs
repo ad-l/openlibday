@@ -801,7 +801,8 @@ pub fn state(viewer: &Viewer) -> Value {
             .collect::<Vec<_>>(),
     });
     let inspect = viewer.info.map(|t| {
-        let card = libday_view::inspect::card(scenario, &viewer.defs, t);
+        let card =
+            libday_view::inspect::card_named(scenario, &viewer.defs, t, &|o| viewer.player_name(o));
         json!({"kind": t.name(), "index": t.index(), "lines": card.map(|c| c.lines)})
     });
     let mut state = json!({

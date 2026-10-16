@@ -724,10 +724,7 @@ impl Viewer {
         self.lock = None;
         self.fire_mode = None;
         self.started = self.clock.now();
-        self.flow.message = Some(format!(
-            "{}'s turn has begun",
-            libday_view::minimap::player_name(AI)
-        ));
+        self.flow.message = Some(format!("{}'s turn has begun", self.player_name(AI)));
         self.flow.ai_until = Some(self.started + AI_TURN);
         for unit in &mut self.map.battle.scenario.units {
             if unit.owner != PLAYER
@@ -769,10 +766,7 @@ impl Viewer {
             self.screen = Screen::Battle;
         }
         self.begin_player_turn();
-        self.flow.message = Some(format!(
-            "{}'s turn has begun",
-            libday_view::minimap::player_name(PLAYER)
-        ));
+        self.flow.message = Some(format!("{}'s turn has begun", self.player_name(PLAYER)));
         self.arrive_reinforcements();
         true
     }
@@ -1025,7 +1019,7 @@ impl Viewer {
             ],
             rows: [
                 [
-                    libday_view::minimap::player_name(PLAYER),
+                    self.player_name(PLAYER),
                     units(ud),
                     units(ul),
                     record.rank(&self.defs).to_string(),

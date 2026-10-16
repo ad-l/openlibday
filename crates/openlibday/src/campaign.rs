@@ -423,6 +423,15 @@ impl Viewer {
         (stage != Stage::Strategic && stage != Stage::Won).then_some(stage)
     }
 
+    /// An owner's name: the campaign's player name for the human player,
+    /// "Player N" in skirmishes and "Alien" for the computer.
+    pub(crate) fn player_name(&self, owner: i64) -> String {
+        match &self.campaign {
+            Some(c) if owner == PLAYER && !c.state.name.trim().is_empty() => c.state.name.clone(),
+            _ => libday_view::minimap::player_name(owner),
+        }
+    }
+
     /// Whether the battle is fought on the base (the AI moves first).
     pub(crate) fn defending_base(&self) -> bool {
         matches!(

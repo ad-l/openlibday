@@ -317,7 +317,7 @@ pub(super) fn draw_ai_sidebar(
         } else {
             GREY
         };
-        let text = minimap::player_name(owner);
+        let text = viewer.player_name(owner);
         gfx.text_in(canvas, fonts, &text, px, rgb, name, 0.0, 0)?;
     }
     draw_minimap(canvas, gfx, viewer, &viewer.map.scene, &viewer.art)

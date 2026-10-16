@@ -100,19 +100,24 @@ pub struct Card {
 }
 
 pub fn card(scenario: &Scenario, defs: &Definitions, target: Target) -> Option<Card> {
-    let (image, name, armor, owner, tech) = match target {
+    card_named(scenario, defs, target, &player_name)
+}
+
+/// [`card`] with the owners named by `name` (the campaign player's name).
+pub fn card_named(
+    scenario: &Scenario,
+    defs: &Definitions,
+    target: Target,
+    name: &dyn Fn(i64) -> String,
+) -> Option<Card> {
+    let (image, title, armor, owner, tech) = match target {
         Target::Unit(_) => return None,
         Target::Mine(i) => {
             let m = scenario.mines.get(i)?;
             let k = defs.mines.get(&m.kind)?;
             return Some(Card {
                 image: k.image.to_ascii_uppercase(),
-                lines: vec![
-                    k.name.clone(),
-                    String::new(),
-                    String::new(),
-                    player_name(m.owner),
-                ],
+                lines: vec![k.name.clone(), String::new(), String::new(), name(m.owner)],
             });
         }
         Target::Building(i) => {
@@ -139,10 +144,10 @@ pub fn card(scenario: &Scenario, defs: &Definitions, target: Target) -> Option<C
         }
     };
     let mut lines = vec![
-        name.clone(),
+        title.clone(),
         format!("AR {armor}"),
         String::new(),
-        player_name(owner),
+        name(owner),
     ];
     if tech > 0 {
         lines.push(format!("TECH {tech}"));

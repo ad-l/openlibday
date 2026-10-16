@@ -742,7 +742,7 @@ fn draw_unit_info(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, i
         format!("AP {ap}"),
         format!("RANGE {}", kind.range),
         format!("OVERWATCH {overwatch}"),
-        minimap::player_name(unit.owner),
+        viewer.player_name(unit.owner),
     ];
     let well_w = well.w / s;
     for (row, text) in lines.iter().enumerate() {
@@ -783,7 +783,10 @@ fn draw_structure_info(
     let px = TEXT_PX * s as f32;
     let well = layout.field(Field::Minimap);
     fill(canvas, frect(well), BLACK)?;
-    let Some(card) = libday_view::inspect::card(&viewer.map.battle.scenario, &viewer.defs, target)
+    let Some(card) =
+        libday_view::inspect::card_named(&viewer.map.battle.scenario, &viewer.defs, target, &|o| {
+            viewer.player_name(o)
+        })
     else {
         return Ok(());
     };
@@ -901,7 +904,7 @@ fn draw_overview(
     gfx.text_in(
         canvas,
         fonts,
-        &minimap::player_name(owner),
+        &viewer.player_name(owner),
         px,
         WHITE,
         r,

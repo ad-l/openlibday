@@ -30,6 +30,11 @@ wait 2000
 idle
 # The aliens have moved and it is the player's turn.
 expect phase Player
+# The campaign names the player: messages, inspection and the overview.
+expect message Max's turn has begun
+inspect 21 60
+expect inspect.lines.3 Max
+tile 21 60
 expect units.0.ap 4
 expect units.2.x 21
 win
