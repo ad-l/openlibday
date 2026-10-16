@@ -5,8 +5,6 @@
 ai modern
 skirmish Opportunity Knocks
 key Return
-key Return
-key Return
 replay target/mp_commands.json
 idle 30000
 hash

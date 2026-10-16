@@ -95,6 +95,8 @@ pub struct Flow {
     pub ai_budget: i64,
     /// Technology buildings captured by the player's units (ids).
     pub tech: BTreeSet<i64>,
+    /// The humans done deploying.
+    pub ready: BTreeSet<i64>,
 }
 
 impl Flow {
@@ -118,6 +120,7 @@ impl Flow {
             used_once: Vec::new(),
             ai_budget: 0,
             tech: BTreeSet::new(),
+            ready: BTreeSet::new(),
         }
     }
 }
@@ -271,8 +274,16 @@ impl Viewer {
             }
         };
         battle.scenario.restore(&self.defs);
-        self.seats.local = self.seats.first_human();
-        battle.scenario.merge_players(self.seats.humans().count());
+        self.seats.local = self.seats.first_local();
+        let humans = self.seats.humans().count();
+        battle.scenario.merge_players(humans);
+        for peer in &self.net.peers {
+            peer.link.send(&crate::link::ToClient::Start {
+                map: entry.file_name.clone(),
+                humans,
+                slot: peer.slot,
+            });
+        }
         if let Some(i) = self
             .maps
             .iter()
@@ -317,6 +328,28 @@ impl Viewer {
         }
     }
 
+    /// A client told by the host to start skirmish `map` with `humans`
+    /// humans, playing `slot`.
+    pub(crate) fn join_skirmish(&mut self, map: &str, humans: usize, slot: i64) {
+        self.seats = crate::players::Players::online(humans, slot);
+        if let Err(e) = self.open_selector() {
+            self.error = Some(e);
+            return;
+        }
+        let Some(pick) = self
+            .flow
+            .catalog
+            .iter()
+            .position(|e| e.file_name.eq_ignore_ascii_case(map))
+        else {
+            self.error = Some(format!("the host's skirmish {map} is missing"));
+            return;
+        };
+        self.flow.pick = pick;
+        self.show_pick();
+        self.choose_skirmish();
+    }
+
     // Technology.
 
     /// Unit type and level of technology cell `i`.
@@ -333,10 +366,15 @@ impl Viewer {
         (next && kind.cost_to_next > 0).then_some(kind.cost_to_next)
     }
 
+    /// Whether the local player may buy technology: the host buys for
+    /// everyone.
     pub(crate) fn can_upgrade(&self) -> bool {
         let Some(setup) = &self.flow.setup else {
             return false;
         };
+        if self.net.host.is_some() {
+            return false;
+        }
         let open = match self.screen {
             Screen::Tech { read_only: false } => true,
             Screen::Army => self.has_research_center(),
@@ -443,10 +481,25 @@ impl Viewer {
             .any(|d| d.is_start_zone() && (!own || d.player == player) && (d.x, d.y) == (x, y))
     }
 
+    /// [`Command::Brief`].
+    pub(crate) fn apply_brief(&mut self) -> bool {
+        if self.flow.setup.is_none()
+            || matches!(
+                self.flow.phase,
+                Phase::Deploy | Phase::Player | Phase::Ai | Phase::Over
+            )
+        {
+            return false;
+        }
+        self.begin_briefing();
+        true
+    }
+
     pub(crate) fn begin_briefing(&mut self) {
         self.flow.phase = Phase::Deploy;
+        self.flow.ready.clear();
         self.screen = Screen::Briefing;
-        self.seats.local = self.seats.first_human();
+        self.seats.local = self.seats.first_local();
         let info_points = self.map.battle.scenario.info.points;
         self.credit_humans(info_points);
         self.centre_on_zone();
@@ -583,7 +636,7 @@ impl Viewer {
     fn deploying(&self, player: i64) -> bool {
         self.seats.human(player)
             && match self.flow.phase {
-                Phase::Deploy => true,
+                Phase::Deploy => !self.flow.ready.contains(&player),
                 Phase::Player => self.flow.reinforcing && self.turn_of(player),
                 _ => false,
             }
@@ -593,6 +646,10 @@ impl Viewer {
     /// `0x44C27F`: zone, then recall, then deployment, each failure with its
     /// message and the INVALID sound).
     pub(crate) fn deploy_click(&mut self, x: i64, y: i64) {
+        if !self.deploying(self.seats.local) {
+            self.refuse("Waiting for the other players");
+            return;
+        }
         if !self.zone(x, y) {
             self.refuse("You can only deploy units in the indicated zone");
             return;
@@ -633,8 +690,10 @@ impl Viewer {
                 setup.deployed.retain(|&d| d != id);
             }
             *self.credits_mut_of(player) += refund;
-            self.flow.message = Some(format!("Unit {name} has been recalled"));
-            self.effect(Effect::Recall);
+            if player == self.seats.local {
+                self.flow.message = Some(format!("Unit {name} has been recalled"));
+                self.effect(Effect::Recall);
+            }
             self.deployed_changed();
             return true;
         }
@@ -672,8 +731,10 @@ impl Viewer {
             setup.deployed.push(id);
         }
         *self.credits_mut_of(player) -= cost;
-        self.flow.message = Some(format!("Unit {name} has been deployed"));
-        self.effect(Effect::Deploy);
+        if player == self.seats.local {
+            self.flow.message = Some(format!("Unit {name} has been deployed"));
+            self.effect(Effect::Deploy);
+        }
         self.deployed_changed();
         true
     }
@@ -703,19 +764,27 @@ impl Viewer {
     }
 
     /// The local player has deployed: the next human at this computer
-    /// deploys (hotseat), else the battle starts.
+    /// deploys (hotseat); the battle starts once every human has.
     pub(crate) fn deploy_done(&mut self) {
+        let me = self.seats.local;
+        if !self.deploying(me) {
+            return;
+        }
+        self.order(Command::Ready);
+        if self.flow.phase != Phase::Deploy {
+            return;
+        }
         let next = self
             .seats
-            .next_human(self.seats.local)
-            .filter(|&h| self.seats.is_local(h));
+            .humans()
+            .find(|&h| h != me && self.seats.is_local(h) && !self.flow.ready.contains(&h));
         let Some(next) = next else {
-            self.start_battle();
+            self.screen = Screen::Deploy;
+            self.flow.message = Some("Waiting for the other players".into());
             return;
         };
         self.seats.local = next;
         if let Some(setup) = &mut self.flow.setup {
-            setup.deployed.clear();
             setup.row = 0;
             setup.scroll = 0;
         }
@@ -725,6 +794,25 @@ impl Viewer {
             "{}: place your units in the starting zone",
             self.player_name(next)
         ));
+    }
+
+    /// [`Command::Ready`]: `player` is done deploying; the battle starts
+    /// once every human is.
+    pub(crate) fn apply_ready(&mut self, player: i64) -> bool {
+        if self.flow.phase != Phase::Deploy || !self.deploying(player) {
+            return false;
+        }
+        self.flow.ready.insert(player);
+        let units = &self.map.battle.scenario.units;
+        if let Some(setup) = &mut self.flow.setup {
+            setup
+                .deployed
+                .retain(|id| !units.iter().any(|u| u.id == *id && u.owner == player));
+        }
+        if self.seats.humans().all(|h| self.flow.ready.contains(&h)) {
+            self.apply_start_battle();
+        }
+        true
     }
 
     // Reinforcements.
@@ -753,10 +841,13 @@ impl Viewer {
             return false;
         }
         self.flow.reinforcing = true;
-        self.flow.resume = self.selected;
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.clear();
         }
+        if player != self.seats.local {
+            return true;
+        }
+        self.flow.resume = self.selected;
         self.preview = None;
         self.lock = None;
         self.fire_mode = None;
@@ -786,18 +877,16 @@ impl Viewer {
             }
         }
         self.flow.reinforcing = false;
-        self.options.deployment = false;
-        self.selected = self.flow.resume.take();
-        self.screen = Screen::Battle;
+        if player == self.seats.local {
+            self.options.deployment = false;
+            self.selected = self.flow.resume.take();
+            self.screen = Screen::Battle;
+        }
         self.rebuild();
         true
     }
 
     // Turns.
-
-    pub(crate) fn start_battle(&mut self) {
-        self.order(Command::StartBattle);
-    }
 
     /// [`Command::StartBattle`].
     pub(crate) fn apply_start_battle(&mut self) {

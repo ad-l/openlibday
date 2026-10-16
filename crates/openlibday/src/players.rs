@@ -2,6 +2,7 @@
 //! seats, the humans in slots 1 to 4 and the computer in slot 0, who
 //! controls each, and which human this copy of the game plays for. The
 //! humans play their turns one after the other in slot order, then the AI.
+//! Network games mark the other computers' humans [`Controller::Remote`].
 //! Credits are per slot ([`libday_data::battle::PlayerRecord`]); the
 //! technology bought before a skirmish is shared by the humans for now.
 
@@ -15,6 +16,8 @@ pub const CAMPAIGN_PLAYER: i64 = 1;
 pub enum Controller {
     /// A human at this computer.
     Local,
+    /// A human at another computer, whose orders come over the network.
+    Remote,
     /// The computer player ([`crate::ai`]).
     Ai,
 }
@@ -57,6 +60,19 @@ impl Players {
         Self { seats, local: 1 }
     }
 
+    /// `humans` (1 to 4) humans in a network game, this computer playing
+    /// slot `me`.
+    pub fn online(humans: usize, me: i64) -> Self {
+        let mut players = Self::new(humans);
+        for s in &mut players.seats {
+            if s.controller == Controller::Local && s.slot != me {
+                s.controller = Controller::Remote;
+            }
+        }
+        players.local = me;
+        players
+    }
+
     /// The human slots, in turn order.
     pub fn humans(&self) -> impl Iterator<Item = i64> + '_ {
         self.seats
@@ -79,6 +95,13 @@ impl Players {
 
     pub fn first_human(&self) -> i64 {
         self.humans().next().unwrap_or(1)
+    }
+
+    /// The first human at this computer.
+    pub fn first_local(&self) -> i64 {
+        self.humans()
+            .find(|&h| self.is_local(h))
+            .unwrap_or(self.local)
     }
 
     /// The human playing after `slot` in the same round, if any.
@@ -116,6 +139,16 @@ mod tests {
         p.hand_over(2);
         assert_eq!(p.local, 2);
         p.hand_over(AI);
+        assert_eq!(p.local, 2);
+    }
+
+    #[test]
+    fn online_seats_hand_over_only_to_this_computer() {
+        let mut p = Players::online(2, 2);
+        assert_eq!(p.overview(), [1, 2, AI]);
+        assert_eq!((p.local, p.first_local()), (2, 2));
+        assert!(p.human(1) && !p.is_local(1) && p.is_local(2));
+        p.hand_over(1);
         assert_eq!(p.local, 2);
     }
 }

@@ -47,7 +47,7 @@ impl Viewer {
         // Writing to `Fnv` cannot fail.
         let _ = write!(
             h,
-            "{:?}|{:?}|{:?}|{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "{:?}|{:?}|{:?}|{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
             scenario,
             b.clock,
             b.players,
@@ -58,6 +58,7 @@ impl Viewer {
             f.used_once,
             f.tech,
             f.outcome,
+            f.ready,
             self.campaign.as_ref().map(|c| &c.state),
         );
         if let Some(s) = &f.setup {

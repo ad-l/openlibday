@@ -15,6 +15,7 @@ use libday_view::scatter::Rand;
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
+use crate::link::{HostLink, Peer, ToClient, ToHost};
 use crate::skirmish::{AI, Phase};
 
 /// What a unit fires at, as sent over the wire ([`Target`]).
@@ -120,6 +121,10 @@ pub enum Command {
     Upgrade {
         cell: usize,
     },
+    /// The technology is bought: on to the briefing and deployment.
+    Brief,
+    /// The player has deployed; the battle starts once every human has.
+    Ready,
     StartBattle,
     BeginReinforce,
     FinishReinforce,
@@ -173,6 +178,13 @@ pub struct Net {
     /// On a client: the first logged command run in a state other than
     /// the host's.
     pub desync: Option<usize>,
+    /// On a host: the clients, and their requests still to run.
+    pub peers: Vec<Peer>,
+    pub requests: VecDeque<(i64, Command)>,
+    /// On a client: the link to the host.
+    pub host: Option<HostLink>,
+    /// Why a link failed.
+    pub fault: Option<String>,
 }
 
 impl Net {
@@ -210,14 +222,68 @@ impl Viewer {
             self.rng = Rand::new(seed);
         }
         self.net.log.push(entry.clone());
+        if !self.net.follows() {
+            let message = ToClient::Run {
+                entry: entry.clone(),
+            };
+            for peer in &self.net.peers {
+                peer.link.send(&message);
+            }
+        }
         self.apply(entry.player, entry.command)
+    }
+
+    /// Takes in what the links brought: a host queues its clients'
+    /// requests, a client the host's commands (and starts the skirmish it
+    /// is told to).
+    pub(crate) fn receive(&mut self) {
+        for i in 0..self.net.peers.len() {
+            loop {
+                let peer = &self.net.peers[i];
+                match peer.link.receive() {
+                    Ok(Some(ToHost::Request { command })) => {
+                        self.net.requests.push_back((peer.slot, command));
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        self.net.fault = Some(format!("player {}: {e}", peer.slot));
+                        break;
+                    }
+                }
+            }
+        }
+        while let Some(link) = &self.net.host {
+            match link.receive() {
+                Ok(Some(ToClient::Run { entry })) => {
+                    self.net.inbox.get_or_insert_default().push_back(entry);
+                }
+                Ok(Some(ToClient::Start { map, humans, slot })) => {
+                    self.join_skirmish(&map, humans, slot);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    self.net.fault = Some(format!("host: {e}"));
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Whether commands are waiting to run.
+    pub(crate) fn pending(&self) -> bool {
+        !self.net.requests.is_empty() || self.net.inbox.as_ref().is_some_and(|i| !i.is_empty())
     }
 
     /// Runs the next command received once nothing plays; returns whether
     /// one ran.
     pub(crate) fn pump(&mut self) -> bool {
+        self.receive();
         if self.busy() {
             return false;
+        }
+        if let Some((player, command)) = self.net.requests.pop_front() {
+            self.submit(player, command);
+            return true;
         }
         let Some(entry) = self.net.inbox.as_mut().and_then(VecDeque::pop_front) else {
             return false;
@@ -294,6 +360,8 @@ impl Viewer {
             Command::Deploy { x, y, kind, tech } => self.apply_deploy(player, x, y, kind, tech),
             Command::Recall { x, y } => self.apply_recall(player, x, y),
             Command::Upgrade { cell } => self.apply_upgrade(cell),
+            Command::Brief => self.apply_brief(),
+            Command::Ready => self.apply_ready(player),
             Command::StartBattle => {
                 self.apply_start_battle();
                 true
@@ -396,8 +464,12 @@ impl Viewer {
         self.order_ai(Command::Batch { walks })
     }
 
-    /// The local human's order.
+    /// The local human's order: run here, or on a client sent to the host
+    /// (it runs when the host sends it back).
     pub(crate) fn order(&mut self, command: Command) -> bool {
+        if let Some(link) = &self.net.host {
+            return link.send(&ToHost::Request { command });
+        }
         self.submit(self.seats.local, command)
     }
 

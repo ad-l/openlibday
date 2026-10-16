@@ -58,6 +58,12 @@
 //! option NAME [STEP]    change an OPTIONS table setting (Scale, Fullscreen, Intro,
 //!                       Scroll, Grid, TerrainOnly, Volume, Ai) by STEP
 //!                       (default 1; check boxes toggle)
+//! join                  another copy of the game joins this one (the host,
+//!                       seeded with 1 unless `seeds` came first) over an
+//!                       in-process link and plays the next human slot
+//! as N COMMAND          run COMMAND in the copy playing slot N (1: the
+//!                       host); `wait` and `idle` always run every copy
+//! synced                fail unless every copy has the host's state hash
 //! quit                  end the program
 //! ```
 
@@ -149,6 +155,13 @@ pub enum Command {
     Force(libday_data::objective::Outcome),
     /// Removes the unit or building with this id as if destroyed.
     Kill(i64),
+    /// Another copy of the game joins this one, the host, over a loopback
+    /// link.
+    Join,
+    /// A command run by the copy playing slot N.
+    As(i64, Box<Command>),
+    /// Every copy has the host's state hash.
+    Synced,
     Quit,
 }
 
@@ -284,9 +297,47 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         "win" => Command::Force(libday_data::objective::Outcome::Won),
         "lose" => Command::Force(libday_data::objective::Outcome::Lost),
         "kill" => Command::Kill(num(args.first())?),
+        "join" => Command::Join,
+        "as" => {
+            let (slot, inner) = rest
+                .split_once(char::is_whitespace)
+                .ok_or("missing command")?;
+            let slot = slot.parse().map_err(|_| format!("bad number {slot}"))?;
+            Command::As(slot, Box::new(parse_line(inner.trim())?))
+        }
+        "synced" => Command::Synced,
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
+}
+
+/// The owner of unit or building `id` on the battlefield.
+fn owner_of(viewer: &Viewer, id: i64) -> std::result::Result<i64, String> {
+    let s = &viewer.map.battle.scenario;
+    s.units
+        .iter()
+        .find(|u| u.id == id && u.arrival == 0)
+        .map(|u| u.owner)
+        .or_else(|| s.buildings.iter().find(|b| b.id == id).map(|b| b.owner))
+        .ok_or_else(|| format!("no unit or building {id}"))
+}
+
+/// Removes unit or building `id`, credited to `attacker`.
+fn kill(viewer: &mut Viewer, id: i64, attacker: i64) -> std::result::Result<(), String> {
+    owner_of(viewer, id)?;
+    let before = viewer.map.battle.scenario.clone();
+    let s = &mut viewer.map.battle.scenario;
+    if let Some(i) = s.units.iter().position(|u| u.id == id && u.arrival == 0) {
+        s.units.remove(i);
+    } else if let Some(i) = s.buildings.iter().position(|b| b.id == id) {
+        s.buildings.remove(i);
+    }
+    viewer.map.battle.tally(&before, attacker);
+    viewer.selected = None;
+    viewer.preview = None;
+    viewer.lock = None;
+    viewer.rebuild();
+    Ok(())
 }
 
 /// What drives a scripted run.
@@ -297,6 +348,8 @@ pub struct Runner<'a, 'r> {
     /// Shown in a window: present and pace every frame.
     pub visible: bool,
     pub frame: Duration,
+    /// The copies joined to the scripted one (`join`), with their slots.
+    pub peers: Vec<(i64, Viewer)>,
 }
 
 impl Runner<'_, '_> {
@@ -324,10 +377,7 @@ impl Runner<'_, '_> {
             }
             Command::Idle(max) => {
                 let mut n = 0;
-                while viewer.busy()
-                    || viewer.flow.ai_until.is_some()
-                    || viewer.net.inbox.as_ref().is_some_and(|i| !i.is_empty())
-                {
+                while !self.quiet(viewer) {
                     if n == *max {
                         return Err(format!("still busy after {max} frames").into());
                     }
@@ -558,28 +608,83 @@ impl Runner<'_, '_> {
                 });
                 viewer.rebuild();
             }
-            Command::Force(outcome) => viewer.flow.forced = Some(*outcome),
+            // Cheats act outside commands, so they act on every copy alike.
+            Command::Force(outcome) => {
+                for v in std::iter::once(&mut *viewer).chain(self.peers.iter_mut().map(|(_, v)| v))
+                {
+                    v.flow.forced = Some(*outcome);
+                }
+            }
             Command::Kill(id) => {
-                let before = viewer.map.battle.scenario.clone();
-                let s = &mut viewer.map.battle.scenario;
-                let owner =
-                    if let Some(i) = s.units.iter().position(|u| u.id == *id && u.arrival == 0) {
-                        s.units.remove(i).owner
-                    } else if let Some(i) = s.buildings.iter().position(|b| b.id == *id) {
-                        s.buildings.remove(i).owner
-                    } else {
-                        return Err(format!("no unit or building {id}").into());
-                    };
-                let attacker = if viewer.seats.human(owner) {
+                let attacker = if viewer.seats.human(owner_of(viewer, *id)?) {
                     crate::skirmish::AI
                 } else {
                     viewer.seats.local
                 };
-                viewer.map.battle.tally(&before, attacker);
-                viewer.selected = None;
-                viewer.preview = None;
-                viewer.lock = None;
-                viewer.rebuild();
+                for v in std::iter::once(&mut *viewer).chain(self.peers.iter_mut().map(|(_, v)| v))
+                {
+                    kill(v, *id, attacker)?;
+                }
+            }
+            Command::Join => {
+                let mut peer = viewer.peer()?;
+                let slot = self.peers.len() as i64 + 2;
+                let (to_client, to_host) = crate::link::loopback();
+                viewer.net.peers.push(crate::link::Peer {
+                    slot,
+                    link: to_client,
+                });
+                viewer
+                    .net
+                    .seeds
+                    .get_or_insert_with(|| libday_view::scatter::Rand::new(1));
+                viewer.seats = crate::players::Players::online(slot as usize, 1);
+                peer.net.host = Some(to_host);
+                peer.net.inbox = Some(Default::default());
+                self.peers.push((slot, peer));
+            }
+            Command::As(slot, inner) => {
+                if matches!(
+                    **inner,
+                    Command::Wait(_) | Command::Idle(_) | Command::Fps(_)
+                ) {
+                    return self.command(viewer, inner);
+                }
+                if *slot == 1 {
+                    return self.command(viewer, inner);
+                }
+                let i = self
+                    .peers
+                    .iter()
+                    .position(|(s, _)| s == slot)
+                    .ok_or_else(|| format!("no copy plays slot {slot}"))?;
+                let mut peer = self.peers.remove(i);
+                let result = self.command(&mut peer.1, inner);
+                self.peers.insert(i, peer);
+                return result;
+            }
+            Command::Synced => {
+                let want = viewer.state_hash();
+                for (slot, peer) in &self.peers {
+                    if let Some(fault) = &peer.net.fault {
+                        return Err(format!("slot {slot}: {fault}").into());
+                    }
+                    if let Some(n) = peer.net.desync {
+                        return Err(format!("slot {slot} desynchronised at command {n}").into());
+                    }
+                    let got = peer.state_hash();
+                    if got != want || peer.net.log.len() != viewer.net.log.len() {
+                        return Err(format!(
+                            "slot {slot}: hash {got:016x} after {} commands, host {want:016x} after {}",
+                            peer.net.log.len(),
+                            viewer.net.log.len()
+                        )
+                        .into());
+                    }
+                }
+                if let Some(fault) = &viewer.net.fault {
+                    return Err(fault.clone().into());
+                }
             }
             Command::Quit => return Ok(false),
         }
@@ -591,16 +696,29 @@ impl Runner<'_, '_> {
         Ok(!viewer.quit)
     }
 
-    /// Advances the game by one frame.
+    /// Whether no copy of the game has anything playing or to run.
+    fn quiet(&mut self, viewer: &mut Viewer) -> bool {
+        std::iter::once(viewer)
+            .chain(self.peers.iter_mut().map(|(_, v)| v))
+            .all(|v| {
+                v.receive();
+                !(v.busy() || v.flow.ai_until.is_some() || v.pending())
+            })
+    }
+
+    /// Advances the game, and every copy joined to it, by one frame.
     fn step(&mut self, viewer: &mut Viewer) -> Result {
-        // At the instant the support started, so its timing is unchanged.
-        crate::moves::preload_support(self.gfx, viewer);
-        viewer.clock.advance(self.frame);
-        if viewer.cutscene.is_some() {
-            viewer.video_tick();
-        } else {
-            viewer.tick();
-            viewer.battle_tick();
+        let frame = self.frame;
+        for v in std::iter::once(&mut *viewer).chain(self.peers.iter_mut().map(|(_, v)| v)) {
+            // At the instant the support started, so its timing is unchanged.
+            crate::moves::preload_support(self.gfx, v);
+            v.clock.advance(frame);
+            if v.cutscene.is_some() {
+                v.video_tick();
+            } else {
+                v.tick();
+                v.battle_tick();
+            }
         }
         self.show(viewer)?;
         if self.visible {

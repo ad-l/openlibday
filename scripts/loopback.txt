@@ -1,0 +1,78 @@
+# MP1 loopback: a host and a client in one process, joined by channels,
+# play a skirmish against the AI. The client only sends requests and
+# runs what the host broadcasts; both must keep the same state hash.
+# Run: openlibday --headless --script scripts/loopback.txt  (needs LIBDAY_ROOT)
+ai modern
+seeds 7
+join
+skirmish Opportunity Knocks
+key Return
+idle
+as 2 expect screen Tech
+key Return
+idle
+as 2 expect screen Briefing
+synced
+key Return
+as 2 key Return
+expect local 1
+as 2 expect local 2
+deploy Grenadier
+tile 44 18
+deploy Grenadier
+tile 45 18
+deploy Trooper
+tile 44 19
+expect units.-1.owner 1
+as 2 deploy Trooper
+as 2 tile 30 1
+as 2 deploy Trooper
+as 2 tile 31 1
+idle
+synced
+as 2 expect units.-1.owner 2
+key Return
+key Y
+idle
+expect phase Deploy
+as 2 key Return
+as 2 key Y
+idle
+expect phase Player
+as 2 expect phase Player
+synced
+button EndTurn
+idle
+expect player 2
+as 2 expect player 2
+as 2 button EndTurn
+idle 6000
+expect player 1
+expect turn 2
+as 2 expect turn 2
+synced
+# Turn 2: both move a unit, each on its own turn.
+tile 44 19
+tile 44 20
+tile 44 20
+idle
+expect units.id=149.y 20
+button EndTurn
+idle
+as 2 tile 13 21
+as 2 tile 14 22
+as 2 tile 14 22
+idle
+expect units.id=101.x 14
+as 2 expect units.id=101.x 14
+synced
+as 2 button EndTurn
+idle 6000
+synced
+# Turn 3: the battle is won; both copies show the report.
+win
+wait 1
+expect phase Over
+as 2 expect phase Over
+synced
+hash

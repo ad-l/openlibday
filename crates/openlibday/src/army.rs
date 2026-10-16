@@ -83,6 +83,8 @@ impl Viewer {
 
     /// CONTINUE: to the battle's briefing.
     pub(crate) fn tech_continue(&mut self) {
-        self.begin_briefing();
+        if self.net.host.is_none() {
+            self.order(crate::command::Command::Brief);
+        }
     }
 }

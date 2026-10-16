@@ -32,7 +32,7 @@ impl Viewer {
                 Keycode::Return | Keycode::KpEnter | Keycode::Escape if read_only => {
                     self.screen = Screen::Deploy
                 }
-                Keycode::Escape => {
+                Keycode::Escape if self.net.host.is_none() => {
                     self.screen = Screen::Skirmishes;
                     self.flow.setup = None;
                 }

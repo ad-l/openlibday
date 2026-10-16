@@ -1,7 +1,8 @@
 # Multiplayer plan
 
-Status: **MP0 done** (state hash, frame-rate independence, command layer,
-seeds, replay and player table); MP1 next. Compatibility with the original
+Status: **MP0 and MP1 done** (state hash, frame-rate independence,
+command layer, seeds, replay, player table; in-process loopback host and
+client); MP2 (TCP) next. Compatibility with the original
 executable's network protocol is not a goal.
 
 ## Goals
@@ -129,6 +130,24 @@ Single player must pass all existing tests and scripts after each step.
   they deploy one after the other (CONTINUE hands over) and take their
   turns in order. Still shared: the skirmish tech setup. The campaign
   stays one human (`CAMPAIGN_PLAYER`).
+- MP1, `link.rs`: `ToHost::Request { command }` and `ToClient::Start {
+  map, humans, slot }` / `ToClient::Run { entry }`, JSON over an mpsc
+  `loopback()` pair. The host keeps a `Peer` per client in `net.peers`
+  and broadcasts every entry it runs; a client (`net.host`) sends its
+  orders as requests, which the host submits as that peer's slot when
+  nothing plays. `receive`/`pump` move messages each frame; link errors
+  land in `net.fault`. Players can be `Remote` (`Players::online`).
+- Choosing a skirmish on the host sends `Start`, which opens the same map
+  on the client (`join_skirmish`). Only the host buys technology; leaving
+  the tech screen is the `Brief` command. Deployment runs in parallel:
+  each human deploys in its zone and CONTINUE is `Ready`; the battle starts
+  once every human is ready. UI side effects of commands (messages,
+  sounds, screen and selection changes) happen only for the local player.
+- Script commands `join` (another copy joins over a loopback link), `as N
+  COMMAND` (run a command in slot N's copy) and `synced`; the `win`/`lose`/
+  `kill` cheats act on every copy. `scripts/loopback.txt` (the
+  `loopback_script` test) deploys, plays turns with both humans and the AI,
+  and wins the battle with the copies in step throughout.
 
 ## Transport
 

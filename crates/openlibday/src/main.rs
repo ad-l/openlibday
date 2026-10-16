@@ -28,6 +28,7 @@ mod front;
 mod group;
 mod hud;
 mod input;
+mod link;
 mod menu;
 mod mixer;
 mod moves;
@@ -774,6 +775,163 @@ impl Viewer {
     }
 }
 
+/// What a [`Viewer`] is made from.
+struct Parts {
+    game: GameData,
+    defs: Definitions,
+    art: Art,
+    listbox: Option<Dbi<'static>>,
+    anims: Option<Vec<u8>>,
+    maps: Vec<String>,
+    index: usize,
+    map: Map,
+    settings: settings::Settings,
+    options_path: Option<PathBuf>,
+    density: f32,
+    output: (f32, f32),
+    sound: sound::Sound,
+    scripted: bool,
+}
+
+impl Viewer {
+    fn assemble(p: Parts) -> Self {
+        Viewer {
+            game: p.game,
+            defs: p.defs,
+            art: p.art,
+            fonts: Fonts::new(),
+            listbox: p.listbox,
+            index: p.index,
+            map: p.map,
+            maps: p.maps,
+            generation: 0,
+            options: Options::default(),
+            show_units: true,
+            grid: false,
+            zoom: p.density * p.settings.zoom as f32 / 100.0,
+            camera: (0.0, 0.0),
+            output: p.output,
+            density: p.density,
+            scale: ((p.settings.scale as f32 * p.density).round() as i32).max(1),
+            screen: Screen::Battle,
+            mouse: (0, 0),
+            pressed: None,
+            drag: None,
+            press: None,
+            minimap_drag: false,
+            info: None,
+            watch: Vec::new(),
+            hover: None,
+            selected: None,
+            group: Vec::new(),
+            grouping: false,
+            stale: false,
+            preview: None,
+            motions: Vec::new(),
+            ends: Vec::new(),
+            volley: Vec::new(),
+            lock: None,
+            attack: None,
+            net: command::Net::default(),
+            seats: players::Players::default(),
+            shot: None,
+            flights: Vec::new(),
+            supports: Vec::new(),
+            reaction: None,
+            reactions: true,
+            brain: None,
+            ai_mode: Some(p.settings.ai),
+            fire_mode: None,
+            anims: p.anims,
+            sound: p.sound,
+            objectives: true,
+            markers: Vec::new(),
+            players: Vec::new(),
+            player: 0,
+            scroll: 0,
+            entry: None,
+            clock: if p.scripted {
+                Clock::manual()
+            } else {
+                Clock::real()
+            },
+            rng: Rand::new(if p.scripted {
+                1
+            } else {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(1, |d| d.as_secs() as u32)
+            }),
+            started: Duration::ZERO,
+            saves: p
+                .options_path
+                .clone()
+                .as_deref()
+                .and_then(|p| p.parent())
+                .map(|dir| dir.join("saves")),
+            notice: None,
+            error: None,
+            trace: std::env::var_os("OPENLIBDAY_TRACE_EVENTS").is_some(),
+            flow: Flow::new(),
+            quit: false,
+            settings: p.settings,
+            settings_path: p.options_path,
+            menu: menu::Menu::default(),
+            fullscreen: None,
+            front: front::Front::default(),
+            campaign: None,
+            strategic: None,
+            base_editor: None,
+            army_view: 0,
+            cutscene: None,
+            video_serial: 0,
+        }
+    }
+
+    /// Another copy of the game at its main menu, sharing this one's data
+    /// and settings but nothing else: an in-process multiplayer client.
+    fn peer(&self) -> Result<Viewer> {
+        let game = self.game.clone();
+        let defs = self.defs.clone();
+        let art = Art::load(&game, &defs)?;
+        let listbox = game
+            .read(Dir::Imgs, "LISTBOX.DBI")
+            .ok()
+            .and_then(|bytes| Dbi::from_vec(bytes).ok());
+        let file = self.maps[self.index].clone();
+        let mut battle = Battle::start(&game, &file)?;
+        battle.scenario.restore(&defs);
+        let mut viewer = Viewer::assemble(Parts {
+            game,
+            defs,
+            art,
+            listbox,
+            anims: self.anims.clone(),
+            maps: self.maps.clone(),
+            index: self.index,
+            map: Map {
+                file,
+                battle,
+                scene: Scene::default(),
+            },
+            settings: self.settings.clone(),
+            options_path: None,
+            density: self.density,
+            output: self.output,
+            sound: sound::Sound::new(None, 0),
+            scripted: true,
+        });
+        viewer.ai_mode = self.ai_mode;
+        viewer.zoom = self.zoom;
+        viewer.scale = self.scale;
+        viewer.front.name.clear();
+        viewer.options.arrival = Some(0);
+        viewer.reset();
+        viewer.open_main_menu();
+        Ok(viewer)
+    }
+}
+
 fn main() -> Result {
     let args = parse_args()?;
     let script = match &args.script {
@@ -904,107 +1062,34 @@ fn main() -> Result {
     drop(ui);
 
     let anims = game.read(Dir::AnmsUnit, "ANMSUNIT.FF").ok();
-    let mut viewer = Viewer {
+    let sound = sound::Sound::new(
+        if args.headless {
+            None
+        } else {
+            sdl.audio().ok()
+        },
+        settings.volume,
+    );
+    let mut viewer = Viewer::assemble(Parts {
         game,
         defs,
         art,
-        fonts: Fonts::new(),
         listbox,
+        anims,
+        maps,
         index,
         map: Map {
             file,
             battle,
             scene: Scene::default(),
         },
-        maps,
-        generation: 0,
-        options: Options::default(),
-        show_units: true,
-        grid: false,
-        zoom: density * settings.zoom as f32 / 100.0,
-        camera: (0.0, 0.0),
-        output: (pw as f32, ph as f32),
-        density,
-        scale: ((settings.scale as f32 * density).round() as i32).max(1),
-        screen: Screen::Battle,
-        mouse: (0, 0),
-        pressed: None,
-        drag: None,
-        press: None,
-        minimap_drag: false,
-        info: None,
-        watch: Vec::new(),
-        hover: None,
-        selected: None,
-        group: Vec::new(),
-        grouping: false,
-        stale: false,
-        preview: None,
-        motions: Vec::new(),
-        ends: Vec::new(),
-        volley: Vec::new(),
-        lock: None,
-        attack: None,
-        net: command::Net::default(),
-        seats: players::Players::default(),
-        shot: None,
-        flights: Vec::new(),
-        supports: Vec::new(),
-        reaction: None,
-        reactions: true,
-        brain: None,
-        ai_mode: Some(settings.ai),
-        fire_mode: None,
-        anims,
-        sound: sound::Sound::new(
-            if args.headless {
-                None
-            } else {
-                sdl.audio().ok()
-            },
-            settings.volume,
-        ),
-        objectives: true,
-        markers: Vec::new(),
-        players: Vec::new(),
-        player: 0,
-        scroll: 0,
-        entry: None,
-        clock: if args.script.is_some() {
-            Clock::manual()
-        } else {
-            Clock::real()
-        },
-        rng: Rand::new(if args.script.is_some() {
-            1
-        } else {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(1, |d| d.as_secs() as u32)
-        }),
-        started: Duration::ZERO,
-        saves: options_path
-            .clone()
-            .as_deref()
-            .and_then(|p| p.parent())
-            .map(|dir| dir.join("saves")),
-        notice: None,
-        error: None,
-        trace: std::env::var_os("OPENLIBDAY_TRACE_EVENTS").is_some(),
-        flow: Flow::new(),
-        quit: false,
         settings,
-        settings_path: options_path,
-        menu: menu::Menu::default(),
-        fullscreen: None,
-        front: front::Front::default(),
-        campaign: None,
-        strategic: None,
-        base_editor: None,
-        army_view: 0,
-        cutscene: None,
-        video_serial: 0,
-    };
+        options_path,
+        density,
+        output: (pw as f32, ph as f32),
+        sound,
+        scripted: args.script.is_some(),
+    });
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.
         viewer.front.name.clear();
@@ -1027,6 +1112,7 @@ fn main() -> Result {
             events: &mut events,
             visible: !args.headless,
             frame: Duration::ZERO,
+            peers: Vec::new(),
         };
         if !runner.run(&mut viewer, path, lines)? || args.headless {
             return Ok(());

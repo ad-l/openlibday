@@ -40,6 +40,12 @@ fn replay_scripts() {
     assert_eq!(hash(&host), hash(&client));
 }
 
+/// A host and a client joined in one process play a battle in step.
+#[test]
+fn loopback_script() {
+    play("scripts/loopback.txt", "hash ");
+}
+
 #[test]
 fn combat_script() {
     play("scripts/combat.txt", "combat test passed");
