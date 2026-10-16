@@ -1,8 +1,8 @@
 # Multiplayer plan
 
-Status: **MP0 and MP1 done** (state hash, frame-rate independence,
+Status: **MP0, MP1 and MP2 done** (state hash, frame-rate independence,
 command layer, seeds, replay, player table; in-process loopback host and
-client); MP2 (TCP) next. Compatibility with the original
+client; TCP sessions, waiting area and chat); MP3 next. Compatibility with the original
 executable's network protocol is not a goal.
 
 ## Goals
@@ -148,6 +148,24 @@ Single player must pass all existing tests and scripts after each step.
   `kill` cheats act on every copy. `scripts/loopback.txt` (the
   `loopback_script` test) deploys, plays turns with both humans and the AI,
   and wins the battle with the copies in step throughout.
+- MP2, `link.rs` + `lobby.rs`: the same messages as length-prefixed JSON
+  over TCP (default port 41530). A client sends `Hello { version, digest,
+  name }`; the host refuses a different build, different game data (a
+  digest of the data files), a started game or a full one (4 humans), and
+  otherwise answers `Welcome { slot, names }`, the lowest free slot.
+  `Roster` updates the names; slots are renumbered without gaps while in
+  the waiting area. MULTI PLAYER opens SESSIONS (name, host address, HOST /
+  JOIN); both lead to the WAITING AREA (players, game information, chat).
+  The host's START opens the skirmish list; the report's CONTINUE returns
+  everyone to the waiting area. A player who leaves a started battle is
+  stood in for: the host readies, finishes reinforcing and ends turns for
+  that slot. Chat (the CHAT button or the waiting area) goes through the
+  host, which relays it to everyone; the last lines are overlaid on the
+  battle for 10 s. Saving, loading and restarting are disabled in network
+  games. CLI `--host`, `--join ADDR`, `--port N`, `--name NAME`; script
+  commands `name`, `host`, `connect`, `say` and `await PATH VALUE`.
+  `scripts/tcp_host.txt` + `tcp_client.txt` (the `tcp_scripts` test) play
+  a skirmish between two processes and compare state hashes.
 
 ## Transport
 

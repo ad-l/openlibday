@@ -104,6 +104,17 @@ Implementation: Rust + SDL3. License: MIT (code only; no game data included).
 The bundled Liberation Sans font (`crates/libday-view/assets/fonts`) is under
 the SIL Open Font License 1.1.
 
+## Multiplayer
+
+Co-operative skirmishes for 2–4 humans against the AI, without a central
+server. One player hosts (MULTI PLAYER, enter a name, HOST); the others
+JOIN with the host's address. Games use TCP port 41530: for players
+outside the host's home network, forward that port on the host's router.
+Everyone needs the same openlibday build and game data. From the command
+line: `openlibday --host --name Alice` or `openlibday --join 192.168.1.20
+--name Bob` (`--port N` to change the port). See
+[docs/multiplayer.md](docs/multiplayer.md).
+
 ## Building and running
 
 Requires stable Rust (1.88+), CMake and a C compiler (MSVC Build Tools on

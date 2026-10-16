@@ -185,6 +185,8 @@ pub struct Net {
     pub host: Option<HostLink>,
     /// Why a link failed.
     pub fault: Option<String>,
+    /// A network game's connections, players and chat.
+    pub online: Option<crate::lobby::Online>,
 }
 
 impl Net {
@@ -237,32 +239,41 @@ impl Viewer {
     /// requests, a client the host's commands (and starts the skirmish it
     /// is told to).
     pub(crate) fn receive(&mut self) {
-        for i in 0..self.net.peers.len() {
+        self.network_tick();
+        let mut gone = Vec::new();
+        let mut chat = Vec::new();
+        for peer in &self.net.peers {
             loop {
-                let peer = &self.net.peers[i];
                 match peer.link.receive() {
                     Ok(Some(ToHost::Request { command })) => {
                         self.net.requests.push_back((peer.slot, command));
                     }
+                    Ok(Some(ToHost::Chat { text })) => chat.push((peer.slot, text)),
+                    Ok(Some(ToHost::Hello { .. })) => {}
                     Ok(None) => break,
                     Err(e) => {
-                        self.net.fault = Some(format!("player {}: {e}", peer.slot));
+                        gone.push((peer.slot, e));
                         break;
                     }
                 }
             }
         }
+        for (slot, text) in chat {
+            self.relay_chat(slot, &text);
+        }
+        for (slot, e) in gone {
+            if self.online() {
+                self.peer_gone(slot);
+            } else {
+                self.net.fault = Some(format!("player {slot}: {e}"));
+            }
+        }
         while let Some(link) = &self.net.host {
             match link.receive() {
-                Ok(Some(ToClient::Run { entry })) => {
-                    self.net.inbox.get_or_insert_default().push_back(entry);
-                }
-                Ok(Some(ToClient::Start { map, humans, slot })) => {
-                    self.join_skirmish(&map, humans, slot);
-                }
+                Ok(Some(message)) => self.host_message(message),
                 Ok(None) => break,
                 Err(e) => {
-                    self.net.fault = Some(format!("host: {e}"));
+                    self.host_gone(e);
                     break;
                 }
             }
@@ -281,7 +292,7 @@ impl Viewer {
         if self.busy() {
             return false;
         }
-        if let Some((player, command)) = self.net.requests.pop_front() {
+        if let Some((player, command)) = self.net.requests.pop_front().or_else(|| self.stand_in()) {
             self.submit(player, command);
             return true;
         }

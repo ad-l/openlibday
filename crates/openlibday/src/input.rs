@@ -16,6 +16,7 @@ impl Viewer {
             return Some(running);
         }
         match (self.screen, key) {
+            (Screen::Skirmishes, Keycode::Escape) if self.online() => self.open_lobby(),
             (Screen::Skirmishes, Keycode::Escape) => self.open_main_menu(),
             (Screen::Skirmishes, Keycode::Up) => self.pick_step(-1),
             (Screen::Skirmishes, Keycode::Down) => self.pick_step(1),
@@ -32,7 +33,7 @@ impl Viewer {
                 Keycode::Return | Keycode::KpEnter | Keycode::Escape if read_only => {
                     self.screen = Screen::Deploy
                 }
-                Keycode::Escape if self.net.host.is_none() => {
+                Keycode::Escape if !self.networked() => {
                     self.screen = Screen::Skirmishes;
                     self.flow.setup = None;
                 }
@@ -104,7 +105,7 @@ impl Viewer {
             Keycode::Home => self.recentre(),
             Keycode::Equals | Keycode::Plus | Keycode::KpPlus => self.zoom_step(1, centre),
             Keycode::Minus | Keycode::KpMinus => self.zoom_step(-1, centre),
-            Keycode::PageDown | Keycode::PageUp if self.campaign.is_none() => {
+            Keycode::PageDown | Keycode::PageUp if self.campaign.is_none() && !self.networked() => {
                 // Browsing maps leaves the skirmish for the free viewer.
                 self.flow = Flow::new();
                 self.screen = Screen::Battle;
@@ -116,10 +117,14 @@ impl Viewer {
                 };
                 self.load(next);
             }
-            Keycode::F5 if matches!(self.flow.phase, Phase::Free | Phase::Player) => {
+            Keycode::F5
+                if matches!(self.flow.phase, Phase::Free | Phase::Player) && !self.networked() =>
+            {
                 self.quick_save()
             }
-            Keycode::F9 if matches!(self.flow.phase, Phase::Free | Phase::Player) => {
+            Keycode::F9
+                if matches!(self.flow.phase, Phase::Free | Phase::Player) && !self.networked() =>
+            {
                 self.quick_load()
             }
             Keycode::G => self.grid = !self.grid,
@@ -194,8 +199,8 @@ impl Viewer {
         }
         match self.screen {
             Screen::Goal | Screen::Confirm | Screen::Report | Screen::MainMenu => {}
-            Screen::NewGame if left => self.front_click(ox, oy),
-            Screen::NewGame => {}
+            Screen::NewGame | Screen::Sessions if left => self.front_click(ox, oy),
+            Screen::NewGame | Screen::Sessions | Screen::Lobby => {}
             Screen::Strategic { .. } if left => self.strategic_click(ox, oy),
             Screen::Strategic { .. } | Screen::Intelligence => {}
             Screen::Options { ask: None } if left => self.menu_click(ox, oy),

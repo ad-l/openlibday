@@ -1,13 +1,30 @@
-//! Front end: the main menu and the NEW GAME dialog.
+//! Front end: the main menu, the NEW GAME dialog, the network game
+//! dialogs (SESSIONS and the WAITING AREA) and the battle's chat.
 
-use libday_view::ui::{Rect, Screen, State, frame};
+use libday_view::minimap;
+use libday_view::ui::{self, Rect, Screen, State, frame};
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Canvas};
 use sdl3::video::Window;
 
-use super::{Gfx, Result, TEXT_PX, WHITE, fill, frect};
+use super::{Gfx, LINE, Result, TEXT_PX, WHITE, fill, frect};
 use crate::Viewer;
-use crate::front::{DIFFICULTY_MAX, NAME_BOX, SLIDER};
+use crate::front::{DIFFICULTY_MAX, NAME_BOX, SESSION_ADDRESS, SESSION_NAME, SLIDER};
+use crate::lobby::Chat;
+
+/// Labels and notes in the dialogs' khaki.
+const KHAKI: [u8; 3] = [214, 196, 132];
+const GREY: [u8; 3] = [160, 160, 160];
+/// SESSIONS: its black area; WAITING AREA: players, game information,
+/// chat and chat line boxes (dialog coordinates).
+const SESSIONS_AREA: Rect = Rect::new(14, 40, 336, 217);
+const LOBBY_PLAYERS: Rect = Rect::new(17, 70, 255, 123);
+const LOBBY_INFO: Rect = Rect::new(289, 70, 256, 123);
+const LOBBY_CHAT: Rect = Rect::new(17, 224, 527, 129);
+const LOBBY_LINE: Rect = Rect::new(15, 390, 427, 26);
+/// How long chat lines stay over the battle.
+const CHAT_SHOWN_MS: u128 = 10_000;
+const CHAT_OVERLAY_LINES: usize = 6;
 
 fn buttons(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer, screen: Screen) -> Result {
     let layout = viewer.layout();
@@ -85,6 +102,253 @@ pub(super) fn draw_new_game(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: 
     ] {
         let r = layout.in_new_game(Rect::new(x + dx, dy, w, h));
         fill(canvas, frect(r), rgb)?;
+    }
+    Ok(())
+}
+
+/// `text` with a blinking caret.
+fn caret(viewer: &Viewer, text: &str) -> String {
+    if (viewer.clock.now().as_millis() / 500).is_multiple_of(2) {
+        format!("{text}_")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// A text box's dark fill and rim.
+fn draw_box(canvas: &mut Canvas<Window>, r: Rect, s: i32, focused: bool) -> Result {
+    fill(canvas, frect(r), [0, 0, 0])?;
+    let rim = if focused { KHAKI } else { [90, 84, 60] };
+    for edge in [
+        Rect::new(r.x, r.y, r.w, s),
+        Rect::new(r.x, r.bottom() - s, r.w, s),
+        Rect::new(r.x, r.y, s, r.h),
+        Rect::new(r.right() - s, r.y, s, r.h),
+    ] {
+        fill(canvas, frect(edge), rim)?;
+    }
+    Ok(())
+}
+
+/// Wrapped lines of `text` from `y` down in `r`; returns the next `y`.
+#[allow(clippy::too_many_arguments)]
+fn paragraph(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+    text: &str,
+    rgb: [u8; 3],
+    r: Rect,
+    y: i32,
+    s: i32,
+) -> Result<i32> {
+    let px = TEXT_PX * s as f32;
+    let fonts = &viewer.fonts;
+    let mut y = y;
+    for line in ui::wrap(text, r.w as f32, |t| fonts.measure(t, px, false)) {
+        gfx.text_in(
+            canvas,
+            fonts,
+            &line,
+            px,
+            rgb,
+            Rect::new(r.x, y, r.w, LINE * s),
+            0.0,
+            0,
+        )?;
+        y += LINE * s;
+    }
+    Ok(y)
+}
+
+/// A chat line as shown: "name: text", or a notice alone.
+fn chat_text(viewer: &Viewer, chat: &Chat) -> (String, [u8; 3]) {
+    match chat.slot {
+        Some(slot) => (
+            format!("{}: {}", viewer.player_name(slot), chat.text),
+            WHITE,
+        ),
+        None => (chat.text.clone(), KHAKI),
+    }
+}
+
+pub(super) fn draw_sessions(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let layout = viewer.layout();
+    let s = layout.scale;
+    let px = TEXT_PX * s as f32;
+    let dialog = layout.sessions_dialog();
+    gfx.frame(canvas, frame::SESSIONS, dialog.x, dialog.y, s)?;
+    buttons(canvas, gfx, viewer, Screen::Sessions)?;
+    let area = layout.in_sessions(SESSIONS_AREA);
+    let inner = Rect::new(area.x + 8 * s, area.y, area.w - 16 * s, area.h);
+    paragraph(
+        canvas,
+        gfx,
+        viewer,
+        "HOST a game for others to join, or JOIN the game at an address.",
+        KHAKI,
+        inner,
+        area.y + 8 * s,
+        s,
+    )?;
+    let front = &viewer.front;
+    for (label, field, text, focused) in [
+        ("Your name", SESSION_NAME, &front.name, !front.focus_address),
+        (
+            "Host address",
+            SESSION_ADDRESS,
+            &front.address,
+            front.focus_address,
+        ),
+    ] {
+        let r = layout.in_sessions(field);
+        let l = Rect::new(inner.x, r.y, r.x - inner.x, r.h);
+        gfx.text_in(canvas, &viewer.fonts, label, px, KHAKI, l, 0.0, 0)?;
+        draw_box(canvas, r, s, focused)?;
+        let shown = if focused {
+            caret(viewer, text)
+        } else {
+            text.clone()
+        };
+        gfx.text_in(canvas, &viewer.fonts, &shown, px, WHITE, r, 0.0, 4 * s)?;
+    }
+    let below = layout.in_sessions(SESSION_ADDRESS).bottom() + 10 * s;
+    let note = format!(
+        "Games are hosted on TCP port {}. For players outside your home network to join, forward that port on your router to this computer.",
+        front.port
+    );
+    let y = paragraph(canvas, gfx, viewer, &note, GREY, inner, below, s)?;
+    if let Some(status) = &front.status {
+        paragraph(canvas, gfx, viewer, status, WHITE, inner, y + 8 * s, s)?;
+    }
+    Ok(())
+}
+
+pub(super) fn draw_lobby(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let layout = viewer.layout();
+    let s = layout.scale;
+    let px = TEXT_PX * s as f32;
+    let fonts = &viewer.fonts;
+    let dialog = layout.lobby_dialog();
+    gfx.frame(canvas, frame::LOBBY, dialog.x, dialog.y, s)?;
+    buttons(canvas, gfx, viewer, Screen::Lobby)?;
+    let Some(online) = &viewer.net.online else {
+        return Ok(());
+    };
+
+    // Players, with their colours.
+    let players = layout.in_lobby(LOBBY_PLAYERS);
+    for (row, (&slot, name)) in online.names.iter().enumerate() {
+        let y = players.y + (6 + row as i32 * 20) * s;
+        let swatch = Rect::new(players.x + 8 * s, y + 2 * s, 12 * s, 12 * s);
+        fill(canvas, frect(swatch), minimap::owner_colour(slot))?;
+        let mut text = name.clone();
+        if slot == 1 {
+            text.push_str(" (host)");
+        }
+        if slot == online.slot {
+            text.push_str(" (you)");
+        }
+        let r = Rect::new(players.x + 28 * s, y, players.w - 34 * s, 16 * s);
+        gfx.text_in(canvas, fonts, &text, px, WHITE, r, 0.0, 0)?;
+    }
+
+    // Game information.
+    let info = layout.in_lobby(LOBBY_INFO);
+    let inner = Rect::new(info.x + 6 * s, info.y, info.w - 12 * s, info.h);
+    let text = if let Some(listener) = &online.listener {
+        let lan = crate::link::lan_address().map_or_else(String::new, |a| {
+            format!(" Your address on this network is {a}.")
+        });
+        format!(
+            "You are hosting on port {}.{lan} Players outside your network need that port forwarded to this computer. Press START to choose the skirmish once everyone has joined.",
+            listener.port
+        )
+    } else {
+        format!(
+            "Connected to {}. The host chooses the skirmish.",
+            viewer.front.address.trim()
+        )
+    };
+    paragraph(canvas, gfx, viewer, &text, KHAKI, inner, info.y + 6 * s, s)?;
+
+    // Chat, newest at the bottom.
+    let chat = layout.in_lobby(LOBBY_CHAT);
+    let inner = Rect::new(chat.x + 6 * s, chat.y, chat.w - 12 * s, chat.h);
+    let mut lines = Vec::new();
+    for c in &online.chat {
+        let (text, rgb) = chat_text(viewer, c);
+        for line in ui::wrap(&text, inner.w as f32, |t| fonts.measure(t, px, false)) {
+            lines.push((line, rgb));
+        }
+    }
+    let rows = ((chat.h - 8 * s) / (LINE * s)).max(1) as usize;
+    let first = lines.len().saturating_sub(rows);
+    for (i, (line, rgb)) in lines[first..].iter().enumerate() {
+        let r = Rect::new(
+            inner.x,
+            chat.y + (4 + i as i32 * LINE) * s,
+            inner.w,
+            LINE * s,
+        );
+        gfx.text_in(canvas, fonts, line, px, *rgb, r, 0.0, 0)?;
+    }
+    let line = layout.in_lobby(LOBBY_LINE);
+    gfx.text_in(
+        canvas,
+        fonts,
+        &caret(viewer, &viewer.front.chat),
+        px,
+        WHITE,
+        line,
+        0.0,
+        6 * s,
+    )?;
+    Ok(())
+}
+
+/// Recent chat over the battle's top-left, and the line being typed.
+pub(super) fn draw_chat_overlay(
+    canvas: &mut Canvas<Window>,
+    gfx: &mut Gfx,
+    viewer: &Viewer,
+) -> Result {
+    let Some(online) = &viewer.net.online else {
+        return Ok(());
+    };
+    let layout = viewer.layout();
+    let s = layout.scale;
+    let px = TEXT_PX * s as f32;
+    let now = viewer.clock.now();
+    let chatting = viewer.front.chatting;
+    let recent: Vec<&Chat> = online
+        .chat
+        .iter()
+        .filter(|c| chatting || now.saturating_sub(c.at).as_millis() < CHAT_SHOWN_MS)
+        .collect();
+    let recent = &recent[recent.len().saturating_sub(CHAT_OVERLAY_LINES)..];
+    if recent.is_empty() && !chatting {
+        return Ok(());
+    }
+    let view = layout.viewport();
+    let width = (view.w / 2).max(200 * s);
+    let rows = recent.len() as i32 + i32::from(chatting);
+    let back = Rect::new(view.x + 4 * s, view.y + 4 * s, width, (rows * LINE + 6) * s);
+    canvas.set_blend_mode(BlendMode::Blend);
+    canvas.set_draw_color(Color::RGBA(0, 0, 0, 150));
+    canvas.fill_rect(frect(back))?;
+    canvas.set_blend_mode(BlendMode::None);
+    let mut y = back.y + 3 * s;
+    for c in recent {
+        let (text, rgb) = chat_text(viewer, c);
+        let r = Rect::new(back.x, y, back.w, LINE * s);
+        gfx.text_in(canvas, &viewer.fonts, &text, px, rgb, r, 0.0, 4 * s)?;
+        y += LINE * s;
+    }
+    if chatting {
+        let text = caret(viewer, &format!("Say: {}", viewer.front.chat));
+        let r = Rect::new(back.x, y, back.w, LINE * s);
+        gfx.text_in(canvas, &viewer.fonts, &text, px, KHAKI, r, 0.0, 4 * s)?;
     }
     Ok(())
 }

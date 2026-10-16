@@ -365,9 +365,12 @@ impl Viewer {
 
     pub(crate) fn menu_enabled(&self, button: Button) -> bool {
         match button {
-            Button::OptionsRestart => !self.menu.over_main && self.flow.phase == Phase::Player,
+            Button::OptionsRestart => {
+                !self.menu.over_main && self.flow.phase == Phase::Player && !self.networked()
+            }
             Button::OptionsSave => {
                 !self.menu.over_main
+                    && !self.networked()
                     && self.strategic.is_none()
                     && matches!(self.flow.phase, Phase::Free | Phase::Player)
                     && !self.flow.reinforcing

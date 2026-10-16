@@ -111,6 +111,8 @@ pub enum Effect {
     Selprov,
     /// A province is won (`province`, `0x44427d`).
     Province,
+    /// Another player's chat line arrives.
+    Chat,
 }
 
 impl Effect {
@@ -128,6 +130,7 @@ impl Effect {
             Effect::Cashout => "CASHOUT.WAV",
             Effect::Selprov => "SELPROV.WAV",
             Effect::Province => "PROVINCE.WAV",
+            Effect::Chat => "CHAT.WAV",
         }
     }
 }

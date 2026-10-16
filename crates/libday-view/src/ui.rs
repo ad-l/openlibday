@@ -136,6 +136,16 @@ pub mod frame {
     pub const NEW_GAME: u16 = 939;
     pub const NEW_GAME_BACK: u16 = 940;
     pub const NEW_GAME_CONTINUE: u16 = 944;
+    /// Multiplayer SESSIONS dialog (hosting or joining) and its buttons.
+    pub const SESSIONS: u16 = 917;
+    pub const SESSIONS_BACK: u16 = 918;
+    pub const JOIN_GAME: u16 = 930;
+    pub const HOST_GAME: u16 = 934;
+    /// Multiplayer WAITING AREA (lobby) and its buttons.
+    pub const LOBBY: u16 = 1013;
+    pub const LOBBY_START: u16 = 1014;
+    pub const LOBBY_SEND: u16 = 1018;
+    pub const LOBBY_BACK: u16 = 1022;
     /// Continent INTELLIGENCE dialog and its BACK.
     pub const INTEL_DIALOG: u16 = 557;
     pub const INTEL_BACK: u16 = 558;
@@ -199,8 +209,12 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (841, 841, 364, 416),
     (842, 849, 100, 24),
     (850, 857, 53, 17),
+    (917, 917, 364, 322),
+    (918, 937, 100, 24),
     (939, 939, 286, 228),
     (940, 947, 100, 24),
+    (1013, 1013, 560, 469),
+    (1014, 1025, 100, 24),
 ];
 
 fn crop_of(frame: u16) -> Option<(i32, i32)> {
@@ -431,6 +445,14 @@ pub enum Button {
     DifficultyRight,
     NewGameBack,
     NewGameContinue,
+    // Multiplayer SESSIONS dialog.
+    HostGame,
+    JoinGame,
+    SessionsBack,
+    // Multiplayer WAITING AREA.
+    LobbySend,
+    LobbyBack,
+    LobbyStart,
     // Continent (strategic) sidebar.
     Intelligence,
     Attack,
@@ -485,6 +507,11 @@ pub enum Screen {
     MainMenu,
     /// NEW CAMPAIGN: the player's name and the difficulty.
     NewGame,
+    /// MULTI PLAYER: the player's name and the host to join, or hosting.
+    Sessions,
+    /// The WAITING AREA of a network game: players, game information and
+    /// chat until the host starts a skirmish.
+    Lobby,
     /// The continent overview: choosing the province to attack; CONTINUE
     /// replaces BACK after a victory.
     Strategic {
@@ -512,7 +539,12 @@ impl Screen {
     pub fn is_dialog(self) -> bool {
         matches!(
             self,
-            Screen::Skirmishes | Screen::Tech { .. } | Screen::MainMenu | Screen::NewGame
+            Screen::Skirmishes
+                | Screen::Tech { .. }
+                | Screen::MainMenu
+                | Screen::NewGame
+                | Screen::Sessions
+                | Screen::Lobby
         )
     }
 }
@@ -607,6 +639,12 @@ impl Button {
             Button::DifficultyRight => TECH_RIGHT,
             Button::NewGameBack => NEW_GAME_BACK,
             Button::NewGameContinue => NEW_GAME_CONTINUE,
+            Button::HostGame => HOST_GAME,
+            Button::JoinGame => JOIN_GAME,
+            Button::SessionsBack => SESSIONS_BACK,
+            Button::LobbySend => LOBBY_SEND,
+            Button::LobbyBack => LOBBY_BACK,
+            Button::LobbyStart => LOBBY_START,
             Button::Intelligence => INTELLIGENCE,
             Button::Attack => ATTACK,
             Button::StrategicBack => STRATEGIC_BACK,
@@ -737,6 +775,14 @@ impl Button {
             Button::DifficultyRight => (250, 114),
             Button::NewGameBack => (10, 184),
             Button::NewGameContinue => (170, 184),
+            // Relative to the SESSIONS dialog, in its camouflage band.
+            Button::HostGame => (14, 280),
+            Button::JoinGame => (132, 280),
+            Button::SessionsBack => (250, 280),
+            // Relative to the WAITING AREA.
+            Button::LobbySend => (450, 391),
+            Button::LobbyBack => (15, 432),
+            Button::LobbyStart => (445, 432),
             Button::Intelligence => (11, 387),
             Button::Attack => (11, 407),
             Button::StrategicBack | Button::StrategicContinue => (11, 456),
@@ -999,6 +1045,12 @@ impl Layout {
             | Button::DifficultyRight
             | Button::NewGameBack
             | Button::NewGameContinue => self.s(native).offset_by(self.new_game_dialog()),
+            Button::HostGame | Button::JoinGame | Button::SessionsBack => {
+                self.s(native).offset_by(self.sessions_dialog())
+            }
+            Button::LobbySend | Button::LobbyBack | Button::LobbyStart => {
+                self.s(native).offset_by(self.lobby_dialog())
+            }
             _ => self.in_sidebar(native),
         }
     }
@@ -1025,6 +1077,24 @@ impl Layout {
     /// A rectangle in NEW GAME dialog coordinates.
     pub fn in_new_game(&self, r: Rect) -> Rect {
         self.s(r).offset_by(self.new_game_dialog())
+    }
+
+    pub fn sessions_dialog(&self) -> Rect {
+        self.centred(frame::SESSIONS)
+    }
+
+    /// A rectangle in SESSIONS dialog coordinates.
+    pub fn in_sessions(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.sessions_dialog())
+    }
+
+    pub fn lobby_dialog(&self) -> Rect {
+        self.centred(frame::LOBBY)
+    }
+
+    /// A rectangle in WAITING AREA coordinates.
+    pub fn in_lobby(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.lobby_dialog())
     }
 
     pub fn report_dialog(&self) -> Rect {
@@ -1248,6 +1318,12 @@ impl Layout {
                 Button::NewGameBack,
                 Button::NewGameContinue,
             ]),
+            Screen::Sessions => {
+                buttons.extend([Button::HostGame, Button::JoinGame, Button::SessionsBack])
+            }
+            Screen::Lobby => {
+                buttons.extend([Button::LobbySend, Button::LobbyBack, Button::LobbyStart])
+            }
             Screen::Strategic { victory } => buttons.extend([
                 Button::Intelligence,
                 Button::Attack,
@@ -1280,6 +1356,8 @@ impl Layout {
                 | Screen::Options { ask: Some(_) }
                 | Screen::MainMenu
                 | Screen::NewGame
+                | Screen::Sessions
+                | Screen::Lobby
         ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }

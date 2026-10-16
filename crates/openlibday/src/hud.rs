@@ -1090,6 +1090,8 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             return Ok(());
         }
         Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
+        Screen::Sessions => return front::draw_sessions(canvas, gfx, viewer),
+        Screen::Lobby => return front::draw_lobby(canvas, gfx, viewer),
         Screen::Tech { .. } => return setup::draw_tech(canvas, gfx, viewer),
         Screen::Overview | Screen::Briefing => draw_overview(canvas, gfx, viewer, scene, art)?,
         Screen::Battle => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
@@ -1142,6 +1144,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         let r = Rect::new(bar.x + 62 * s, r.y, r.x - bar.x - 70 * s, r.h);
         gfx.text_in(canvas, fonts, message, TEXT_PX * s as f32, WHITE, r, 0.0, 0)?;
     }
+    front::draw_chat_overlay(canvas, gfx, viewer)?;
     if viewer.screen == Screen::Confirm {
         setup::draw_confirm(canvas, gfx, viewer)?;
     }

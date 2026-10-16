@@ -46,6 +46,27 @@ fn loopback_script() {
     play("scripts/loopback.txt", "hash ");
 }
 
+/// A host and a client, two processes joined over TCP, play a battle in
+/// step and end with the same state hash.
+#[test]
+fn tcp_scripts() {
+    let host = std::thread::spawn(|| play("scripts/tcp_host.txt", "hash "));
+    // The host listens before the client's first connection attempt fails.
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    let client = play("scripts/tcp_client.txt", "hash ");
+    let host = host.join().unwrap();
+    if host.is_empty() {
+        return;
+    }
+    let hash = |out: &str| {
+        out.lines()
+            .find(|l| l.starts_with("hash "))
+            .map(String::from)
+    };
+    assert!(hash(&host).is_some());
+    assert_eq!(hash(&host), hash(&client));
+}
+
 #[test]
 fn combat_script() {
     play("scripts/combat.txt", "combat test passed");

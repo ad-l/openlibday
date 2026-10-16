@@ -466,7 +466,10 @@ impl Viewer {
             Some(c) if owner == CAMPAIGN_PLAYER && !c.state.name.trim().is_empty() => {
                 c.state.name.clone()
             }
-            _ => libday_view::minimap::player_name(owner),
+            _ => self
+                .online_name(owner)
+                .filter(|_| self.seats.human(owner))
+                .map_or_else(|| libday_view::minimap::player_name(owner), str::to_owned),
         }
     }
 

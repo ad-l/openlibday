@@ -1,0 +1,54 @@
+# MP2 over TCP, host side: hosts on port 41531, waits for `tcp_client.txt`
+# (another process) to join, and plays a skirmish against the AI with it.
+# Both print the same state hash at the end (the smoke test compares them).
+# Run both: openlibday --headless --script scripts/tcp_host.txt
+#           openlibday --headless --script scripts/tcp_client.txt
+ai modern
+name Alice
+host 41531
+seeds 7
+expect screen Lobby
+await online.peers 1
+expect online.names.2 Bob
+await online.chat.-1 hi
+say hello
+skirmish Opportunity Knocks
+key Return
+expect screen Tech
+key Return
+idle
+expect screen Briefing
+key Return
+deploy Grenadier
+tile 44 18
+deploy Grenadier
+tile 45 18
+deploy Trooper
+tile 44 19
+key Return
+key Y
+await phase Player
+expect player 1
+button EndTurn
+expect screen AiTurn
+await player 1 120
+await turn 2
+idle
+# Turn 2: a unit moves.
+tile 44 19
+tile 44 20
+tile 44 20
+idle
+expect units.id=149.y 20
+button EndTurn
+await turn 3 120
+await player 1
+idle
+win
+wait 1
+expect phase Over
+hash
+button ReportContinue
+expect screen Lobby
+await online.peers 0
+quit

@@ -64,6 +64,13 @@
 //! as N COMMAND          run COMMAND in the copy playing slot N (1: the
 //!                       host); `wait` and `idle` always run every copy
 //! synced                fail unless every copy has the host's state hash
+//! name NAME             the player's name (for network games)
+//! host [PORT]           host a network game (default port 41530)
+//! connect ADDRESS       join the network game at ADDRESS[:PORT]
+//! say TEXT              send a chat line in a network game
+//! await PATH VALUE [S]  advance frames until the state at PATH is VALUE,
+//!                       failing after S seconds of real time (default 60);
+//!                       (how a network game waits for the other computers)
 //! quit                  end the program
 //! ```
 
@@ -162,6 +169,11 @@ pub enum Command {
     As(i64, Box<Command>),
     /// Every copy has the host's state hash.
     Synced,
+    Name(String),
+    Host(u16),
+    Connect(String),
+    Say(String),
+    Await(String, String, f64),
     Quit,
 }
 
@@ -306,6 +318,21 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             Command::As(slot, Box::new(parse_line(inner.trim())?))
         }
         "synced" => Command::Synced,
+        "name" => Command::Name(text()?),
+        "host" => Command::Host(match args.first() {
+            Some(_) => num(args.first())?,
+            None => crate::link::DEFAULT_PORT,
+        }),
+        "connect" => Command::Connect(text()?),
+        "say" => Command::Say(text()?),
+        "await" => Command::Await(
+            args.first().ok_or("missing path")?.to_string(),
+            args.get(1).ok_or("missing value")?.to_string(),
+            match args.get(2) {
+                Some(_) => num(args.get(2))?,
+                None => 60.0,
+            },
+        ),
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
@@ -560,14 +587,44 @@ impl Runner<'_, '_> {
                 }
             }
             Command::Expect(path, want) => {
-                let state = state(viewer);
-                let got = lookup(&state, path).ok_or_else(|| format!("no {path} in the state"))?;
-                let got = match got {
-                    Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                if got != *want {
+                let got = state_at(viewer, path);
+                if got.as_deref() != Some(want.as_str()) {
+                    let got = got.unwrap_or_else(|| "nothing".into());
                     return Err(format!("expected {path} = {want}, got {got}").into());
+                }
+            }
+            Command::Name(name) => viewer.front.name = name.clone(),
+            Command::Host(port) => {
+                viewer.front.port = *port;
+                viewer.open_sessions();
+                viewer.host_game();
+                if let Some(status) = viewer.front.status.take() {
+                    return Err(status.into());
+                }
+            }
+            Command::Connect(address) => {
+                viewer.front.address = address.clone();
+                viewer.open_sessions();
+                viewer.join_game();
+            }
+            Command::Say(text) => {
+                viewer.front.chat = text.clone();
+                viewer.send_chat();
+            }
+            Command::Await(path, want, seconds) => {
+                let until = std::time::Instant::now() + Duration::from_secs_f64(*seconds);
+                while state_at(viewer, path).as_deref() != Some(want.as_str()) {
+                    if std::time::Instant::now() > until {
+                        let got = state_at(viewer, path).unwrap_or_else(|| "nothing".into());
+                        return Err(format!(
+                            "{path} is still {got}, not {want}, after {seconds} s"
+                        )
+                        .into());
+                    }
+                    self.step(viewer)?;
+                    if viewer.online() {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
                 }
             }
             Command::Echo(text) => println!("{text}"),
@@ -1022,6 +1079,20 @@ pub fn state(viewer: &Viewer) -> Value {
         "difficulty": viewer.front.difficulty,
     });
     state["notice"] = json!(viewer.notice);
+    state["online"] = viewer.net.online.as_ref().map_or(Value::Null, |o| {
+        json!({
+            "slot": o.slot,
+            "host": o.is_host(),
+            "started": o.started,
+            "peers": viewer.net.peers.len(),
+            "names": o.names.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
+            "chat": o.chat.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            "left": o.left,
+            "status": viewer.front.status,
+            "fault": viewer.net.fault,
+            "commands": viewer.net.log.len(),
+        })
+    });
     state["video"] = json!(viewer.cutscene.as_ref().map(|c| &c.name));
     state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
         serde_json::to_value(&c.state).unwrap_or(Value::Null)
@@ -1118,6 +1189,15 @@ fn variant(value: &impl std::fmt::Debug) -> String {
 
 /// The value at a dotted `path`; an `id=N` segment picks the array element
 /// whose `id` is `N`, a negative index counts from the end.
+/// The state at `path` as text (strings unquoted).
+fn state_at(viewer: &Viewer, path: &str) -> Option<String> {
+    let state = state(viewer);
+    Some(match lookup(&state, path)? {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    })
+}
+
 fn lookup<'v>(mut value: &'v Value, path: &str) -> Option<&'v Value> {
     for segment in path.split('.') {
         value = match value {

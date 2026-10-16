@@ -29,6 +29,7 @@ mod group;
 mod hud;
 mod input;
 mod link;
+mod lobby;
 mod menu;
 mod mixer;
 mod moves;
@@ -73,6 +74,10 @@ struct Args {
     script: Option<PathBuf>,
     headless: bool,
     size: Option<(u32, u32)>,
+    /// Network game: host on a port, or join an address, as a name.
+    host: Option<u16>,
+    join: Option<String>,
+    name: Option<String>,
 }
 
 fn parse_size(text: &str) -> Option<(u32, u32)> {
@@ -90,6 +95,9 @@ fn parse_args() -> Result<Args> {
         script: None,
         headless: false,
         size: None,
+        host: None,
+        join: None,
+        name: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
@@ -99,6 +107,13 @@ fn parse_args() -> Result<Args> {
             "--load" => args.load = Some(iter.next().ok_or("--load needs a save")?),
             "--script" => args.script = Some(iter.next().ok_or("--script needs a file")?.into()),
             "--headless" => args.headless = true,
+            "--host" => args.host = Some(link::DEFAULT_PORT),
+            "--port" => {
+                let port = iter.next().ok_or("--port needs a number")?;
+                args.host = Some(port.parse().map_err(|_| "--port needs a number")?);
+            }
+            "--join" => args.join = Some(iter.next().ok_or("--join needs an address")?),
+            "--name" => args.name = Some(iter.next().ok_or("--name needs a name")?),
             "--size" => {
                 let size = iter.next().ok_or("--size needs WIDTHxHEIGHT")?;
                 args.size =
@@ -109,11 +124,15 @@ fn parse_args() -> Result<Args> {
                     .map_or_else(|| settings::FILE_NAME.into(), |p| p.display().to_string());
                 println!(
                     "usage: openlibday [--root DIR] [--options FILE] [--load SAVE]\n\
-                     \x20                 [--script FILE [--headless] [--size WxH]] [SCENARIO]\n\
+                     \x20                 [--script FILE [--headless] [--size WxH]]\n\
+                     \x20                 [--host [--port PORT] | --join ADDRESS] [--name NAME]\n\
+                     \x20                 [SCENARIO]\n\
                      SAVE: an openlibday save file, an original savegame directory, or\n\
                      \x20     the number of an original savegame slot (SAVEGAME\\savegame.NN)\n\
                      --script: run the commands in FILE on a virtual clock (see script.rs);\n\
                      \x20         --headless without a window, at --size (default 1024x768)\n\
+                     --host: host a network game (on port 41530, or --port); --join: join\n\
+                     \x20       the one at ADDRESS[:PORT]; --name: the player's name\n\
                      options file: {file}\n{HELP}"
                 );
                 std::process::exit(0);
@@ -538,7 +557,7 @@ impl Viewer {
     fn enabled(&self, button: Button) -> bool {
         let deploy_ready = self.flow.setup.is_some();
         match button {
-            Button::Chat => false,
+            Button::Chat => self.net.online.as_ref().is_some_and(|o| o.started),
             Button::Overwatch => self.selected.is_some_and(|i| {
                 self.controllable(i) && self.kind_of(i).is_some_and(|k| k.can_overwatch)
             }),
@@ -583,7 +602,13 @@ impl Viewer {
             | Button::DifficultyLeft
             | Button::DifficultyRight
             | Button::NewGameBack
-            | Button::NewGameContinue => self.front_enabled(button),
+            | Button::NewGameContinue
+            | Button::HostGame
+            | Button::JoinGame
+            | Button::SessionsBack
+            | Button::LobbySend
+            | Button::LobbyBack
+            | Button::LobbyStart => self.front_enabled(button),
             Button::Intelligence
             | Button::Attack
             | Button::StrategicBack
@@ -638,6 +663,7 @@ impl Viewer {
             Button::AutomatedBack => self.close_supports(),
             Button::SkirmishUp => self.pick_step(-1),
             Button::SkirmishDown => self.pick_step(1),
+            Button::SkirmishBack if self.online() => self.open_lobby(),
             Button::SkirmishBack => self.open_main_menu(),
             Button::SkirmishContinue => self.choose_skirmish(),
             Button::ReportContinue => self.close_report(),
@@ -679,7 +705,17 @@ impl Viewer {
             | Button::DifficultyLeft
             | Button::DifficultyRight
             | Button::NewGameBack
-            | Button::NewGameContinue => self.front_activate(button),
+            | Button::NewGameContinue
+            | Button::HostGame
+            | Button::JoinGame
+            | Button::SessionsBack
+            | Button::LobbySend
+            | Button::LobbyBack
+            | Button::LobbyStart => self.front_activate(button),
+            Button::Chat => {
+                self.front.chatting = !self.front.chatting;
+                self.front.chat.clear();
+            }
             Button::Intelligence
             | Button::Attack
             | Button::StrategicBack
@@ -1103,6 +1139,18 @@ fn main() -> Result {
             viewer.play_video(front::INTRO_VIDEO);
         }
     }
+    if let Some(name) = args.name {
+        viewer.front.name = name;
+    }
+    if let Some(port) = args.host {
+        viewer.front.port = port;
+        viewer.open_sessions();
+        viewer.host_game();
+    } else if let Some(address) = args.join {
+        viewer.front.address = address;
+        viewer.open_sessions();
+        viewer.join_game();
+    }
 
     let mut events = sdl.event_pump()?;
     if let Some((path, lines)) = &script {
@@ -1136,7 +1184,7 @@ fn main() -> Result {
         dirty |= !playing && viewer.battle_tick();
         let wait = if let Some(next) = viewer.video_wait() {
             (next.as_millis() as u64).clamp(1, 100)
-        } else if moving || viewer.flow.ai_until.is_some() {
+        } else if moving || viewer.flow.ai_until.is_some() || viewer.online() {
             15
         } else if viewer.sea_animating() {
             // The sea's frame time (`frame_micros`), without drifting.
@@ -1164,8 +1212,11 @@ fn main() -> Result {
             canvas.window_mut().set_fullscreen(on)?;
             dirty = true;
         }
-        // Typing goes to the NEW GAME dialog's name box.
-        let typing = viewer.screen == Screen::NewGame;
+        // Messages from other players may change anything shown.
+        dirty |= viewer.online();
+        // Typing goes to the NEW GAME dialog's name box, the network
+        // dialogs' fields or the chat line.
+        let typing = viewer.typing();
         if typing != video.text_input().is_active(canvas.window()) {
             if typing {
                 video.text_input().start(canvas.window());

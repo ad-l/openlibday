@@ -137,6 +137,7 @@ impl Viewer {
         match self.flow.phase {
             Phase::Deploy => Screen::Deploy,
             Phase::Player if self.flow.reinforcing => Screen::Deploy,
+            Phase::Player if !self.seats.is_local(self.map.battle.clock.player) => Screen::AiTurn,
             Phase::Ai => Screen::AiTurn,
             Phase::Over => Screen::Report,
             _ => Screen::Battle,
@@ -277,6 +278,11 @@ impl Viewer {
         self.seats.local = self.seats.first_local();
         let humans = self.seats.humans().count();
         battle.scenario.merge_players(humans);
+        if let Some(online) = &mut self.net.online {
+            online.started = true;
+            self.net.log.clear();
+            self.net.desync = None;
+        }
         for peer in &self.net.peers {
             peer.link.send(&crate::link::ToClient::Start {
                 map: entry.file_name.clone(),
@@ -633,7 +639,7 @@ impl Viewer {
 
     /// Whether `player` may deploy now: everyone's in the deployment phase,
     /// theirs while they reinforce.
-    fn deploying(&self, player: i64) -> bool {
+    pub(crate) fn deploying(&self, player: i64) -> bool {
         self.seats.human(player)
             && match self.flow.phase {
                 Phase::Deploy => !self.flow.ready.contains(&player),
@@ -919,6 +925,12 @@ impl Viewer {
         self.flow.phase = Phase::Player;
         self.map.battle.clock.player = player;
         self.seats.hand_over(player);
+        let local = self.seats.is_local(player);
+        if !local && self.screen == Screen::Battle {
+            self.screen = Screen::AiTurn;
+        } else if local && self.screen == Screen::AiTurn {
+            self.screen = Screen::Battle;
+        }
         self.selected = self
             .map
             .battle
@@ -1325,6 +1337,10 @@ impl Viewer {
         self.flow.outcome = None;
         self.flow.forced = None;
         self.flow.report = None;
+        if self.online() {
+            self.open_lobby();
+            return;
+        }
         if let Err(e) = self.open_selector() {
             eprintln!("{e}");
             self.quit = true;

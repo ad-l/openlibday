@@ -1,0 +1,45 @@
+# MP2 over TCP, client side: joins `tcp_host.txt` (another process) on
+# port 41531 and plays the second human slot.
+# Run after starting the host: openlibday --headless --script scripts/tcp_client.txt
+ai modern
+name Bob
+connect 127.0.0.1:41531
+await screen Lobby
+expect online.slot 2
+expect online.names.1 Alice
+say hi
+await online.chat.-1 hello
+await screen Briefing
+key Return
+expect local 2
+deploy Trooper
+tile 30 1
+deploy Trooper
+tile 31 1
+key Return
+key Y
+await phase Player
+await player 2
+expect screen Battle
+button EndTurn
+await turn 2 120
+await player 2
+await units.id=149.y 20
+idle
+tile 13 21
+tile 14 22
+tile 14 22
+idle
+await units.id=101.x 14
+button EndTurn
+await turn 3 120
+await player 1
+win
+wait 1
+expect phase Over
+hash
+button ReportContinue
+expect screen Lobby
+button LobbyBack
+expect screen Sessions
+quit
