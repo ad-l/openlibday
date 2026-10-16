@@ -39,6 +39,17 @@ pub mod frame {
     pub const DEPLOY_DOWN: u16 = 17;
     pub const DEPLOY_CONTINUE: u16 = 21;
     pub const ARMY: u16 = 29;
+    /// Base editor sidebar and its buttons.
+    pub const BASE_SIDEBAR: u16 = 100;
+    pub const BASE_MAP: u16 = 105;
+    pub const BASE_BUILDINGS: u16 = 109;
+    pub const BASE_DEFENSES: u16 = 115;
+    pub const BASE_UP: u16 = 121;
+    pub const BASE_DOWN: u16 = 125;
+    pub const BASE_MOVE: u16 = 129;
+    pub const CAMPAIGN: u16 = 135;
+    pub const BASE_ARMY: u16 = 139;
+    pub const RECYCLE: u16 = 147;
     /// Map overview sidebar.
     pub const OVERVIEW_SIDEBAR: u16 = 41;
     /// First colour swatch (six frames per colour: red, blue, yellow, magenta, green).
@@ -136,6 +147,10 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (41, 41, SIDEBAR_W, SIDEBAR_H),
     (46, 75, 19, 19),
     (76, 87, 53, 17),
+    (100, 100, SIDEBAR_W, SIDEBAR_H),
+    (105, 108, 110, 17),
+    (109, 120, 19, 19),
+    (121, 152, 53, 17),
     (157, 157, 588, 451),
     (158, 171, 110, 17),
     (172, 172, 60, 55),
@@ -267,6 +282,7 @@ impl UiArt {
                     | frame::AI_SIDEBAR
                     | frame::AUTOMATED_SIDEBAR
                     | frame::STRATEGIC_SIDEBAR
+                    | frame::BASE_SIDEBAR
             ) {
                 hide_emblem(&mut image);
             }
@@ -413,6 +429,16 @@ pub enum Button {
     StrategicBack,
     /// After a victory, in place of BACK.
     StrategicContinue,
+    // Base editor sidebar.
+    BaseMap,
+    BaseBuildings,
+    BaseDefenses,
+    BaseUp,
+    BaseDown,
+    Recycle,
+    BaseMove,
+    Campaign,
+    BaseArmy,
 }
 
 /// Which panel set is on screen.
@@ -454,6 +480,8 @@ pub enum Screen {
     Strategic {
         victory: bool,
     },
+    /// Base building between battles.
+    BaseEditor,
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -567,6 +595,15 @@ impl Button {
             Button::Attack => ATTACK,
             Button::StrategicBack => STRATEGIC_BACK,
             Button::StrategicContinue => TECH_CONTINUE,
+            Button::BaseMap => BASE_MAP,
+            Button::BaseBuildings => BASE_BUILDINGS,
+            Button::BaseDefenses => BASE_DEFENSES,
+            Button::BaseUp => BASE_UP,
+            Button::BaseDown => BASE_DOWN,
+            Button::Recycle => RECYCLE,
+            Button::BaseMove => BASE_MOVE,
+            Button::Campaign => CAMPAIGN,
+            Button::BaseArmy => BASE_ARMY,
         }
     }
 
@@ -580,6 +617,10 @@ impl Button {
                 | Button::Fire
                 | Button::Objectives
                 | Button::Group
+                | Button::BaseBuildings
+                | Button::BaseDefenses
+                | Button::Recycle
+                | Button::BaseMove
         )
     }
 
@@ -679,6 +720,15 @@ impl Button {
             Button::Intelligence => (11, 387),
             Button::Attack => (11, 407),
             Button::StrategicBack | Button::StrategicContinue => (11, 456),
+            Button::BaseMap => (11, 171),
+            Button::BaseBuildings => (12, 198),
+            Button::BaseDefenses => (12, 222),
+            Button::BaseUp => (11, 407),
+            Button::BaseDown => (71, 407),
+            Button::Recycle => (11, 435),
+            Button::BaseMove => (70, 435),
+            Button::Campaign => (11, 455),
+            Button::BaseArmy => (70, 455),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -781,6 +831,9 @@ pub const TECH_STATS: (i32, i32, i32) = (299, 419, 358);
 pub const TECH_STAT_ROW: i32 = 14;
 pub const TECH_POINTS: Rect = Rect::new(470, 372, 92, 17);
 pub const TECH_EMBLEM: (u16, i32, i32) = (172, 496, 309);
+/// Base editor build list: rows of `BASE_ROW`, `BASE_ROWS` visible.
+pub const BASE_ROW: i32 = 39;
+pub const BASE_ROWS: usize = 4;
 /// Deployment list: rows of `DEPLOY_ROW`, `DEPLOY_ROWS` visible.
 pub const DEPLOY_ROW: i32 = 39;
 pub const DEPLOY_ROWS: usize = 5;
@@ -1042,6 +1095,11 @@ impl Layout {
         self.in_sidebar(Rect::new(9, 204 + i as i32 * DEPLOY_ROW, 120, DEPLOY_ROW))
     }
 
+    /// Row `i` (on screen) of the base editor's build list.
+    pub fn base_row(&self, i: usize) -> Rect {
+        self.in_sidebar(Rect::new(9, 248 + i as i32 * BASE_ROW, 120, BASE_ROW))
+    }
+
     /// Player row `i` of the sidebar shown during the AI's turn.
     pub fn ai_row(&self, i: usize) -> Rect {
         let y = [204, 233, 261, 289, 317][i.min(4)];
@@ -1143,6 +1201,17 @@ impl Layout {
                 } else {
                     Button::StrategicBack
                 },
+            ]),
+            Screen::BaseEditor => buttons.extend([
+                Button::BaseMap,
+                Button::BaseBuildings,
+                Button::BaseDefenses,
+                Button::BaseUp,
+                Button::BaseDown,
+                Button::Recycle,
+                Button::BaseMove,
+                Button::Campaign,
+                Button::BaseArmy,
             ]),
         }
         if !matches!(

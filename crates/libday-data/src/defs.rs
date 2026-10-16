@@ -217,13 +217,19 @@ impl UnitType {
 }
 
 /// Road or wall type (`Road Types`, `Wall Types`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SurfaceType {
     pub id: i64,
     pub name: String,
     pub armor: i64,
     /// `ROADS.DBI` / `WALLS.DBI` prefix.
     pub image: String,
+    /// Base editor: `canBeBuilt`, `Cost`, `Recycle` and (walls only)
+    /// `prerequisite` (65535 none).
+    pub can_build: bool,
+    pub cost: i64,
+    pub recycle: i64,
+    pub prerequisite: i64,
 }
 
 /// Wreckage/debris type (`Ruin Types`); the id is its `RUINS.DBI` sprite.
@@ -234,7 +240,7 @@ pub struct RuinType {
     pub can_move_through: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MineType {
     pub id: i64,
     pub name: String,
@@ -243,6 +249,11 @@ pub struct MineType {
     pub damage_base: i64,
     pub damage_random: i64,
     pub damage_type: i64,
+    /// Base editor: `CanBuy`, `Cost`, `Recycle` and `prerequisite`.
+    pub can_build: bool,
+    pub cost: i64,
+    pub recycle: i64,
+    pub prerequisite: i64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -561,6 +572,10 @@ impl Definitions {
                     name: t.text(r, "nameEnglish")?,
                     armor: t.int(r, armor)?,
                     image: t.text(r, "img_id")?.to_ascii_uppercase(),
+                    can_build: t.flag_or(r, "canBeBuilt", false)?,
+                    cost: t.int_or(r, "Cost", 0)?,
+                    recycle: t.int_or(r, "Recycle", 0)?,
+                    prerequisite: t.int_or(r, "prerequisite", 65535)?,
                 };
                 insert_unique(target, table, item.id, item)?;
             }
@@ -585,6 +600,10 @@ impl Definitions {
                 damage_base: t.int_or(r, "damageBase", 0)?,
                 damage_random: t.int_or(r, "damageRandom", 0)?,
                 damage_type: t.int_or(r, "damageType", 0)?,
+                can_build: t.flag_or(r, "CanBuy", false)?,
+                cost: t.int_or(r, "Cost", 0)?,
+                recycle: t.int_or(r, "Recycle", 0)?,
+                prerequisite: t.int_or(r, "prerequisite", 65535)?,
             };
             insert_unique(&mut defs.mines, &t.table, item.id, item)?;
         }

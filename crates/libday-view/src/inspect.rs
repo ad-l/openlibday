@@ -206,6 +206,7 @@ mod tests {
                     name: name.into(),
                     armor: 60,
                     image: image.into(),
+                    ..Default::default()
                 },
             );
         }
@@ -218,6 +219,7 @@ mod tests {
                 damage_base: 25,
                 damage_random: 10,
                 damage_type: 0,
+                ..Default::default()
             },
         );
         let mut s = Scenario {

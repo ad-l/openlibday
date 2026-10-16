@@ -107,6 +107,8 @@ pub enum Command {
     Option(String, i32),
     Skirmish(String),
     Deploy(String),
+    /// Selects a structure of the base editor's lists by name.
+    Build(String),
     Support(String),
     Grant(i64),
     Credits(i64),
@@ -229,6 +231,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         ),
         "skirmish" => Command::Skirmish(text()?),
         "deploy" => Command::Deploy(text()?),
+        "build" => Command::Build(text()?),
         "support" => Command::Support(text()?),
         "grant" => Command::Grant(num(args.first())?),
         "credits" => Command::Credits(num(args.first())?),
@@ -410,6 +413,11 @@ impl Runner<'_, '_> {
                     .ok_or_else(|| format!("no skirmish {name}"))?;
                 viewer.flow.pick = pick;
                 viewer.show_pick();
+            }
+            Command::Build(name) => {
+                if !viewer.base_select_named(name) {
+                    return Err(format!("{name} is not in the base editor's lists").into());
+                }
             }
             Command::Deploy(name) => {
                 let row = viewer
@@ -850,6 +858,26 @@ pub fn state(viewer: &Viewer) -> Value {
         Value::Null,
         |st| json!({ "selected": st.selected, "text": st.text, "victory": st.victory }),
     );
+    // `roads.N` / `walls.N`: `[kind, x, y, owner]`.
+    let surfaces = |list: &[libday_data::scenario::Surface]| {
+        list.iter()
+            .map(|r| [r.kind, r.x, r.y, r.owner])
+            .collect::<Vec<_>>()
+    };
+    state["roads"] = json!(surfaces(&scenario.roads));
+    state["walls"] = json!(surfaces(&scenario.walls));
+    state["base_editor"] = viewer.base_editor.as_ref().map_or(Value::Null, |e| {
+        json!({
+            "mode": format!("{:?}", e.mode),
+            "defenses": e.defenses,
+            "selected": e.selected.map(|i| i.name(&viewer.defs)),
+            "list": viewer
+                .base_list()
+                .iter()
+                .map(|i| json!([i.name(&viewer.defs), i.cost(&viewer.defs)]))
+                .collect::<Vec<_>>(),
+        })
+    });
     state["selection"] = json!(viewer.selection());
     state["grouping"] = json!(viewer.grouping);
     state["walking"] = json!(viewer.motions.iter().map(|m| m.unit).collect::<Vec<_>>());

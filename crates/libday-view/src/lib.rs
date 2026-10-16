@@ -5,6 +5,7 @@
 //! The draw order reproduces the modding map editor
 //! (`tools/modding/map_editor.py` `render_map`), which is the reference.
 
+pub mod base;
 pub mod compose;
 pub mod continent;
 pub mod damage;

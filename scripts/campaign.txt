@@ -1,7 +1,7 @@
 # Campaign: NEW GAME starts the alien attack on the player's base (s1-1-1,
 # HQ only): troopers deploy around the HQ, the aliens move first, and a win
-# grants 150 tech points and moves on to the continent overview, where
-# provinces next to captured ones are attacked.
+# grants 150 tech points and moves on to the continent overview and base
+# building; provinces next to captured ones are attacked.
 # Run: openlibday --headless --script scripts/campaign.txt  (needs LIBDAY_ROOT)
 button NewCampaign
 type Max
@@ -43,8 +43,58 @@ expect campaign.stage.stage strategic
 # Surviving towers are kept as tower buildings.
 expect campaign.base.buildings.1.kind 137
 expect campaign.base.buildings.2.kind 100
-# The continent overview: Milos pays 450 credits, 472 at difficulty 4.
+# The continent overview after the attack: CONTINUE to base building.
 expect screen Strategic
+expect strategic.victory true
+button StrategicContinue
+expect screen BaseEditor
+expect credits 625
+expect base_editor.list.0.0 Deploy Mk1
+build Deploy Mk1
+# Buildings go next to the player's roads, not around the HQ.
+tile 22 64
+expect message Can't build around HQ
+tile 26 62
+expect message Deploy Mk1 has been built for 200 credits
+expect credits 425
+tile 26 64
+expect message Too close to other buildings
+# Roads are built in segments, as far as the terrain allows.
+build Paved Road
+expect message Click on starting point
+tile 25 65
+expect message Click on ending point of segment
+tile 25 67
+expect message Paved Road has been built for 6 credits
+expect credits 419
+expect roads.-1 [1,25,66,1]
+# MOVE lifts a structure; the HQ stays.
+button BaseMove
+tile 22 61
+expect message Can't move HQ
+tile 27 63
+tile 26 55
+expect message Must build adjacent to your roads
+tile 26 61
+expect message Deploy Mk1 has been moved
+expect buildings.-1.y 61
+button BaseMove
+# RECYCLE refunds what was built this session in full; older structures
+# ask first.
+button Recycle
+tile 25 66
+expect message Paved Road has been recycled
+expect credits 422
+tile 25 64
+expect message You might not get all your money back if you recycle this. Do you want to continue anyway?
+button Recycle
+# CAMPAIGN keeps the base and returns to the continent.
+button Campaign
+expect screen Strategic
+expect campaign.credits 422
+expect campaign.base.buildings.4.kind 131
+expect campaign.base.buildings.4.y 61
+# Milos pays 450 credits, 472 at difficulty 4.
 expect strategic.text.0 Choose the province you wish to attack.
 province 3
 expect strategic.selected 3
@@ -74,11 +124,13 @@ idle
 expect screen Report
 key Return
 expect campaign.provinces.2.captured true
-expect campaign.credits 1097
+expect campaign.credits 894
 expect screen Strategic
 expect strategic.victory true
 expect strategic.text.0 You are victorious. Hit the continue button.
 button StrategicContinue
+expect screen BaseEditor
+button Campaign
 expect strategic.victory false
 # A lost province battle returns to the overview; the province is fought
 # on its other scenario next time.

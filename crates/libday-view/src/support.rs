@@ -141,7 +141,7 @@ pub fn placeable(
 }
 
 /// Terrain kind of tile `at`, if it is on the map.
-fn kind_at(scenario: &Scenario, defs: &Definitions, at: (i64, i64)) -> Option<u8> {
+pub fn kind_at(scenario: &Scenario, defs: &Definitions, at: (i64, i64)) -> Option<u8> {
     scenario
         .cell(at.0, at.1)
         .and_then(|c| defs.terrain(&c.terrain))
@@ -707,6 +707,7 @@ mod tests {
                 damage_base: 50,
                 damage_random: 1,
                 damage_type: 0,
+                ..Default::default()
             },
         );
         d

@@ -559,6 +559,7 @@ mod tests {
                     name: String::new(),
                     armor,
                     image: String::new(),
+                    ..Default::default()
                 },
             );
         }
@@ -569,6 +570,7 @@ mod tests {
                 name: String::new(),
                 armor: 60,
                 image: String::new(),
+                ..Default::default()
             },
         );
         d.buildings.insert(

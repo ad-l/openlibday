@@ -39,6 +39,7 @@ impl Viewer {
         self.flow = crate::skirmish::Flow::new();
         self.campaign = None;
         self.strategic = None;
+        self.base_editor = None;
         self.screen = Screen::MainMenu;
     }
 

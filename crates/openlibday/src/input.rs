@@ -50,6 +50,7 @@ impl Viewer {
             }
             (Screen::Options { ask }, _) => self.menu_key(ask, key),
             (Screen::Strategic { .. }, _) => self.strategic_key(key),
+            (Screen::BaseEditor, Keycode::Escape) => self.base_escape(),
             (Screen::Skirmishes | Screen::Briefing | Screen::Confirm | Screen::Report, _) => {}
             _ => return None,
         }
@@ -82,7 +83,7 @@ impl Viewer {
             Keycode::Home => self.recentre(),
             Keycode::Equals | Keycode::Plus | Keycode::KpPlus => self.zoom_step(1, centre),
             Keycode::Minus | Keycode::KpMinus => self.zoom_step(-1, centre),
-            Keycode::PageDown | Keycode::PageUp => {
+            Keycode::PageDown | Keycode::PageUp if self.campaign.is_none() => {
                 // Browsing maps leaves the skirmish for the free viewer.
                 self.flow = Flow::new();
                 self.screen = Screen::Battle;
@@ -221,7 +222,18 @@ impl Viewer {
                 }
             }
             Screen::Overview | Screen::Briefing => {}
-            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated => {
+            Screen::BaseEditor
+                if left
+                    && let Some(row) = (0..libday_view::ui::BASE_ROWS)
+                        .find(|&i| layout.base_row(i).contains(ox, oy)) =>
+            {
+                self.base_select_row(row)
+            }
+            Screen::Battle
+            | Screen::Deploy
+            | Screen::AiTurn
+            | Screen::Automated
+            | Screen::BaseEditor => {
                 let row = matches!(self.screen, Screen::Deploy | Screen::Automated)
                     .then(|| {
                         (0..libday_view::ui::DEPLOY_ROWS)
@@ -271,6 +283,7 @@ impl Viewer {
                 Some((tx, ty)) if self.screen == Screen::Deploy => self.deploy_click(tx, ty),
                 Some((tx, ty)) if self.screen == Screen::Battle => self.click_tile(tx, ty),
                 Some((tx, ty)) if self.screen == Screen::Automated => self.support_click(tx, ty),
+                Some((tx, ty)) if self.screen == Screen::BaseEditor => self.base_click(tx, ty),
                 _ if !self.busy() => {
                     self.preview = None;
                     self.lock = None;
@@ -326,14 +339,22 @@ impl Viewer {
         }
         let on_map = matches!(
             self.screen,
-            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated
+            Screen::Battle
+                | Screen::Deploy
+                | Screen::AiTurn
+                | Screen::Automated
+                | Screen::BaseEditor
         ) && !self.layout().on_panel(ox, oy);
+        let was = self.hover;
         self.hover = on_map
             .then(|| {
                 let (mx, my) = self.to_map(ox as f32, oy as f32);
                 tile_at(self.map.battle.scenario.size, mx as f64, my as f64)
             })
             .flatten();
+        if self.screen == Screen::BaseEditor && self.hover != was {
+            self.base_refresh();
+        }
     }
 
     /// Handles one event; returns `false` to quit.
@@ -369,11 +390,16 @@ impl Viewer {
                 let (ox, oy) = self.output_point(mouse_x, mouse_y);
                 let step = if y > 0.0 { 1 } else { -1 };
                 match self.screen {
-                    Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated
+                    Screen::Battle
+                    | Screen::Deploy
+                    | Screen::AiTurn
+                    | Screen::Automated
+                    | Screen::BaseEditor
                         if !self.layout().on_panel(ox, oy) =>
                     {
                         self.zoom_step(step, (ox as f32, oy as f32));
                     }
+                    Screen::BaseEditor => self.base_scroll(-step as isize),
                     Screen::Deploy => self.deploy_scroll(-step as isize),
                     Screen::Automated => self.support_scroll(-step as isize),
                     Screen::Options { ask: None } => self.menu_scroll(-step as isize),

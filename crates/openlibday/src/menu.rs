@@ -352,6 +352,7 @@ impl Viewer {
                     | Screen::Deploy
                     | Screen::AiTurn
                     | Screen::Strategic { .. }
+                    | Screen::BaseEditor
                     | Screen::Options { ask: None }
             ),
             _ => true,

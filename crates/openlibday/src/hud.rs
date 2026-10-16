@@ -18,6 +18,7 @@ use sdl3::video::{Window, WindowContext};
 
 use crate::Viewer;
 
+mod base;
 mod front;
 mod options;
 mod setup;
@@ -345,9 +346,11 @@ impl Viewer {
     /// Tile under output pixel `(x, y)` of the minimap or overview picture.
     pub(crate) fn picture_tile(&self, x: i32, y: i32) -> Option<(f64, f64)> {
         let (rect, square) = match self.screen {
-            Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Automated => {
-                self.minimap_square()
-            }
+            Screen::Battle
+            | Screen::Deploy
+            | Screen::AiTurn
+            | Screen::Automated
+            | Screen::BaseEditor => self.minimap_square(),
             Screen::Overview | Screen::Briefing => {
                 let (rect, cell) = self.overview_square();
                 let tile = cell as f32;
@@ -1027,6 +1030,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
         Screen::Automated => setup::draw_automated_sidebar(canvas, gfx, viewer)?,
         Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
+        Screen::BaseEditor => base::draw(canvas, gfx, viewer)?,
         Screen::Goal => {
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
@@ -1044,6 +1048,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
                 Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
                 Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
+                Screen::BaseEditor => base::draw(canvas, gfx, viewer)?,
                 _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
             }
             options::draw_options(canvas, gfx, viewer)?;

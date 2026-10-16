@@ -17,6 +17,7 @@
 
 mod ai;
 mod automated;
+mod base_editor;
 mod campaign;
 mod clock;
 mod combat;
@@ -249,6 +250,7 @@ struct Viewer {
     campaign: Option<campaign::Session>,
     /// The continent overview, while it is open.
     strategic: Option<strategic::Strategic>,
+    base_editor: Option<base_editor::BaseEditor>,
 }
 
 impl Viewer {
@@ -568,6 +570,15 @@ impl Viewer {
             | Button::Attack
             | Button::StrategicBack
             | Button::StrategicContinue => self.strategic_enabled(button),
+            Button::BaseMap
+            | Button::BaseBuildings
+            | Button::BaseDefenses
+            | Button::BaseUp
+            | Button::BaseDown
+            | Button::Recycle
+            | Button::BaseMove
+            | Button::Campaign
+            | Button::BaseArmy => self.base_enabled(button),
             _ => true,
         }
     }
@@ -650,6 +661,15 @@ impl Viewer {
             | Button::Attack
             | Button::StrategicBack
             | Button::StrategicContinue => self.strategic_activate(button),
+            Button::BaseMap
+            | Button::BaseBuildings
+            | Button::BaseDefenses
+            | Button::BaseUp
+            | Button::BaseDown
+            | Button::Recycle
+            | Button::BaseMove
+            | Button::Campaign
+            | Button::BaseArmy => self.base_activate(button),
             _ => {}
         }
     }
@@ -954,6 +974,7 @@ fn main() -> Result {
         front: front::Front::default(),
         campaign: None,
         strategic: None,
+        base_editor: None,
     };
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.

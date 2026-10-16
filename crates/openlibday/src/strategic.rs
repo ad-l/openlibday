@@ -30,7 +30,7 @@ pub struct Strategic {
 }
 
 impl Viewer {
-    fn string(&self, id: u32, fallback: &str) -> String {
+    pub(crate) fn string(&self, id: u32, fallback: &str) -> String {
         self.game
             .strings()
             .ok()
@@ -221,14 +221,9 @@ impl Viewer {
         self.strategic_message(text);
     }
 
-    /// BACK / CONTINUE lead to base building (not implemented yet).
+    /// BACK / CONTINUE lead to base building.
     fn strategic_back(&mut self) {
-        if let Some(st) = &mut self.strategic {
-            st.victory = false;
-            st.selected = None;
-            st.text = vec!["Base building is not available yet.".into()];
-        }
-        self.screen = self.home();
+        self.open_base_editor();
     }
 
     /// Keys of the continent overview.

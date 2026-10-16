@@ -128,6 +128,9 @@ impl Flow {
 impl Viewer {
     /// The screen a closed overview or goal dialog returns to.
     pub(crate) fn home(&self) -> Screen {
+        if self.base_editor.is_some() {
+            return Screen::BaseEditor;
+        }
         if let Some(screen) = self.strategic_screen() {
             return screen;
         }
@@ -164,6 +167,11 @@ impl Viewer {
 
     /// The player's credits (deployment points).
     pub(crate) fn credits(&self) -> i64 {
+        if self.base_editor.is_some()
+            && let Some(c) = &self.campaign
+        {
+            return c.state.credits;
+        }
         self.map
             .battle
             .players
@@ -173,6 +181,11 @@ impl Viewer {
     }
 
     pub(crate) fn credits_mut(&mut self) -> &mut i64 {
+        if self.base_editor.is_some()
+            && let Some(c) = &mut self.campaign
+        {
+            return &mut c.state.credits;
+        }
         let players = &mut self.map.battle.players;
         let i = match players.iter().position(|p| p.player == PLAYER) {
             Some(i) => i,

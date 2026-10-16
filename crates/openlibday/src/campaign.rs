@@ -431,8 +431,9 @@ impl Viewer {
         )
     }
 
-    /// The base map with the campaign's base layout, players merged.
-    fn load_base(&mut self) -> Option<Battle> {
+    /// The base map with the campaign's base layout, players merged; for
+    /// a battle (`transform`) the towers become units.
+    pub(crate) fn load_base(&mut self, transform: bool) -> Option<Battle> {
         let session = self.campaign.as_ref()?;
         let file = session.base_file()?;
         let mut battle = match Battle::start(&self.game, &file) {
@@ -458,7 +459,9 @@ impl Viewer {
         s.units.clear();
         s.merge_players(1);
         // Base battles only (0x47e5be → 0x47fb4e): towers become units.
-        s.transform_buildings(&self.defs);
+        if transform {
+            s.transform_buildings(&self.defs);
+        }
         battle.difficulty = session.state.difficulty;
         Some(battle)
     }
@@ -513,7 +516,7 @@ impl Viewer {
     }
 
     /// Building types the player owns.
-    fn owned_buildings(&self, s: &Scenario) -> Vec<i64> {
+    pub(crate) fn owned_buildings(&self, s: &Scenario) -> Vec<i64> {
         let mut kinds: Vec<i64> = s
             .buildings
             .iter()
@@ -641,7 +644,7 @@ impl Viewer {
     /// The base defends itself: the first city attack or a counterattack
     /// (`CServerPhaseCounterAttTactic`).
     pub(crate) fn begin_base_battle(&mut self) {
-        let Some(mut battle) = self.load_base() else {
+        let Some(mut battle) = self.load_base(true) else {
             return;
         };
         let s = &mut battle.scenario;
@@ -669,7 +672,7 @@ impl Viewer {
     /// Attacks province `n` (`CServerPhaseTactic`): its scenario, the
     /// player's army from the base's buildings.
     pub(crate) fn begin_tactic(&mut self, n: i64) {
-        let Some(base) = self.load_base() else {
+        let Some(base) = self.load_base(false) else {
             return;
         };
         let points = self.campaign_deploy_points(&base.scenario);
@@ -703,16 +706,7 @@ impl Viewer {
 
     /// Shows `battle` and opens its briefing with the campaign's army.
     fn begin_campaign_battle(&mut self, battle: Battle, units: Vec<i64>, automated: Vec<i64>) {
-        self.strategic = None;
-        let name = battle.source.to_string();
-        if let Some(i) = self.maps.iter().position(|m| m.eq_ignore_ascii_case(&name)) {
-            self.index = i;
-        }
-        self.flow = crate::skirmish::Flow::new();
-        self.flow.phase = Phase::Setup;
-        self.options.deployment = false;
-        self.show_units = true;
-        self.show(name, battle);
+        self.show_campaign_map(battle);
         let (tech, points) = self.campaign.as_ref().map_or((Vec::new(), 0), |c| {
             let t = &c.state.unit_tech;
             (
@@ -739,6 +733,20 @@ impl Viewer {
         self.players = skirmish_players();
         self.player = 0;
         self.begin_briefing();
+    }
+
+    /// Shows a campaign map (a battle's or the base editor's) before play.
+    pub(crate) fn show_campaign_map(&mut self, battle: Battle) {
+        self.strategic = None;
+        let name = battle.source.to_string();
+        if let Some(i) = self.maps.iter().position(|m| m.eq_ignore_ascii_case(&name)) {
+            self.index = i;
+        }
+        self.flow = crate::skirmish::Flow::new();
+        self.flow.phase = Phase::Setup;
+        self.options.deployment = false;
+        self.show_units = true;
+        self.show(name, battle);
     }
 
     /// The base battle's first turn is the AI's; the player's deployed
@@ -795,6 +803,11 @@ impl Viewer {
             .defending_base()
             .then(|| self.map.battle.source.load(&self.game).ok())
             .flatten();
+        let first = self
+            .campaign
+            .as_ref()
+            .is_some_and(|c| c.state.stage == Stage::FirstAttack)
+            && outcome == Some(Outcome::Won);
         let Some(session) = &mut self.campaign else {
             return;
         };
@@ -873,6 +886,10 @@ impl Viewer {
         }
         self.save_campaign();
         self.resume_campaign();
+        // The overview after the first attack: CONTINUE to base building.
+        if first {
+            self.strategic_victory();
+        }
     }
 
     /// Province `n` is held: the capital completes the continent, else
