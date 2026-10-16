@@ -340,6 +340,15 @@ impl Viewer {
     fn rebuild(&mut self) {
         // In a battle the player sees only the mines they know about.
         self.options.viewer = (!matches!(self.flow.phase, Phase::Free)).then_some(skirmish::PLAYER);
+        // The player's units that can do nothing more this turn are dimmed.
+        self.options.dimmed_units = (0..self.map.battle.scenario.units.len())
+            .filter(|&i| {
+                self.map.battle.scenario.units[i].arrival == 0
+                    && self.controllable(i)
+                    && !matches!(self.flow.phase, Phase::Free)
+                    && self.exhausted(i)
+            })
+            .collect();
         self.map.scene = libday_view::build(
             &self.map.battle.scenario,
             &self.defs,

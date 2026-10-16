@@ -1,6 +1,7 @@
 //! Map drawing.
 
 use libday_data::defs::AutomatedCategory;
+use libday_view::scene::DIM;
 use libday_view::support;
 use libday_view::ui::Screen;
 use libday_view::{Art, Layer, Sheet, sprite_origin};
@@ -24,11 +25,23 @@ impl<'r> Gfx<'r> {
                     Some(base) => (base, true),
                     None => (name, false),
                 };
+                let (name, dim) = match (name.strip_prefix(DIM_ODD), name.strip_prefix(DIM)) {
+                    (Some(base), _) => (base, Some(1)),
+                    (None, Some(base)) => (base, Some(0)),
+                    _ => (name, None),
+                };
                 let (base, red) = match name.strip_prefix(RED) {
                     Some(base) => (base, true),
                     None => (name, false),
                 };
                 let (width, height, mut rgba) = art.rgba(sheet, base)?;
+                if let Some(phase) = dim {
+                    for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                        if px[3] != 0 && (i % width + i / width + phase) % 2 == 0 {
+                            *px = [0, 0, 0, 255];
+                        }
+                    }
+                }
                 if odd {
                     flip_stipple(width, &mut rgba);
                 }
@@ -57,6 +70,11 @@ pub(crate) const RED: &str = "red:";
 /// by one pixel. Neighbouring tiles sit (27, 14) apart, an odd distance, so
 /// tiles with odd `x + y` take this one to keep the pattern seamless.
 pub(crate) const ODD: &str = "odd:";
+
+/// [`DIM`] for a sprite drawn at an odd `left + top`: the blackened pixels
+/// always sit at even map `x + y`, so neighbouring tiles of a large unit
+/// keep one seamless checkerboard.
+const DIM_ODD: &str = "dim1:";
 
 /// Name of zone sprite `name` for tile `(x, y)` (see [`ODD`]).
 pub(crate) fn zone_sprite(name: &str, x: i64, y: i64) -> std::borrow::Cow<'_, str> {
@@ -186,6 +204,10 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         }
         let sprite = if item.layer == Layer::Deployment {
             zone_sprite(&item.sprite, item.x, item.y)
+        } else if let Some(base) = item.sprite.strip_prefix(DIM)
+            && (left + top).rem_euclid(2) == 1
+        {
+            format!("{DIM_ODD}{base}").into()
         } else {
             item.sprite.as_str().into()
         };

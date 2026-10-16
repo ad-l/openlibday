@@ -166,6 +166,37 @@ impl Viewer {
         ))
     }
 
+    /// Whether unit `i` has too few AP left to step onto any neighbouring
+    /// tile (whose cost depends on roads and forest) or to fire. Units that
+    /// could do neither even when fresh are never exhausted.
+    pub(crate) fn exhausted(&self, i: usize) -> bool {
+        let (Some(kind), Some((ap, _))) = (self.kind_of(i), self.action_points(i)) else {
+            return false;
+        };
+        let mobile = !matches!(
+            Movement::from_id(kind.movement),
+            Movement::NoneGround | Movement::NoneWater
+        );
+        if (!mobile && !kind.has_weapon) || (kind.has_weapon && ap >= kind.shoot_action_points) {
+            return false;
+        }
+        let scenario = &self.map.battle.scenario;
+        let unit = &scenario.units[i];
+        let (x, y) = (unit.x as i32, unit.y as i32);
+        let cheapest_step = mobile
+            .then(|| movement::move_grid(scenario, &self.defs, i))
+            .flatten()
+            .and_then(|grid| {
+                movement::DIRS
+                    .iter()
+                    .map(|&(dx, dy)| grid.get(x + dx, y + dy))
+                    .filter(|&(access, _)| access != movement::Access::None)
+                    .map(|(_, cost)| cost)
+                    .min()
+            });
+        !cheapest_step.is_some_and(|cost| i64::from(cost) <= ap)
+    }
+
     /// Overwatch state of the selected unit.
     pub(crate) fn overwatch_on(&self) -> bool {
         self.selected.is_some_and(|i| self.overwatch(i))

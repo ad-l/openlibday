@@ -39,6 +39,7 @@
 //! grant ID            add automated unit ID to the support list
 //! credits N             set the player's credits
 //! place I X Y         move unit I (state index) to map tile (X, Y)
+//! ap I N              set unit I's remaining action points to N
 //! reactions on|off    whether overwatch spots moving units (default on)
 //! ai off|legacy|modern  how the computer player plays (default: settings)
 //! option NAME [STEP]    change an OPTIONS table setting (Scale, Fullscreen,
@@ -95,6 +96,7 @@ pub enum Command {
         y: i64,
     },
     Place(usize, i64, i64),
+    Ap(usize, i64),
     Reactions(bool),
     Ai(Option<crate::settings::AiMode>),
     Button(String),
@@ -201,6 +203,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             None => return Err("expected off, legacy or modern".into()),
         }),
         "place" => Command::Place(num(args.first())?, num(args.get(1))?, num(args.get(2))?),
+        "ap" => Command::Ap(num(args.first())?, num(args.get(1))?),
         "inspect" => Command::Inspect {
             x: num(args.first())?,
             y: num(args.get(1))?,
@@ -327,6 +330,17 @@ impl Runner<'_, '_> {
                     .get_mut(*i)
                     .ok_or("no such unit")?;
                 (unit.x, unit.y) = (*x, *y);
+                viewer.rebuild();
+            }
+            Command::Ap(i, ap) => {
+                let unit = viewer
+                    .map
+                    .battle
+                    .scenario
+                    .units
+                    .get_mut(*i)
+                    .ok_or("no such unit")?;
+                unit.action_points = Some(*ap);
                 viewer.rebuild();
             }
             Command::Inspect { x, y } => {
@@ -634,6 +648,7 @@ pub fn state(viewer: &Viewer) -> Value {
                 "order": u.order.id,
                 "targets": scenario.order_targets.iter().filter(|t| t.unit == u.id).count(),
                 "overwatch": u.overwatch,
+                "dimmed": viewer.options.dimmed_units.contains(&i),
             })
         })
         .collect();

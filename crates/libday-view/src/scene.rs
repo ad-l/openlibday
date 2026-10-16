@@ -46,6 +46,10 @@ pub struct DrawItem {
     pub y: i64,
 }
 
+/// Sprite-name prefix of a unit too short of action points to move or fire,
+/// drawn with every other pixel blackened.
+pub const DIM: &str = "dim:";
+
 #[derive(Clone, Debug)]
 pub struct Options {
     /// Show units arriving on this turn (0 = units on the map at the start).
@@ -59,6 +63,8 @@ pub struct Options {
     /// Indices into `scenario.units` left out of the scene (units being
     /// animated separately).
     pub hidden_units: Vec<usize>,
+    /// Indices into `scenario.units` drawn darkened (see [`DIM`]).
+    pub dimmed_units: Vec<usize>,
     /// Player whose view is shown: mines hidden from them are left out
     /// (`None`: everything).
     pub viewer: Option<i64>,
@@ -72,6 +78,7 @@ impl Default for Options {
             terrain_only: false,
             ground: "BORE000".to_owned(),
             hidden_units: Vec::new(),
+            dimmed_units: Vec::new(),
             viewer: None,
         }
     }
@@ -205,7 +212,14 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                 .iter()
                 .enumerate()
                 .filter(|&(i, u)| u.arrival == arrival && !options.hidden_units.contains(&i));
-            for (_, unit) in shown {
+            for (i, unit) in shown {
+                let dim = |sprite: String| {
+                    if options.dimmed_units.contains(&i) {
+                        format!("{DIM}{sprite}")
+                    } else {
+                        sprite
+                    }
+                };
                 let (Some(kind), Some(frame)) =
                     (defs.unit(unit.kind), art.unit_frame(unit.kind, unit.owner))
                 else {
@@ -219,14 +233,17 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
                     .then(|| art.forest_topper(kind, unit.facing, frame))
                     .flatten()
                 {
-                    unit_parts.entry((unit.x, unit.y)).or_default().push(topper);
+                    unit_parts
+                        .entry((unit.x, unit.y))
+                        .or_default()
+                        .push(dim(topper));
                     continue;
                 }
                 for (dx, dy) in footprint(kind.width, kind.height) {
                     unit_parts
                         .entry((unit.x + dx, unit.y + dy))
                         .or_default()
-                        .push(kind.sprite(dx, dy, unit.facing, frame));
+                        .push(dim(kind.sprite(dx, dy, unit.facing, frame)));
                 }
             }
         }
@@ -314,7 +331,7 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
 
     let mut items = Vec::new();
     let mut push = |layer, sheet, sprite: String, (x, y): Key, missing: &mut Vec<String>| {
-        if !art.contains(sheet, &sprite) {
+        if !art.contains(sheet, sprite.strip_prefix(DIM).unwrap_or(&sprite)) {
             missing.push(format!("{}:{sprite}", sheet.name()));
         }
         items.push(DrawItem {
