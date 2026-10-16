@@ -464,6 +464,7 @@ pub enum Button {
     LobbySend,
     LobbyBack,
     LobbyStart,
+    LobbyLoad,
     // Continent (strategic) sidebar.
     Intelligence,
     Attack,
@@ -668,6 +669,7 @@ impl Button {
             Button::LobbySend => LOBBY_SEND,
             Button::LobbyBack => LOBBY_BACK,
             Button::LobbyStart => LOBBY_START,
+            Button::LobbyLoad => LOAD_LOAD,
             Button::Intelligence => INTELLIGENCE,
             Button::Attack => ATTACK,
             Button::StrategicBack => STRATEGIC_BACK,
@@ -810,6 +812,7 @@ impl Button {
             Button::LobbySend => (450, 391),
             Button::LobbyBack => (15, 432),
             Button::LobbyStart => (445, 432),
+            Button::LobbyLoad => (335, 432),
             Button::Intelligence => (11, 387),
             Button::Attack => (11, 407),
             Button::StrategicBack | Button::StrategicContinue => (11, 456),
@@ -1088,7 +1091,7 @@ impl Layout {
             Button::HostGame | Button::JoinGame | Button::SessionsBack => {
                 self.s(native).offset_by(self.sessions_dialog())
             }
-            Button::LobbySend | Button::LobbyBack | Button::LobbyStart => {
+            Button::LobbySend | Button::LobbyBack | Button::LobbyStart | Button::LobbyLoad => {
                 self.s(native).offset_by(self.lobby_dialog())
             }
             Button::SavesBack | Button::SavesOk | Button::SavesUp | Button::SavesDown => {
@@ -1385,9 +1388,12 @@ impl Layout {
             Screen::Sessions => {
                 buttons.extend([Button::HostGame, Button::JoinGame, Button::SessionsBack])
             }
-            Screen::Lobby => {
-                buttons.extend([Button::LobbySend, Button::LobbyBack, Button::LobbyStart])
-            }
+            Screen::Lobby => buttons.extend([
+                Button::LobbySend,
+                Button::LobbyBack,
+                Button::LobbyStart,
+                Button::LobbyLoad,
+            ]),
             Screen::Strategic { victory } => buttons.extend([
                 Button::Intelligence,
                 Button::Attack,

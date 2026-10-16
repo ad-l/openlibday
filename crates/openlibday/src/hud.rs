@@ -1101,7 +1101,11 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         }
         Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
         Screen::Saves { saving: false } => {
-            front::draw_main_menu(canvas, gfx, viewer)?;
+            if viewer.online() {
+                front::draw_lobby(canvas, gfx, viewer)?;
+            } else {
+                front::draw_main_menu(canvas, gfx, viewer)?;
+            }
             return saves::draw(canvas, gfx, viewer);
         }
         Screen::Sessions => return front::draw_sessions(canvas, gfx, viewer),

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
 use crate::campaign::{Session, Stage, State};
+use crate::link::Opening;
 use crate::players::Players;
 use crate::skirmish::{Phase, Setup};
 
@@ -424,6 +425,8 @@ impl Viewer {
     fn close_saves(&mut self) {
         self.screen = if self.saving() {
             self.home()
+        } else if self.online() {
+            Screen::Lobby
         } else {
             Screen::MainMenu
         };
@@ -469,8 +472,10 @@ impl Viewer {
         };
         let path = self.saves_entry(row).map(|e| e.path.clone());
         if !self.saving() {
-            if let Some(path) = path {
-                self.load_game(&path);
+            match path {
+                Some(path) if self.online() => self.lobby_pick_save(&path),
+                Some(path) => self.load_game(&path),
+                None => {}
             }
             return;
         }
@@ -666,9 +671,43 @@ impl Viewer {
         }
     }
 
+    /// The campaign in the save at `path` (or the campaign's own save), for
+    /// a multiplayer game to go on with between battles, and where it
+    /// opens.
+    pub(crate) fn read_campaign_save(&self, path: &Path) -> Result<(State, Opening), String> {
+        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let (state, opening) = if self.campaign_save_path().as_deref() == Some(path) {
+            (State::from_json(&text)?, Opening::Resume)
+        } else {
+            let file = serde_json::from_str::<SaveFile>(&text).map_err(|e| e.to_string())?;
+            if file.format != FORMAT || file.version == 0 || file.version > VERSION {
+                return Err("it is from another version of openlibday".into());
+            }
+            let Some(state) = file.campaign else {
+                return Err("only campaigns can be loaded in a multiplayer game".into());
+            };
+            if file.battle.is_some() {
+                return Err(
+                    "it was saved during a battle; multiplayer campaigns load from saves made between battles"
+                        .into(),
+                );
+            }
+            let opening = if file.base_editor {
+                Opening::BaseEditor
+            } else {
+                Opening::Resume
+            };
+            (state, opening)
+        };
+        if state.stage == Stage::Won {
+            return Err("this campaign is over".into());
+        }
+        Ok((state, opening))
+    }
+
     fn restore(&mut self, file: SaveFile) -> Result<(), String> {
         if file.campaign.as_ref().is_some_and(|c| c.members.len() > 1) {
-            return Err("an online campaign cannot be resumed alone".into());
+            return Err("an online campaign loads in a multiplayer waiting area".into());
         }
         let battle = match &file.battle {
             Some(value) => {

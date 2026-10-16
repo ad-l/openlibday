@@ -52,18 +52,31 @@ pub enum ToClient {
         slot: i64,
     },
     /// A co-op campaign starts with `humans` players, the client playing
-    /// `slot`: the campaign's state as JSON, and the seed `rand()` starts
-    /// from.
+    /// `slot`: the campaign's state as JSON, the seed `rand()` starts from,
+    /// and where the campaign opens (a loaded one goes on where it was).
     Campaign {
         state: String,
         humans: usize,
         slot: i64,
         seed: u32,
+        opening: Opening,
     },
     /// A command the host ran, for the client to run in turn.
     Run { entry: Entry },
     /// The game's settings, as the host chose them.
     Settings { settings: crate::lobby::Settings },
+}
+
+/// Where a co-op campaign opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Opening {
+    /// A new campaign: the first attack on the base.
+    #[default]
+    New,
+    /// A loaded campaign, at its stage.
+    Resume,
+    /// A loaded campaign saved while building the base.
+    BaseEditor,
 }
 
 /// One direction-typed end of a link.
@@ -104,7 +117,7 @@ pub struct Peer {
 }
 
 /// Version of the messages above; both ends must speak the same.
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 /// The port a host listens on unless told otherwise.
 pub const DEFAULT_PORT: u16 = 41530;
 /// Longest message accepted (a corrupt or hostile length otherwise

@@ -13,6 +13,7 @@ use libday_view::movement::{self, Access};
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
+use crate::link::Opening;
 use crate::players::{CAMPAIGN_PLAYER, Players};
 use crate::skirmish::{AI, Phase, Setup};
 
@@ -180,7 +181,7 @@ pub struct Member {
 }
 
 impl Member {
-    fn new(slot: i64, name: &str) -> Self {
+    pub(crate) fn new(slot: i64, name: &str) -> Self {
         Self {
             slot,
             name: name.into(),
@@ -534,6 +535,19 @@ impl Viewer {
         };
         let rng = &mut self.rng;
         let state = State::new(&data, &players, difficulty, || rng.rand());
+        self.launch_campaign(Session { data, state }, Opening::New);
+    }
+
+    /// START with a loaded save (host): everyone goes on with `state`.
+    pub(crate) fn start_loaded_campaign(&mut self, state: State, opening: Opening) {
+        match self.game.original_campaign() {
+            Ok(data) => self.launch_campaign(Session { data, state }, opening),
+            Err(e) => self.error = Some(format!("campaign: {e}")),
+        }
+    }
+
+    /// The host sends everyone the campaign and opens it.
+    fn launch_campaign(&mut self, session: Session, opening: Opening) {
         let seed = match &mut self.net.seeds {
             Some(seeds) => seeds.rand() as u32,
             None => self.rng.rand() as u32,
@@ -544,21 +558,29 @@ impl Viewer {
         }
         self.net.log.clear();
         self.net.desync = None;
-        let humans = players.len();
-        let text = state.to_json();
+        let humans = session.state.humans();
+        let text = session.state.to_json();
         for peer in &self.net.peers {
             peer.link.send(&crate::link::ToClient::Campaign {
                 state: text.clone(),
                 humans,
                 slot: peer.slot,
                 seed,
+                opening,
             });
         }
-        self.join_campaign(Session { data, state }, seed);
+        self.join_campaign(session, seed, opening);
     }
 
-    /// A client starts the host's co-op campaign.
-    pub(crate) fn follow_campaign(&mut self, state: &str, humans: usize, slot: i64, seed: u32) {
+    /// A client starts (or goes on with) the host's co-op campaign.
+    pub(crate) fn follow_campaign(
+        &mut self,
+        state: &str,
+        humans: usize,
+        slot: i64,
+        seed: u32,
+        opening: Opening,
+    ) {
         if let Some(online) = &mut self.net.online {
             online.slot = slot;
             online.started = true;
@@ -571,18 +593,24 @@ impl Viewer {
                 .map_err(|e| e.to_string())
         });
         match session {
-            Ok(session) => self.join_campaign(session, seed),
+            Ok(session) => self.join_campaign(session, seed, opening),
             Err(e) => self.error = Some(format!("the host's campaign: {e}")),
         }
     }
 
     /// Every player starts the same campaign the same way.
-    fn join_campaign(&mut self, session: Session, seed: u32) {
+    fn join_campaign(&mut self, session: Session, seed: u32, opening: Opening) {
         self.rng = libday_view::scatter::Rand::new(seed);
         self.campaign = Some(session);
         self.save_campaign();
-        self.begin_base_battle();
-        self.play_continent_intro();
+        match opening {
+            Opening::New => {
+                self.begin_base_battle();
+                self.play_continent_intro();
+            }
+            Opening::Resume => self.resume_campaign(),
+            Opening::BaseEditor => self.open_base_editor(),
+        }
     }
 
     /// The current continent's `Intro` video.

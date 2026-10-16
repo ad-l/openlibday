@@ -225,9 +225,20 @@ Single player must pass all existing tests and scripts after each step.
     reports (`Proceed`); clients are told to wait. Rewards (credits and
     technology) go to every member in full.
   - Only the host saves (between battles, into `campaign_online.json` and
-    the save list); an online campaign save cannot yet be resumed (alone
-    or online). Winning or losing the campaign returns to the waiting
+    the save list). Winning or losing the campaign returns to the waiting
     area.
+  - Loading (protocol 6): LOAD, next to START in the waiting area, opens
+    the save list over the waiting area. The host picks an online
+    campaign saved between battles; `seat_save` checks that the waiting
+    area holds exactly its players (names matched case-insensitively,
+    the same host) and gives each their saved slot. The chat says it is
+    ready to load (the Mode reads "Saved campaign") or why it cannot be
+    loaded; START checks again, then sends it with
+    `ToClient::Campaign { .., opening }` (`Resume` or `BaseEditor`). The
+    difficulty can still be changed; changing the mode or the players
+    sets the save aside. A campaign saved online cannot be loaded alone.
+  - `scripts/tcp_load_host.txt` and `tcp_load_client.txt` load
+    `scripts/fixtures/mp_save.json` over TCP and go on to a battle.
   - Script command `mpcampaign [DIFFICULTY]`; `scripts/mp_campaign.txt`
     plays the first attack, parallel base building, an upgrade and a
     province with two copies in step.
@@ -327,14 +338,14 @@ this is not a cheating concern.
 | MP3 | Lobby UI, slots (human/closed), zone merge, turn timer | 3–4 players against the AI from the menu |
 | MP4 | LAN discovery, UPnP/NAT-PMP, join code (done; awaiting a game between two homes) | internet game between two homes |
 | MP5 | Disconnect/reconnect, resync, host saves/loads | fault-injection tests pass |
-| MP6 | Co-op campaign: shared continent, bases, counterattacks (done; resuming online saves to do) | a continent played by two players |
+| MP6 | Co-op campaign: shared continent, bases, counterattacks, loading online saves (done) | a continent played by two players |
 | later | Player versus player (`SCENS\DEATHM.ZIP`) | not planned yet |
 
 ## Open questions
 
 - **Co-op campaign:** answered for MP6 (see above): one shared continent
-  and base, per-player money and research, host-chosen provinces. Still
-  open: resuming a saved online campaign in the waiting area.
+  and base, per-player money and research, host-chosen provinces; saved
+  online campaigns load in the waiting area.
 - **Turn order with several humans:** do all human players move before the
   AI, one after the other, or at the same time?
 

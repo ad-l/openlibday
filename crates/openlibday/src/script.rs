@@ -86,6 +86,7 @@
 //! load N                LOAD GAME row N (newest first; with the campaign's
 //!                       own save among them)
 //! saves load|save       open LOAD GAME or SAVE GAME (state `saves`)
+//! copy FROM TO          copy file FROM to TO (making TO's directory)
 //! quit                  end the program
 //! ```
 
@@ -197,6 +198,7 @@ pub enum Command {
     Say(String),
     Await(String, String, f64),
     SaveDir(String, bool),
+    Copy(String, String),
     /// Save as a new save (`None`) or over save N.
     Save(Option<usize>),
     Load(usize),
@@ -375,6 +377,10 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
                 Some(_) => num(args.get(2))?,
                 None => 60.0,
             },
+        ),
+        "copy" => Command::Copy(
+            args.first().ok_or("copy FROM TO")?.to_string(),
+            args.get(1).ok_or("copy FROM TO")?.to_string(),
         ),
         "savedir" => Command::SaveDir(
             args.first().ok_or("missing directory")?.to_string(),
@@ -682,6 +688,12 @@ impl Runner<'_, '_> {
                 viewer.saves = Some(dir.into());
             }
             Command::Saves(saving) => viewer.open_saves(*saving),
+            Command::Copy(from, to) => {
+                if let Some(dir) = Path::new(to).parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::copy(from, to)?;
+            }
             Command::Save(row) => {
                 if !viewer.can_save() {
                     return Err("the game cannot be saved now".into());
@@ -1197,6 +1209,7 @@ pub fn state(viewer: &Viewer) -> Value {
             "mode": format!("{:?}", o.settings.mode),
             "difficulty": o.settings.difficulty,
             "turn_minutes": o.settings.turn_minutes,
+            "loaded": o.settings.loaded,
             "turn_left": viewer.turn_left().map(|d| d.as_secs()),
             "lan": viewer.game_addresses().0,
             "wan": viewer.game_addresses().1,

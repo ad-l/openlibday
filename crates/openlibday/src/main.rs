@@ -616,7 +616,8 @@ impl Viewer {
             | Button::SessionsBack
             | Button::LobbySend
             | Button::LobbyBack
-            | Button::LobbyStart => self.front_enabled(button),
+            | Button::LobbyStart
+            | Button::LobbyLoad => self.front_enabled(button),
             Button::Intelligence
             | Button::Attack
             | Button::StrategicBack
@@ -722,7 +723,8 @@ impl Viewer {
             | Button::SessionsBack
             | Button::LobbySend
             | Button::LobbyBack
-            | Button::LobbyStart => self.front_activate(button),
+            | Button::LobbyStart
+            | Button::LobbyLoad => self.front_activate(button),
             Button::Chat => {
                 self.front.chatting = !self.front.chatting;
                 self.front.chat.clear();

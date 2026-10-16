@@ -54,6 +54,9 @@ pub struct Settings {
     pub difficulty: u8,
     /// How long a human's turn may last, in minutes; 0: no limit.
     pub turn_minutes: u8,
+    /// The host picked a campaign save with LOAD: START goes on with it.
+    #[serde(default)]
+    pub loaded: bool,
 }
 
 impl Default for Settings {
@@ -62,6 +65,7 @@ impl Default for Settings {
             mode: Mode::Skirmish,
             difficulty: crate::front::DIFFICULTY_DEFAULT,
             turn_minutes: 0,
+            loaded: false,
         }
     }
 }
@@ -110,6 +114,14 @@ pub struct Online {
     pub port_map: Option<PortMap>,
     pub responder: Option<Responder>,
     pub id: u64,
+    /// On a host: the campaign save picked with LOAD, for START.
+    pub load: Option<Loaded>,
+}
+
+/// A campaign save the host picked in the waiting area.
+pub struct Loaded {
+    pub state: crate::campaign::State,
+    pub opening: link::Opening,
 }
 
 impl Online {
@@ -262,12 +274,15 @@ impl Viewer {
             return;
         }
         let s = &mut online.settings;
+        let mut set_aside = false;
         match setting {
             Setting::Mode => {
                 s.mode = match s.mode {
                     Mode::Skirmish => Mode::Campaign,
                     Mode::Campaign => Mode::Skirmish,
                 };
+                set_aside = online.load.take().is_some();
+                s.loaded = false;
             }
             Setting::Difficulty => {
                 s.difficulty = s
@@ -283,6 +298,9 @@ impl Viewer {
             }
         }
         self.send_settings();
+        if set_aside {
+            self.post(None, "The saved campaign was set aside".into());
+        }
     }
 
     /// The host sets the turn limit (`minutes`, 0 for none) at any time.
@@ -329,15 +347,109 @@ impl Viewer {
     }
 
     /// START (host): the skirmish selector, whose choice starts everyone,
-    /// or the co-op campaign.
+    /// or the co-op campaign, new or loaded.
     pub(crate) fn lobby_start(&mut self) {
         let settings = self.net.online.as_ref().map(|o| o.settings);
+        if let Some(online) = &mut self.net.online
+            && let Some(mut loaded) = online.load.take()
+        {
+            online.settings.loaded = false;
+            let seats = seat_save(&loaded.state.members, &online.names);
+            self.send_settings();
+            match seats {
+                Ok(seats) => {
+                    self.reseat(&seats);
+                    loaded.state.difficulty = settings.map_or(0, |s| i64::from(s.difficulty));
+                    self.start_loaded_campaign(loaded.state, loaded.opening);
+                }
+                Err(e) => self.post(None, format!("The save cannot be loaded: {e}")),
+            }
+            return;
+        }
         if let Some(settings) = settings.filter(|s| s.mode == Mode::Campaign) {
             self.start_online_campaign(i64::from(settings.difficulty));
             return;
         }
         if let Err(e) = self.open_selector() {
             self.error = Some(e);
+        }
+    }
+
+    /// LOAD GAME's choice in the waiting area (host): whether the save at
+    /// `path` can go on with the players here; if so, START loads it.
+    /// Everyone reads why not in the chat.
+    pub(crate) fn lobby_pick_save(&mut self, path: &std::path::Path) {
+        self.screen = Screen::Lobby;
+        let Some(online) = &self.net.online else {
+            return;
+        };
+        let names = online.names.clone();
+        let picked = self.read_campaign_save(path).and_then(|(state, opening)| {
+            let seats = seat_save(&state.members, &names)?;
+            Ok((state, opening, seats))
+        });
+        let Some(online) = &mut self.net.online else {
+            return;
+        };
+        match picked {
+            Ok((state, opening, seats)) => {
+                let s = &mut online.settings;
+                s.mode = Mode::Campaign;
+                s.difficulty = state
+                    .difficulty
+                    .clamp(0, crate::front::DIFFICULTY_MAX.into())
+                    as u8;
+                s.loaded = true;
+                let players = state.members.len();
+                online.load = Some(Loaded { state, opening });
+                self.reseat(&seats);
+                self.send_settings();
+                self.post(
+                    None,
+                    format!(
+                        "The saved campaign ({players} player{}) is ready to load: press START",
+                        if players == 1 { "" } else { "s" }
+                    ),
+                );
+            }
+            Err(e) => {
+                let set_aside = online.load.take().is_some();
+                online.settings.loaded = false;
+                if set_aside {
+                    self.send_settings();
+                }
+                self.post(None, format!("The save cannot be loaded: {e}"));
+            }
+        }
+    }
+
+    /// Gives the players the slots `seats` maps their slots to (a loaded
+    /// campaign's), telling clients whose slot changed.
+    fn reseat(&mut self, seats: &BTreeMap<i64, i64>) {
+        let Some(online) = &mut self.net.online else {
+            return;
+        };
+        if seats.iter().all(|(a, b)| a == b) {
+            return;
+        }
+        online.names = std::mem::take(&mut online.names)
+            .into_iter()
+            .map(|(slot, name)| (seats.get(&slot).copied().unwrap_or(slot), name))
+            .collect();
+        for peer in &mut self.net.peers {
+            if let Some(&slot) = seats.get(&peer.slot)
+                && slot != peer.slot
+            {
+                peer.slot = slot;
+                peer.link.send(&ToClient::Welcome { slot });
+            }
+        }
+        self.net.peers.sort_by_key(|p| p.slot);
+        let roster = ToClient::Roster {
+            players: online.names.clone().into_iter().collect(),
+        };
+        for peer in &self.net.peers {
+            peer.link.send(&roster);
         }
     }
 
@@ -570,6 +682,9 @@ impl Viewer {
             }
         }
         online.names = names;
+        // Who loads a save was checked for the players then.
+        let set_aside = online.load.take().is_some();
+        online.settings.loaded = false;
         let roster = ToClient::Roster {
             players: online.names.clone().into_iter().collect(),
         };
@@ -578,6 +693,12 @@ impl Viewer {
         }
         self.seats = Players::online(self.net.peers.len() + 1, 1);
         self.send_settings();
+        if set_aside {
+            self.post(
+                None,
+                "The players changed: pick the save with LOAD again".into(),
+            );
+        }
     }
 
     /// The host lost the client playing `slot`.
@@ -619,7 +740,8 @@ impl Viewer {
                 humans,
                 slot,
                 seed,
-            } => self.follow_campaign(&state, humans, slot, seed),
+                opening,
+            } => self.follow_campaign(&state, humans, slot, seed, opening),
             ToClient::Welcome { slot } => {
                 let Some(online) = &mut self.net.online else {
                     return;
@@ -701,5 +823,126 @@ impl Viewer {
             }
             _ => None,
         })
+    }
+}
+
+/// Seats the waiting area's players (`names` by slot, the host in 1) as
+/// in a campaign save with `members`: each player's slot in the save by
+/// their slot now; or why the save cannot be loaded.
+pub fn seat_save(
+    members: &[crate::campaign::Member],
+    names: &BTreeMap<i64, String>,
+) -> Result<BTreeMap<i64, i64>, String> {
+    let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+    let name = |m: &crate::campaign::Member| match m.name.trim() {
+        "" => libday_view::minimap::player_name(m.slot),
+        n => n.to_owned(),
+    };
+    let n = members.len();
+    let seated = (1..=n as i64).all(|s| members.iter().filter(|m| m.slot == s).count() == 1);
+    if !(1..=MAX_HUMANS).contains(&n) || !seated {
+        return Err("its players cannot be seated".into());
+    }
+    let mut members: Vec<_> = members.iter().collect();
+    members.sort_by_key(|m| m.slot);
+    if n != names.len() {
+        let list: Vec<_> = members.iter().map(|m| name(m)).collect();
+        return Err(format!(
+            "it is for {n} player{} ({}) and {} {} in the waiting area",
+            if n == 1 { "" } else { "s" },
+            and_list(&list),
+            names.len(),
+            if names.len() == 1 { "is" } else { "are" },
+        ));
+    }
+    let host = name(members[0]);
+    if !names.get(&1).is_some_and(|h| same(h, &host)) {
+        return Err(format!(
+            "{host} hosted this campaign and must host it again"
+        ));
+    }
+    let mut seats = BTreeMap::from([(1, 1)]);
+    let mut missing = Vec::new();
+    for m in &members[1..] {
+        let found = names
+            .iter()
+            .find(|&(slot, there)| !seats.contains_key(slot) && same(there, &name(m)));
+        match found {
+            Some((&slot, _)) => {
+                seats.insert(slot, m.slot);
+            }
+            None => missing.push(name(m)),
+        }
+    }
+    if missing.is_empty() {
+        return Ok(seats);
+    }
+    let strangers: Vec<_> = names
+        .iter()
+        .filter(|(slot, _)| !seats.contains_key(slot))
+        .map(|(_, n)| n.clone())
+        .collect();
+    let verb = |list: &[String]| if list.len() == 1 { "is" } else { "are" };
+    Err(format!(
+        "{} {} not in the waiting area, and {} {} not in this save",
+        and_list(&missing),
+        verb(&missing),
+        and_list(&strangers),
+        verb(&strangers),
+    ))
+}
+
+/// "A", "A and B", "A, B and C".
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::campaign::Member;
+
+    fn members(names: &[&str]) -> Vec<Member> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| Member::new(i as i64 + 1, n))
+            .collect()
+    }
+
+    fn lobby(names: &[&str]) -> BTreeMap<i64, String> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i as i64 + 1, (*n).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn a_save_seats_its_players_by_name() {
+        let save = members(&["Alice", "Bob", "Carol"]);
+        let seats = seat_save(&save, &lobby(&["Alice", "carol", "Bob"])).unwrap();
+        assert_eq!(seats, BTreeMap::from([(1, 1), (2, 3), (3, 2)]));
+    }
+
+    #[test]
+    fn a_save_needs_its_players() {
+        let save = members(&["Alice", "Bob"]);
+        assert_eq!(
+            seat_save(&save, &lobby(&["Alice"])).unwrap_err(),
+            "it is for 2 players (Alice and Bob) and 1 is in the waiting area"
+        );
+        assert_eq!(
+            seat_save(&save, &lobby(&["Bob", "Alice"])).unwrap_err(),
+            "Alice hosted this campaign and must host it again"
+        );
+        assert_eq!(
+            seat_save(&save, &lobby(&["Alice", "Dave"])).unwrap_err(),
+            "Bob is not in the waiting area, and Dave is not in this save"
+        );
     }
 }

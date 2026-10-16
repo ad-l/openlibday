@@ -335,7 +335,8 @@ pub(super) fn draw_lobby(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Vi
                 let text = match setting {
                     Setting::Mode => match settings.mode {
                         Mode::Skirmish => "Skirmish".to_owned(),
-                        Mode::Campaign => "Campaign (soon)".to_owned(),
+                        Mode::Campaign if settings.loaded => "Saved campaign".to_owned(),
+                        Mode::Campaign => "Campaign".to_owned(),
                     },
                     Setting::Difficulty => {
                         format!("{} of {DIFFICULTY_MAX}", settings.difficulty)

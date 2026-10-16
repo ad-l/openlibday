@@ -56,10 +56,21 @@ fn mp_campaign_script() {
 /// step and end with the same state hash.
 #[test]
 fn tcp_scripts() {
-    let host = std::thread::spawn(|| play("scripts/tcp_host.txt", "hash "));
+    tcp_pair("scripts/tcp_host.txt", "scripts/tcp_client.txt");
+}
+
+#[test]
+fn tcp_load_scripts() {
+    tcp_pair("scripts/tcp_load_host.txt", "scripts/tcp_load_client.txt");
+}
+
+/// Plays a host script and a client script against each other over TCP;
+/// both end on the same state.
+fn tcp_pair(host: &'static str, client: &str) {
+    let host = std::thread::spawn(move || play(host, "hash "));
     // The host listens before the client's first connection attempt fails.
     std::thread::sleep(std::time::Duration::from_secs(2));
-    let client = play("scripts/tcp_client.txt", "hash ");
+    let client = play(client, "hash ");
     let host = host.join().unwrap();
     if host.is_empty() {
         return;

@@ -1,0 +1,19 @@
+# Loading a multiplayer campaign over TCP, client side: Bob joins
+# `tcp_load_host.txt` (another process) on port 41532 and goes on with
+# the saved campaign the host loads.
+# Run after starting the host: openlibday --headless --script scripts/tcp_load_client.txt
+name Bob
+discover off
+connect 127.0.0.1:41532
+await screen Lobby
+expect online.slot 2
+await online.loaded true
+expect online.mode Campaign
+say ready
+await screen Briefing
+expect local 2
+expect campaign.members.0.name Alice
+expect campaign.members.1.name Bob
+expect campaign.stage.province 3
+hash
+quit

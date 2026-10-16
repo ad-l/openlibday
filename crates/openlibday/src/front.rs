@@ -151,6 +151,9 @@ impl Viewer {
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
             Button::LobbyStart => self.net.online.as_ref().is_some_and(|o| o.is_host()),
+            Button::LobbyLoad => {
+                self.net.online.as_ref().is_some_and(|o| o.is_host()) && self.any_saves()
+            }
             Button::LobbySend => !self.front.chat.trim().is_empty(),
             Button::HostGame | Button::JoinGame => {
                 !self.front.name.trim().is_empty()
@@ -194,6 +197,7 @@ impl Viewer {
             Button::LobbySend => self.send_chat(),
             Button::LobbyBack => self.lobby_back(),
             Button::LobbyStart => self.lobby_start(),
+            Button::LobbyLoad => self.open_saves(false),
             _ => {}
         }
     }

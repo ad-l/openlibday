@@ -1,0 +1,43 @@
+# Loading a multiplayer campaign over TCP, host side: Alice hosts on port
+# 41532 with a two-player save (Alice and Bob, between battles); LOAD
+# refuses it while she is alone, accepts it once `tcp_load_client.txt`
+# (Bob, another process) joins, and START takes both back to the
+# continent, where she picks the next province.
+# Run both: openlibday --headless --script scripts/tcp_load_host.txt
+#           openlibday --headless --script scripts/tcp_load_client.txt
+name Alice
+savedir target/tcp_load fresh
+copy scripts/fixtures/mp_save.json target/tcp_load/games/1.json
+host 41532
+expect screen Lobby
+button LobbyLoad
+expect screen Saves
+key Return
+expect screen Lobby
+expect online.chat.-1 The save cannot be loaded: it is for 2 players (Alice and Bob) and 1 is in the waiting area
+expect online.loaded false
+await online.peers 1
+expect online.names.2 Bob
+button LobbyLoad
+key Return
+expect screen Lobby
+expect online.chat.-1 The saved campaign (2 players) is ready to load: press START
+expect online.loaded true
+expect online.mode Campaign
+expect online.difficulty 2
+await online.chat.-1 ready
+button LobbyStart
+expect screen Strategic
+expect local 1
+expect campaign.members.0.name Alice
+expect campaign.members.1.name Bob
+expect campaign.provinces.0.captured true
+expect campaign.stage.stage strategic
+province 3
+button Attack
+idle
+expect screen Briefing
+expect campaign.stage.province 3
+hash
+await online.peers 0
+quit
