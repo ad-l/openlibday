@@ -274,7 +274,7 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | # | Scope | Status |
 |---|---|---|
 | C1 | Data model, original importer, JSON format, `libday campaign-info`/`campaign-export`, tests | **Done** |
-| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | |
+| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu and NEW GAME dialog (name, difficulty 0–10) done |
 | C3 | Base-building mode on the base map (buildings, towers, roads, walls, mines; costs, refunds) | |
 | C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | |
 | C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | |

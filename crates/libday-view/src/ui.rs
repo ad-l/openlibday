@@ -107,6 +107,19 @@ pub mod frame {
     pub const SKIRMISH_BACK: u16 = 846;
     pub const SKIRMISH_UP: u16 = 850;
     pub const SKIRMISH_DOWN: u16 = 854;
+    /// Main menu panel and its buttons (four frames each).
+    pub const MAIN_MENU: u16 = 710;
+    pub const NEW_CAMPAIGN: u16 = 711;
+    pub const LOAD_CAMPAIGN: u16 = 715;
+    pub const MULTI_PLAYER: u16 = 719;
+    pub const INTRO: u16 = 723;
+    pub const RESOLUTION: u16 = 731;
+    pub const QUIT: u16 = 735;
+    pub const MAIN_SKIRMISH: u16 = 765;
+    /// NEW GAME dialog (player name and difficulty) and its buttons.
+    pub const NEW_GAME: u16 = 939;
+    pub const NEW_GAME_BACK: u16 = 940;
+    pub const NEW_GAME_CONTINUE: u16 = 944;
 }
 
 /// `(first frame, last frame, width, height)` of every element used.
@@ -152,9 +165,14 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (689, 692, 110, 17),
     (693, 696, 53, 17),
     (700, 703, 53, 17),
+    (710, 710, 286, 281),
+    (711, 738, 256, 28),
+    (765, 768, 256, 28),
     (841, 841, 364, 416),
     (842, 849, 100, 24),
     (850, 857, 53, 17),
+    (939, 939, 286, 228),
+    (940, 947, 100, 24),
 ];
 
 fn crop_of(frame: u16) -> Option<(i32, i32)> {
@@ -367,6 +385,19 @@ pub enum Button {
     OptionsSave,
     OptionsQuit,
     OptionsBack,
+    // Main menu.
+    NewCampaign,
+    LoadCampaign,
+    MainSkirmish,
+    MultiPlayer,
+    Intro,
+    Resolution,
+    Quit,
+    // NEW GAME dialog.
+    DifficultyLeft,
+    DifficultyRight,
+    NewGameBack,
+    NewGameContinue,
 }
 
 /// Which panel set is on screen.
@@ -399,6 +430,10 @@ pub enum Screen {
     Options {
         ask: Option<Ask>,
     },
+    /// The main menu shown at startup.
+    MainMenu,
+    /// NEW CAMPAIGN: the player's name and the difficulty.
+    NewGame,
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -413,7 +448,10 @@ pub enum Ask {
 impl Screen {
     /// Full-window dialogs drawn without the map and the bottom bar.
     pub fn is_dialog(self) -> bool {
-        matches!(self, Screen::Skirmishes | Screen::Tech { .. })
+        matches!(
+            self,
+            Screen::Skirmishes | Screen::Tech { .. } | Screen::MainMenu | Screen::NewGame
+        )
     }
 }
 
@@ -494,6 +532,17 @@ impl Button {
             Button::OptionsSave => OPTIONS_SAVE,
             Button::OptionsQuit => OPTIONS_QUIT,
             Button::OptionsBack => OPTIONS_BACK,
+            Button::NewCampaign => NEW_CAMPAIGN,
+            Button::LoadCampaign => LOAD_CAMPAIGN,
+            Button::MainSkirmish => MAIN_SKIRMISH,
+            Button::MultiPlayer => MULTI_PLAYER,
+            Button::Intro => INTRO,
+            Button::Resolution => RESOLUTION,
+            Button::Quit => QUIT,
+            Button::DifficultyLeft => TECH_LEFT,
+            Button::DifficultyRight => TECH_RIGHT,
+            Button::NewGameBack => NEW_GAME_BACK,
+            Button::NewGameContinue => NEW_GAME_CONTINUE,
         }
     }
 
@@ -590,6 +639,19 @@ impl Button {
             Button::OptionsSave => (132, 340),
             Button::OptionsQuit => (198, 340),
             Button::OptionsBack => (336, 340),
+            // Relative to the main menu panel, one row apart.
+            Button::NewCampaign => (15, 40),
+            Button::LoadCampaign => (15, 70),
+            Button::MainSkirmish => (15, 100),
+            Button::MultiPlayer => (15, 130),
+            Button::Intro => (15, 160),
+            Button::Resolution => (15, 190),
+            Button::Quit => (15, 220),
+            // Relative to the NEW GAME dialog.
+            Button::DifficultyLeft => (17, 114),
+            Button::DifficultyRight => (250, 114),
+            Button::NewGameBack => (10, 184),
+            Button::NewGameContinue => (170, 184),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -807,6 +869,17 @@ impl Layout {
             | Button::OptionsSave
             | Button::OptionsQuit
             | Button::OptionsBack => self.s(native).offset_by(self.options_dialog()),
+            Button::NewCampaign
+            | Button::LoadCampaign
+            | Button::MainSkirmish
+            | Button::MultiPlayer
+            | Button::Intro
+            | Button::Resolution
+            | Button::Quit => self.s(native).offset_by(self.main_menu()),
+            Button::DifficultyLeft
+            | Button::DifficultyRight
+            | Button::NewGameBack
+            | Button::NewGameContinue => self.s(native).offset_by(self.new_game_dialog()),
             _ => self.in_sidebar(native),
         }
     }
@@ -820,6 +893,19 @@ impl Layout {
 
     pub fn skirmish_dialog(&self) -> Rect {
         self.centred(frame::SKIRMISH_DIALOG)
+    }
+
+    pub fn main_menu(&self) -> Rect {
+        self.centred(frame::MAIN_MENU)
+    }
+
+    pub fn new_game_dialog(&self) -> Rect {
+        self.centred(frame::NEW_GAME)
+    }
+
+    /// A rectangle in NEW GAME dialog coordinates.
+    pub fn in_new_game(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.new_game_dialog())
     }
 
     pub fn report_dialog(&self) -> Rect {
@@ -998,6 +1084,21 @@ impl Layout {
                 Button::OptionsBack,
             ]),
             Screen::Options { ask: Some(_) } => buttons.extend([Button::Yes, Button::No]),
+            Screen::MainMenu => buttons.extend([
+                Button::NewCampaign,
+                Button::LoadCampaign,
+                Button::MainSkirmish,
+                Button::MultiPlayer,
+                Button::Intro,
+                Button::Resolution,
+                Button::Quit,
+            ]),
+            Screen::NewGame => buttons.extend([
+                Button::DifficultyLeft,
+                Button::DifficultyRight,
+                Button::NewGameBack,
+                Button::NewGameContinue,
+            ]),
         }
         if !matches!(
             screen,
@@ -1007,6 +1108,8 @@ impl Layout {
                 | Screen::Confirm
                 | Screen::Report
                 | Screen::Options { ask: Some(_) }
+                | Screen::MainMenu
+                | Screen::NewGame
         ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }

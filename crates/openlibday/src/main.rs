@@ -1,6 +1,7 @@
 //! openlibday application entry point.
 //!
-//! Without a scenario or save argument it starts a skirmish: the selector,
+//! Without a scenario or save argument it starts at the main menu (NEW
+//! CAMPAIGN, SKIRMISH, QUIT). A skirmish runs the selector,
 //! technology upgrades, deployment in the starting zones, then turns between
 //! the player and the AI (which does nothing yet). With one it is a map
 //! viewer where every unit can be moved. Maps draw terrain, roads, walls,
@@ -18,6 +19,7 @@ mod ai;
 mod automated;
 mod clock;
 mod combat;
+mod front;
 mod group;
 mod hud;
 mod input;
@@ -239,6 +241,8 @@ struct Viewer {
     menu: menu::Menu,
     /// Fullscreen switch for the main loop to apply.
     fullscreen: Option<bool>,
+    /// Main menu and NEW GAME dialog state.
+    front: front::Front,
 }
 
 impl Viewer {
@@ -543,6 +547,17 @@ impl Viewer {
             Button::Automated => self.can_support(),
             Button::AutomatedUp => self.support_scroll_ok(-1),
             Button::AutomatedDown => self.support_scroll_ok(1),
+            Button::NewCampaign
+            | Button::LoadCampaign
+            | Button::MainSkirmish
+            | Button::MultiPlayer
+            | Button::Intro
+            | Button::Resolution
+            | Button::Quit
+            | Button::DifficultyLeft
+            | Button::DifficultyRight
+            | Button::NewGameBack
+            | Button::NewGameContinue => self.front_enabled(button),
             _ => true,
         }
     }
@@ -581,7 +596,7 @@ impl Viewer {
             Button::AutomatedBack => self.close_supports(),
             Button::SkirmishUp => self.pick_step(-1),
             Button::SkirmishDown => self.pick_step(1),
-            Button::SkirmishBack => self.quit = true,
+            Button::SkirmishBack => self.open_main_menu(),
             Button::SkirmishContinue => self.choose_skirmish(),
             Button::ReportContinue => self.close_report(),
             Button::TechLeft => self.tech_step(-1),
@@ -610,6 +625,17 @@ impl Viewer {
             }
             Button::Yes => self.start_battle(),
             Button::No => self.screen = Screen::Deploy,
+            Button::NewCampaign
+            | Button::LoadCampaign
+            | Button::MainSkirmish
+            | Button::MultiPlayer
+            | Button::Intro
+            | Button::Resolution
+            | Button::Quit
+            | Button::DifficultyLeft
+            | Button::DifficultyRight
+            | Button::NewGameBack
+            | Button::NewGameContinue => self.front_activate(button),
             _ => {}
         }
     }
@@ -911,11 +937,16 @@ fn main() -> Result {
         settings_path: options_path,
         menu: menu::Menu::default(),
         fullscreen: None,
+        front: front::Front::default(),
     };
+    if args.script.is_some() {
+        // Scripted runs do not depend on who runs them.
+        viewer.front.name.clear();
+    }
     viewer.options.arrival = Some(0);
     viewer.reset();
     if args.scenario.is_none() && args.load.is_none() {
-        viewer.open_selector()?;
+        viewer.open_main_menu();
     }
 
     let mut events = sdl.event_pump()?;
@@ -965,6 +996,15 @@ fn main() -> Result {
         if let Some(on) = viewer.fullscreen.take() {
             canvas.window_mut().set_fullscreen(on)?;
             dirty = true;
+        }
+        // Typing goes to the NEW GAME dialog's name box.
+        let typing = viewer.screen == Screen::NewGame;
+        if typing != video.text_input().is_active(canvas.window()) {
+            if typing {
+                video.text_input().start(canvas.window());
+            } else {
+                video.text_input().stop(canvas.window());
+            }
         }
         let now = viewer.clock.since(viewer.started).as_secs();
         if now != second || viewer.animating() || moving {

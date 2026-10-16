@@ -330,7 +330,11 @@ impl Viewer {
                 self.close_menu();
                 self.end_battle(Outcome::Lost);
             }
-            Ask::Quit => self.quit = true,
+            // As in the original, quitting leaves for the main menu.
+            Ask::Quit => {
+                self.close_menu();
+                self.open_main_menu();
+            }
         }
     }
 

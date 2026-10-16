@@ -1,0 +1,34 @@
+# The main menu and the NEW GAME dialog (player name and difficulty).
+# Run: openlibday --headless --script scripts/main_menu.txt  (needs LIBDAY_ROOT)
+expect screen MainMenu
+screenshot target/main_menu.png
+# SKIRMISH opens the selector; its BACK returns to the menu.
+button MainSkirmish
+expect screen Skirmishes
+button SkirmishBack
+expect screen MainMenu
+button NewCampaign
+expect screen NewGame
+expect front.difficulty 4
+type Commander
+expect front.name Commander
+key Backspace
+key Backspace
+type ers
+expect front.name Commanders
+# The arrows step the difficulty.
+button DifficultyLeft
+expect front.difficulty 3
+button DifficultyRight
+button DifficultyRight
+expect front.difficulty 5
+key Left
+expect front.difficulty 4
+screenshot target/new_game.png
+# Escape (or BACK) returns to the menu.
+key Escape
+expect screen MainMenu
+button NewCampaign
+button NewGameBack
+expect screen MainMenu
+echo main menu test passed

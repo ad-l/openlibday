@@ -12,8 +12,11 @@ use crate::{CLICK_SLOP, Viewer, settings};
 impl Viewer {
     /// Keys of the full-window dialogs; `None` when not on one.
     fn dialog_key(&mut self, key: Keycode) -> Option<bool> {
+        if let Some(running) = self.front_key(key) {
+            return Some(running);
+        }
         match (self.screen, key) {
-            (Screen::Skirmishes, Keycode::Escape) => return Some(false),
+            (Screen::Skirmishes, Keycode::Escape) => self.open_main_menu(),
             (Screen::Skirmishes, Keycode::Up) => self.pick_step(-1),
             (Screen::Skirmishes, Keycode::Down) => self.pick_step(1),
             (Screen::Skirmishes, Keycode::PageUp) => self.pick_step(-(SKIRMISH_ROWS as isize)),
@@ -163,7 +166,9 @@ impl Viewer {
             return;
         }
         match self.screen {
-            Screen::Goal | Screen::Confirm | Screen::Report => {}
+            Screen::Goal | Screen::Confirm | Screen::Report | Screen::MainMenu => {}
+            Screen::NewGame if left => self.front_click(ox, oy),
+            Screen::NewGame => {}
             Screen::Options { ask: None } if left => self.menu_click(ox, oy),
             Screen::Options { .. } => {}
             Screen::Skirmishes if left => {
@@ -396,6 +401,7 @@ impl Viewer {
             } => self.mouse_down(button, x, y),
             Event::MouseButtonUp { x, y, .. } => self.mouse_up(x, y),
             Event::MouseMotion { x, y, .. } => self.mouse_motion(x, y),
+            Event::TextInput { text, .. } => self.text_input(&text),
             _ => {}
         }
         !self.quit

@@ -47,6 +47,11 @@ fn menu_script() {
 }
 
 #[test]
+fn main_menu_script() {
+    play("scripts/main_menu.txt", "main menu test passed");
+}
+
+#[test]
 fn move_speed_script() {
     play("scripts/move_speed.txt", "move speed test passed");
 }

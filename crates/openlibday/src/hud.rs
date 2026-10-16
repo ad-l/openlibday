@@ -18,6 +18,7 @@ use sdl3::video::{Window, WindowContext};
 
 use crate::Viewer;
 
+mod front;
 mod options;
 mod setup;
 
@@ -1010,6 +1011,8 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     let (scene, art) = (&viewer.map.scene, &viewer.art);
     match viewer.screen {
         Screen::Skirmishes => return setup::draw_selector(canvas, gfx, viewer),
+        Screen::MainMenu => return front::draw_main_menu(canvas, gfx, viewer),
+        Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
         Screen::Tech { read_only } => return setup::draw_tech(canvas, gfx, viewer, read_only),
         Screen::Overview | Screen::Briefing => draw_overview(canvas, gfx, viewer, scene, art)?,
         Screen::Battle => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,

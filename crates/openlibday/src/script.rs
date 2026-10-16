@@ -20,6 +20,7 @@
 //! inspect X Y         hold the right button on map tile (X, Y)
 //! button NAME           click an interface button (EndTurn, TechContinue...)
 //! skirmish NAME|N       pick a skirmish by file, title or list number
+//!                       (opening the selector if it is not shown)
 //! deploy NAME           pick a unit type in the deployment list
 //! support NAME|ID       open AUTOMATED UNITS and arm that support (then
 //!                       aim it with `tile`)
@@ -33,6 +34,7 @@
 //!                       picks the array element with that id, `-1` the
 //!                       last) is VALUE
 //! echo TEXT             print TEXT
+//! type TEXT             type TEXT on the keyboard (the NEW GAME name)
 //! seed N                reseed the game's rand() (scripts start at 1)
 //! mine KIND OWNER X Y [seen]  lay an armed mine of type KIND, hidden from
 //!                       all but OWNER (from nobody with `seen`)
@@ -113,6 +115,8 @@ pub enum Command {
     State(Option<PathBuf>),
     Expect(String, String),
     Echo(String),
+    /// Text typed on the keyboard (the NEW GAME dialog's name).
+    Type(String),
     Seed(u32),
     Mine {
         kind: i64,
@@ -240,6 +244,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             Command::Expect(path.into(), value.trim().into())
         }
         "echo" => Command::Echo(rest.into()),
+        "type" => Command::Type(text()?),
         "seed" => Command::Seed(num(args.first())?),
         "mine" => Command::Mine {
             kind: num(args.first())?,
@@ -370,6 +375,10 @@ impl Runner<'_, '_> {
                 viewer.change_option(item, *step);
             }
             Command::Skirmish(name) => {
+                // From the main menu (or anywhere else), open the selector first.
+                if viewer.screen != libday_view::ui::Screen::Skirmishes {
+                    viewer.open_selector()?;
+                }
                 let lower = name.to_ascii_lowercase();
                 let pick = viewer
                     .flow
@@ -465,6 +474,7 @@ impl Runner<'_, '_> {
                 }
             }
             Command::Echo(text) => println!("{text}"),
+            Command::Type(text) => viewer.text_input(text),
             Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
             &Command::Mine {
                 kind,
@@ -815,6 +825,11 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    state["front"] = json!({
+        "name": viewer.front.name,
+        "difficulty": viewer.front.difficulty,
+    });
+    state["notice"] = json!(viewer.notice);
     state["selection"] = json!(viewer.selection());
     state["grouping"] = json!(viewer.grouping);
     state["walking"] = json!(viewer.motions.iter().map(|m| m.unit).collect::<Vec<_>>());
