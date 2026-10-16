@@ -1,0 +1,135 @@
+# Campaign continents: capturing a continent's capital moves on to the next
+# continent (its start cash replaces the credits, technology carries over,
+# the base starts again from the shipped base map with only the HQ, and no
+# base attack is fought); the last capital wins the campaign.
+# Run: openlibday --headless --script scripts/continents.txt  (needs LIBDAY_ROOT)
+button NewCampaign
+type Max
+button NewGameContinue
+key Return
+deploy Trooper
+tile 22 57
+key Return
+key Y
+wait 2000
+idle
+# A tower lost in a base battle is gone from the base.
+kill 110
+win
+wait 500
+idle
+key Return
+button TechUpgrade
+expect campaign.base.buildings.2.x 19
+expect campaign.base.buildings.-1.x 19
+button TechContinue
+button StrategicContinue
+button Campaign
+expect campaign.tech 145
+# Canuck's maps both carry a counterattack: after the province battle, its
+# roster attacks the base (the AI moving first), some arriving later.
+province 5
+button Attack
+key Return
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+key Return
+button StrategicContinue
+button Campaign
+province 6
+button Attack
+key Return
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+key Return
+expect campaign.stage.stage counter_attack
+expect campaign.stage.province 6
+expect campaign.provinces.5.captured true
+expect map s1-1-1.mdb
+expect screen Briefing
+expect buildings.-1.kind 137
+key Return
+key Return
+key Y
+wait 2000
+idle
+expect phase Player
+win
+wait 500
+idle
+expect screen Report
+key Return
+expect screen Strategic
+expect strategic.victory true
+expect campaign.stage.stage strategic
+button StrategicContinue
+button Campaign
+continent 0
+expect screen Strategic
+expect campaign.provinces.5.captured true
+expect campaign.provinces.6.captured false
+# The capital, Gdriugh-ahkud.
+province 7
+button Attack
+expect campaign.stage.province 7
+key Return
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+expect screen Report
+key Return
+expect screen Strategic
+expect campaign.continent 1
+expect campaign.stage.stage strategic
+expect campaign.credits 1600
+expect campaign.tech 145
+expect campaign.unit_tech.2 1
+expect campaign.base null
+expect campaign.provinces.0.captured true
+expect campaign.provinces.1.captured false
+expect strategic.victory false
+screenshot target/continent2.png
+# Anstasia's base map, back to the HQ alone.
+button StrategicBack
+expect screen BaseEditor
+expect map s2-1-1.mdb
+expect buildings.0.kind 130
+expect buildings.-1.kind 130
+button Campaign
+province 5
+button Attack
+expect campaign.stage.province 5
+key Escape
+# The last continent's capital ends the campaign.
+continent 3
+expect campaign.continent 3
+expect campaign.credits 12000
+province 20
+button Attack
+key Return
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+key Return
+expect screen MainMenu
+expect campaign null
+expect notice campaign won
+echo continents test passed

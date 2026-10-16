@@ -894,6 +894,28 @@ impl Viewer {
         }
     }
 
+    /// Scripts: starts continent `n` with every province but the capital
+    /// captured, on the overview.
+    pub(crate) fn jump_to_continent(&mut self, n: i64) -> Result<(), String> {
+        let session = self.campaign.as_mut().ok_or("no campaign")?;
+        let index = usize::try_from(n)
+            .ok()
+            .filter(|&i| i < session.data.continents.len())
+            .ok_or_else(|| format!("no continent {n}"))?;
+        let rng = &mut self.rng;
+        session
+            .state
+            .enter_continent(&session.data, index, || rng.rand());
+        let capital = session.continent().map_or(0, |c| c.capital_province);
+        for p in &mut session.state.provinces {
+            p.captured = p.number != capital;
+        }
+        session.state.stage = Stage::Strategic;
+        self.save_campaign();
+        self.resume_campaign();
+        Ok(())
+    }
+
     /// Province `n` is held: the capital completes the continent, else
     /// the overview says "You are victorious".
     fn province_won(&mut self, n: i64) {
@@ -909,7 +931,11 @@ impl Viewer {
                 state.enter_continent(&session.data, next, || rng.rand());
                 state.stage = Stage::Strategic;
             } else {
-                state.stage = Stage::Won;
+                // The campaign is won (the original plays `FH2End`).
+                self.delete_campaign_save();
+                self.open_main_menu();
+                self.notice = Some("campaign won".into());
+                return;
             }
             false
         } else {

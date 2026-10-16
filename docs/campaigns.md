@@ -296,18 +296,24 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | C1 | Data model, original importer, JSON format, `libday campaign-info`/`campaign-export`, tests | **Done** |
 | C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu, NEW GAME dialog (name, difficulty 0–10), campaign state and saves (`openlibday::campaign`, `saves/campaign.json`), LOAD CAMPAIGN done; continent screen done (`openlibday::strategic`, `libday_view::continent`): animated `COLANMS\Cn.SMK` sea, selected/captured province overlays, province text and credits, adjacency ("Province is too far."), INTELLIGENCE (hint with a Satellite Uplink), ATTACK, "You are victorious" + CONTINUE |
 | C3 | Base-building mode on the base map (buildings, towers, roads, walls, mines; costs, refunds) | **Done** (`openlibday::base_editor`, rules in `libday_view::base`): CONTINUE/BACK on the continent overview open the editor; BUILDINGS/DEFENSES lists from the owned-building tech tree, red ghost preview with refusal messages (HQ ring, adjacency to own roads, spacing, terrain, cost), road/wall segments built to the first refused tile, MOVE, RECYCLE (full refund this session, confirm and recycle value otherwise), CAMPAIGN returns to the continent keeping the layout |
-| C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | Campaign tactic, capture, credit rewards, variant swap on loss done; army selection pending |
-| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster scattered 12–14 tiles from the zone (11 from units and towers) moving first, defence towers as player units, 150 tech on a win, campaign over on a loss |
-| C6 | Continent transitions, intro/end videos, game won/lost | |
+| C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | **Done**: ATTACK on an adjacent province opens its briefing and deployment with the army of the base's buildings (deployment points from HQ/Deploy buildings × continent percentage, unit tech levels from ARMY, automated units), credits × difficulty percentage and the tech of captured tech buildings (`Province.Tech` equals the sum of the map's tech buildings) on a win, "You are victorious" + CONTINUE, variant swap on a loss |
+| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | **Done** (`scripts/campaign.txt`, `scripts/continents.txt`): first city attack and counterattacks (the won variant's `CounterAttack` flag) on the base map with the other HQs removed, troopers deployed in a radius-3 zone around the player's buildings, the roster scattered 12–14 tiles from the zone moving first (rows with `turn > 0` arrive as reinforcements and the battle goes on until they have), defence towers as player units, base (buildings, lost towers, roads, walls, mines, burnt terrain) kept on a win, campaign over on a loss; COUNTERA video not played |
+| C6 | Continent transitions, intro/end videos, game won/lost | **Done** (`scripts/continents.txt`): the capital moves on to the next continent (StartCash replaces the credits, tech points and unit levels carry over, base back to the shipped map with only the HQ, new variants, straight to the overview as in the original's state 2 → 3, no base attack); the last capital wins the campaign (save deleted, main menu); videos (`IntroN`, `FH2End`, `FH2Lose`) not played. Script command `continent N` jumps there for tests |
 | C7 | Tech/research spending between battles | **Done** (`openlibday::army`): the technology dialog after the first city attack (CONTINUE to the overview) and ARMY in base building (dialog over the greyed base, BACK); units from the base's buildings, `CostToNextTL` spent from the campaign's tech points, levels kept in `unit_tech` and used when deploying |
 
 ## 7. Open questions
 
-1. Is `StartCash` added to or replacing the player's credits on a new
-   continent, and do tech levels carry over? (`0x47D490` sets,
-   `0x47D4A6` adds; the StartCash call site at `0x479FA7` is not traced.)
-2. Where `Province.Tech` is granted and how tech points are spent
-   (`Player Campaign Tech`).
+1. *Answered by the original's saves* (`SAVEGAME\savegame.01`, end of
+   C1, and `.02`, C2 start): `StartCash` replaces the credits (1600 on
+   C2), the tech points carry over (plus the capital's 500) and so do the
+   unit tech levels; the C2 base holds only the HQ. The phase-end jump
+   table at `0x47EEF7` sends state 2 (new colony) straight to state 3,
+   and state 1 (first city attack) ends through the counterattack result
+   handler `0x47F4D7`.
+2. Where `Province.Tech` is granted: it equals the sum of the province
+   map's tech buildings' rewards, so the tactic total of `0x41B07A` is
+   presumably the captured tech buildings (as implemented); spending is
+   `Player Campaign Tech` (unit type, level).
 3. What the tactic total from `0x41B07A` is (sum of building values?) and
    what the four copied per-player values are.
 4. Exact counterattack rules: AI-first turn, which units keep AP
@@ -317,6 +323,5 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
    and whether one-way adjacency rows matter.
 6. Base-building costs and refunds (README: mines 10/20 credits, 50 %
    recycle refund — unverified).
-7. The "first city attack" state 1: whether the base map is played as a
-   battle at the start of each continent (`s1-1-1` has a 99-turn "defend"
-   scenario) or only shown for building.
+7. The "first city attack" state 1 is entered only from state 0 (the
+   campaign start); later continents start on the overview.

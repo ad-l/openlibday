@@ -20,6 +20,8 @@
 //! inspect X Y         hold the right button on map tile (X, Y)
 //! button NAME           click an interface button (EndTurn, TechContinue...)
 //! province N            click province N on the continent overview
+//! continent N           jump the campaign to continent N (0-3) with every
+//!                       province but the capital captured
 //! skirmish NAME|N       pick a skirmish by file, title or list number
 //!                       (opening the selector if it is not shown)
 //! deploy NAME           pick a unit type in the deployment list
@@ -104,6 +106,7 @@ pub enum Command {
     Ai(Option<crate::settings::AiMode>),
     Button(String),
     Province(i64),
+    Continent(i64),
     Option(String, i32),
     Skirmish(String),
     Deploy(String),
@@ -222,6 +225,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         },
         "button" => Command::Button(text()?),
         "province" => Command::Province(num(args.first())?),
+        "continent" => Command::Continent(num(args.first())?),
         "option" => Command::Option(
             args.first().ok_or("missing option")?.to_string(),
             match args.get(1) {
@@ -383,6 +387,7 @@ impl Runner<'_, '_> {
                 let at = ((x0 + mx * s + s / 2) as f32, (y0 + my * s + s / 2) as f32);
                 click(viewer, at, false);
             }
+            Command::Continent(n) => viewer.jump_to_continent(*n)?,
             Command::Option(name, step) => {
                 let item = crate::menu::ITEMS
                     .into_iter()
