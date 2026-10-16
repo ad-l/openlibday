@@ -561,8 +561,12 @@ impl Runner<'_, '_> {
         // At the instant the support started, so its timing is unchanged.
         crate::moves::preload_support(self.gfx, viewer);
         viewer.clock.advance(self.frame);
-        viewer.tick();
-        viewer.battle_tick();
+        if viewer.cutscene.is_some() {
+            viewer.video_tick();
+        } else {
+            viewer.tick();
+            viewer.battle_tick();
+        }
         self.show(viewer)?;
         if self.visible {
             std::thread::sleep(self.frame);
@@ -862,6 +866,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "difficulty": viewer.front.difficulty,
     });
     state["notice"] = json!(viewer.notice);
+    state["video"] = json!(viewer.cutscene.as_ref().map(|c| &c.name));
     state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
         serde_json::to_value(&c.state).unwrap_or(Value::Null)
     });

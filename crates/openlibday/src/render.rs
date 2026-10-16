@@ -377,6 +377,10 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
 
 /// Draws a frame (without presenting it).
 pub(crate) fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    if viewer.cutscene.is_some() {
+        return crate::cutscene::draw(canvas, gfx, viewer);
+    }
+    gfx.video = None;
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     let home_strategic = matches!(viewer.home(), Screen::Strategic { .. });

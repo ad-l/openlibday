@@ -7,6 +7,9 @@ ai legacy
 button NewCampaign
 type Max
 button NewGameContinue
+expect video Intro1
+key Escape
+expect video null
 key Return
 deploy Trooper
 tile 22 57

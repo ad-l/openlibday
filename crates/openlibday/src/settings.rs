@@ -28,6 +28,8 @@ pub struct Settings {
     pub moves: MoveSpeed,
     /// Inspecting an enemy shows the tiles it covers on overwatch.
     pub overwatch_zone: bool,
+    /// Play the introduction video at start-up (the original's `Intro`).
+    pub intro: bool,
     /// `0` means fit to the screen.
     pub width: u32,
     pub height: u32,
@@ -139,6 +141,7 @@ impl Default for Settings {
             zoom: 200,
             moves: MoveSpeed::Normal,
             overwatch_zone: true,
+            intro: true,
             width: 0,
             height: 0,
             fullscreen: false,
@@ -185,6 +188,9 @@ impl Settings {
         read("interface", "overwatch_zone", &mut |v| {
             parse_bool(v).map(|b| settings.overwatch_zone = b).is_some()
         });
+        read("interface", "intro", &mut |v| {
+            parse_bool(v).map(|b| settings.intro = b).is_some()
+        });
         read("window", "width", &mut |v| {
             v.parse().map(|w| settings.width = w).is_ok()
         });
@@ -227,6 +233,9 @@ moves = {moves}
 ; Inspecting an enemy unit shows in red the tiles it covers on overwatch
 ; (true/false).
 overwatch_zone = {overwatch_zone}
+; Play the introduction video at start-up (true/false). The main menu's
+; INTRO button plays it at any time.
+intro = {intro}
 
 [window]
 ; Initial window size in screen pixels; 0 fits the window to the screen.
@@ -249,6 +258,7 @@ mode = {ai}
             zoom = self.zoom,
             moves = self.moves.name(),
             overwatch_zone = self.overwatch_zone,
+            intro = self.intro,
             width = self.width,
             height = self.height,
             fullscreen = self.fullscreen,
@@ -324,6 +334,7 @@ mod tests {
             zoom: 300,
             moves: MoveSpeed::Instant,
             overwatch_zone: false,
+            intro: false,
             width: 1600,
             height: 900,
             fullscreen: true,
@@ -346,6 +357,7 @@ mod tests {
                 zoom: 150,
                 moves: MoveSpeed::Fast,
                 overwatch_zone: true,
+                intro: true,
                 width: 1600,
                 height: 0,
                 fullscreen: true,

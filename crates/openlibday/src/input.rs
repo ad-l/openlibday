@@ -71,6 +71,14 @@ impl Viewer {
     }
 
     pub(crate) fn key(&mut self, key: Keycode) -> bool {
+        // A video takes no input but Escape (or a click, as in the
+        // original), which skips it.
+        if self.cutscene.is_some() {
+            if key == Keycode::Escape {
+                self.end_video();
+            }
+            return !self.quit;
+        }
         if let Some(running) = self.dialog_key(key) {
             return running;
         }
@@ -170,6 +178,10 @@ impl Viewer {
     }
 
     pub(crate) fn mouse_down(&mut self, button: MouseButton, x: f32, y: f32) {
+        if self.cutscene.is_some() {
+            self.end_video();
+            return;
+        }
         let (ox, oy) = self.output_point(x, y);
         self.mouse = (ox, oy);
         let layout = self.layout();
@@ -281,6 +293,9 @@ impl Viewer {
     }
 
     pub(crate) fn mouse_up(&mut self, x: f32, y: f32) {
+        if self.cutscene.is_some() {
+            return;
+        }
         let (ox, oy) = self.output_point(x, y);
         if let Some(b) = self.pressed.take()
             && self.layout().hit(self.screen, self.players.len(), ox, oy) == Some(b)
@@ -336,6 +351,9 @@ impl Viewer {
     pub(crate) fn mouse_motion(&mut self, x: f32, y: f32) {
         let (ox, oy) = self.output_point(x, y);
         self.mouse = (ox, oy);
+        if self.cutscene.is_some() {
+            return;
+        }
         if self.minimap_drag {
             if let Some((tx, ty)) = self.picture_tile(ox, oy) {
                 self.centre_on_tile(tx, ty);
@@ -392,6 +410,7 @@ impl Viewer {
                     centre.1 - v.h as f32 / (2.0 * self.zoom),
                 );
             }
+            Event::MouseWheel { .. } if self.cutscene.is_some() => {}
             Event::KeyDown {
                 keycode: Some(key), ..
             } => return self.key(key),

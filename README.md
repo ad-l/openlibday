@@ -76,6 +76,12 @@ in software (any number at once, each resampled from its own rate) into one
 SDL3 audio stream. Interface effects come from `SOUNDS\*.WAV`: selecting a
 unit, deploying, recalling and refused deployments (with the original
 messages).
+Cutscenes (`VIDEO\*.SMK`) play where the original plays them: the
+introduction at start-up and from the main menu's INTRO button, the
+continent intro when a campaign starts and on each new continent, the
+counterattack video, and the won/lost endings. They are drawn at 200%
+(times the interface density, or as large as fits), centred and
+letterboxed, with their soundtrack; Escape or a click skips them.
 Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
 battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
 converted.
@@ -190,7 +196,8 @@ arrow-key scroll speed; start-up map zoom, 200% by default; unit move
 animations, `normal` by default, `fast` (the walk between the start and end
 animations at double speed) or `instant` (none: the unit appears at its
 destination); the red overwatch zone shown when inspecting an enemy, on
-by default; sound volume; AI mode, `modern` by default or `legacy` for the original's
+by default; sound volume; whether the introduction video plays at start-up, on by
+default; AI mode, `modern` by default or `legacy` for the original's
 quirks, see [docs/ai.md](docs/ai.md)) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),

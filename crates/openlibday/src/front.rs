@@ -7,6 +7,9 @@ use sdl3::keyboard::Keycode;
 use crate::Viewer;
 
 /// Hardest difficulty; the slider runs from 0 (easy) to this.
+/// The introduction video (`0x4ae014`), also played at start-up.
+pub const INTRO_VIDEO: &str = "FH2Intro";
+
 pub const DIFFICULTY_MAX: u8 = 10;
 /// The original's default difficulty.
 const DIFFICULTY_DEFAULT: u8 = 4;
@@ -45,8 +48,8 @@ impl Viewer {
 
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
-            // Not implemented (no multiplayer, cutscenes or mode switch).
-            Button::MultiPlayer | Button::Intro => false,
+            // Not implemented (no multiplayer).
+            Button::MultiPlayer => false,
             Button::LoadCampaign => self.campaign_saved(),
             Button::DifficultyLeft => self.front.difficulty > 0,
             Button::DifficultyRight => self.front.difficulty < DIFFICULTY_MAX,
@@ -65,6 +68,7 @@ impl Viewer {
                 }
             }
             Button::Resolution => self.open_menu(),
+            Button::Intro => self.play_video(INTRO_VIDEO),
             Button::Quit => self.quit = true,
             Button::DifficultyLeft => self.difficulty_step(-1),
             Button::DifficultyRight => self.difficulty_step(1),
@@ -111,7 +115,7 @@ impl Viewer {
 
     /// Typed text goes into the NEW GAME dialog's name.
     pub(crate) fn text_input(&mut self, text: &str) {
-        if self.screen != Screen::NewGame {
+        if self.screen != Screen::NewGame || self.cutscene.is_some() {
             return;
         }
         for c in text.chars().filter(|c| !c.is_control()) {

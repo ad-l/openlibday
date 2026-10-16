@@ -295,6 +295,22 @@ impl Sound {
         }
     }
 
+    /// Plays a cutscene's soundtrack (mono), logged as `name`.
+    pub fn track(&mut self, name: &str, samples: &[i16], rate: u32) -> Option<VoiceId> {
+        push_log(&mut self.log, name);
+        let volume = self.volume;
+        let output = open(&mut self.output, &mut self.failed, &self.audio, volume)?;
+        output.stream.lock()?.mixer.play(samples, rate, false)
+    }
+
+    /// Cuts a voice playing at `rate` short (a skipped cutscene).
+    pub fn cut(&mut self, voice: VoiceId, rate: u32) {
+        if let Some(mut feed) = self.output.as_mut().and_then(|o| o.stream.lock()) {
+            feed.mixer
+                .cut(voice, (rate as u64 * FADE_MS / 1000) as usize);
+        }
+    }
+
     /// Stops every sound.
     pub fn stop(&mut self) {
         self.active.clear();

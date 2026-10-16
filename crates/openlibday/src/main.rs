@@ -22,6 +22,7 @@ mod base_editor;
 mod campaign;
 mod clock;
 mod combat;
+mod cutscene;
 mod front;
 mod group;
 mod hud;
@@ -254,6 +255,9 @@ struct Viewer {
     base_editor: Option<base_editor::BaseEditor>,
     /// The greyed map's snapshot serial for ARMY.
     army_view: u64,
+    /// The video playing over the screen, and the count of videos started.
+    cutscene: Option<cutscene::Cutscene>,
+    video_serial: u64,
 }
 
 impl Viewer {
@@ -983,6 +987,8 @@ fn main() -> Result {
         strategic: None,
         base_editor: None,
         army_view: 0,
+        cutscene: None,
+        video_serial: 0,
     };
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.
@@ -992,6 +998,10 @@ fn main() -> Result {
     viewer.reset();
     if args.scenario.is_none() && args.load.is_none() {
         viewer.open_main_menu();
+        // Scripted runs start at the menu itself.
+        if viewer.settings.intro && args.script.is_none() {
+            viewer.play_video(front::INTRO_VIDEO);
+        }
     }
 
     let mut events = sdl.event_pump()?;
@@ -1015,12 +1025,17 @@ fn main() -> Result {
     let mut was_moving = false;
     loop {
         let mut running = true;
-        let moving = viewer.tick();
+        // A video freezes the screen under it.
+        let playing = viewer.cutscene.is_some();
+        dirty |= viewer.video_tick();
+        let moving = !playing && viewer.tick();
         // The frame after a walk or shot ends shows the unit standing again.
         dirty |= moving != was_moving;
         was_moving = moving;
-        dirty |= viewer.battle_tick();
-        let wait = if moving || viewer.flow.ai_until.is_some() {
+        dirty |= !playing && viewer.battle_tick();
+        let wait = if let Some(next) = viewer.video_wait() {
+            (next.as_millis() as u64).clamp(1, 100)
+        } else if moving || viewer.flow.ai_until.is_some() {
             15
         } else if viewer.sea_animating() {
             // The sea's frame time (`frame_micros`), without drifting.
@@ -1070,7 +1085,11 @@ fn main() -> Result {
         if dirty {
             // Catch up with the time spent waiting for events, so the
             // hidden unit and its animation agree with the drawn instant.
-            viewer.tick();
+            if viewer.cutscene.is_some() {
+                viewer.video_tick();
+            } else {
+                viewer.tick();
+            }
             render::render(&mut canvas, &mut gfx, &viewer)?;
             canvas.present();
             // After the frame that shows the view centred on its target.

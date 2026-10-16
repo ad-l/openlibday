@@ -40,4 +40,21 @@ expect screen MainMenu
 button Resolution
 key Escape
 expect screen MainMenu
+# INTRO plays the introduction video (VIDEO\FH2Intro.SMK) at 200%,
+# letterboxed; Escape or a click skips it, and it also ends on its own.
+button Intro
+expect video FH2Intro
+wait 60
+screenshot target/intro_video.png
+wait 300
+screenshot target/intro_video2.png
+key Escape
+expect video null
+expect screen MainMenu
+button Intro
+click 100 100
+expect video null
+button Intro
+wait 3000
+expect video null
 echo main menu test passed

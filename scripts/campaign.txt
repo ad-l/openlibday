@@ -6,6 +6,9 @@
 button NewCampaign
 type Max
 button NewGameContinue
+expect video Intro1
+key Escape
+expect video null
 expect screen Briefing
 expect map s1-1-1.mdb
 expect campaign.stage.stage first_attack
@@ -206,6 +209,9 @@ button MainSkirmish
 button SkirmishBack
 button NewCampaign
 button NewGameContinue
+expect video Intro1
+key Escape
+expect video null
 key Return
 key Return
 key Y
@@ -216,5 +222,8 @@ wait 500
 idle
 key Return
 expect screen MainMenu
+expect video FH2Lose
+key Escape
+expect video null
 expect campaign null
 echo campaign test passed

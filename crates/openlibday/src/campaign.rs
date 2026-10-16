@@ -403,6 +403,19 @@ impl Viewer {
         self.campaign = Some(Session { data, state });
         self.save_campaign();
         self.begin_base_battle();
+        // The first continent's introduction (`0x47ef17`).
+        self.play_continent_intro();
+    }
+
+    /// The current continent's `Intro` video.
+    fn play_continent_intro(&mut self) {
+        let video = self
+            .campaign
+            .as_ref()
+            .and_then(Session::continent)
+            .map(|c| c.intro_video.clone())
+            .unwrap_or_default();
+        self.play_video(&video);
     }
 
     /// Resumes the saved campaign.
@@ -914,9 +927,11 @@ impl Viewer {
             }
             // Losing the base ends the campaign.
             (Stage::FirstAttack | Stage::CounterAttack { .. }, _) => {
+                let video = session.data.videos.lost.clone();
                 self.campaign = None;
                 self.delete_campaign_save();
                 self.open_main_menu();
+                self.play_video(&video);
                 return;
             }
             (Stage::Tactic { province }, Some(Outcome::Won)) => {
@@ -936,8 +951,10 @@ impl Viewer {
                 if counter {
                     // The province's counterattack on the base.
                     state.stage = Stage::CounterAttack { province };
+                    let video = session.data.videos.counter_attack.clone();
                     self.save_campaign();
                     self.begin_base_battle();
+                    self.play_video(&video);
                 } else {
                     self.province_won(province);
                 }
@@ -1007,14 +1024,20 @@ impl Viewer {
             if next < session.data.continents.len() {
                 state.enter_continent(&session.data, next, || rng.rand());
                 state.stage = Stage::Strategic;
+                self.save_campaign();
+                self.resume_campaign();
+                // The new continent's introduction (`0x47f07e`).
+                self.play_continent_intro();
+                return;
             } else {
-                // The campaign is won (the original plays `FH2End`).
+                // The campaign is won.
+                let video = session.data.videos.won.clone();
                 self.delete_campaign_save();
                 self.open_main_menu();
                 self.notice = Some("campaign won".into());
+                self.play_video(&video);
                 return;
             }
-            false
         } else {
             state.stage = Stage::Strategic;
             true

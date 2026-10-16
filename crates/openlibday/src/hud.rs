@@ -91,6 +91,8 @@ pub struct Gfx<'r> {
     grey: Option<(GreyKey, Texture<'r>)>,
     /// INTELLIGENCE map preview, by opening serial.
     intel: Option<(u64, Texture<'r>)>,
+    /// The cutscene frame shown, by (play serial, frame count).
+    pub video: Option<((u64, usize), Texture<'r>)>,
 }
 
 impl<'r> Gfx<'r> {
@@ -113,6 +115,7 @@ impl<'r> Gfx<'r> {
             provinces: HashMap::new(),
             grey: None,
             intel: None,
+            video: None,
         }
     }
 

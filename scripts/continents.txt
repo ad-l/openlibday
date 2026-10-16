@@ -6,6 +6,9 @@
 button NewCampaign
 type Max
 button NewGameContinue
+expect video Intro1
+key Escape
+expect video null
 key Return
 deploy Trooper
 tile 22 57
@@ -62,6 +65,8 @@ win
 wait 500
 idle
 key Return
+expect video CounterA
+key Escape
 expect campaign.stage.stage counter_attack
 expect campaign.stage.province 6
 expect campaign.provinces.5.captured true
@@ -103,6 +108,9 @@ idle
 expect screen Report
 key Return
 expect screen Strategic
+expect video Intro2
+key Escape
+expect video null
 expect campaign.continent 1
 expect campaign.stage.stage strategic
 expect campaign.credits 1600
@@ -147,6 +155,9 @@ wait 500
 idle
 key Return
 expect screen MainMenu
+expect video FH2End
+key Escape
+expect video null
 expect campaign null
 expect notice campaign won
 echo continents test passed

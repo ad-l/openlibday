@@ -19,6 +19,8 @@
 //! and key-frame flags are copied from an existing file, so edits keep the
 //! original sound and palette.
 
+use std::ops::Range;
+
 use thiserror::Error;
 
 const HEADER: usize = 104;
@@ -611,13 +613,7 @@ pub struct Decoder<'s, 'a> {
 
 impl<'s, 'a> Decoder<'s, 'a> {
     fn new(smk: &'s Smacker<'a>) -> Result<Self> {
-        let mut bits = BitReader::new(smk.trees);
-        let trees = [
-            BigTree::read(&mut bits)?,
-            BigTree::read(&mut bits)?,
-            BigTree::read(&mut bits)?,
-            BigTree::read(&mut bits)?,
-        ];
+        let trees = read_trees(smk.trees)?;
         let size = (smk.header.width * smk.header.height) as usize;
         Ok(Self {
             smk,
@@ -660,58 +656,171 @@ impl<'s, 'a> Decoder<'s, 'a> {
     }
 
     fn decode_video(&mut self, data: &[u8]) -> Option<()> {
-        let mut bits = BitReader::new(data);
-        for tree in &mut self.trees {
-            tree.recent = [0; 3];
+        let header = &self.smk.header;
+        self.consumed_bits = decode_blocks(
+            &mut self.trees,
+            &mut self.frame.pixels,
+            header.width as usize,
+            header.height as usize,
+            data,
+        )?;
+        Some(())
+    }
+}
+
+/// A sequential frame decoder that owns its file, for long playback (the
+/// cutscene videos) where a borrowing [`Decoder`] would be self-referential.
+pub struct Stream {
+    pub header: Header,
+    data: Vec<u8>,
+    /// Per stored frame: the palette chunk (after its size byte) and video.
+    frames: Vec<(Option<Range<usize>>, Range<usize>)>,
+    trees: [BigTree; 4],
+    frame: Frame,
+    next: usize,
+}
+
+impl Stream {
+    pub fn new(data: Vec<u8>) -> Result<Self> {
+        let (header, frames, trees) = {
+            let smk = Smacker::parse(&data)?;
+            let base = data.as_ptr() as usize;
+            let range = |s: &[u8]| {
+                let start = s.as_ptr() as usize - base;
+                start..start + s.len()
+            };
+            let frames = smk
+                .frames
+                .iter()
+                .map(|f| (f.palette.map(|p| range(&p[1..])), range(f.video)))
+                .collect();
+            (smk.header.clone(), frames, read_trees(smk.trees)?)
+        };
+        let size = (header.width * header.height) as usize;
+        Ok(Self {
+            header,
+            data,
+            frames,
+            trees,
+            frame: Frame {
+                palette: [[0; 3]; 256],
+                pixels: vec![0; size],
+            },
+            next: 0,
+        })
+    }
+
+    /// Decodes audio track `track`, as [`Smacker::decode_audio`].
+    pub fn audio(&self, track: usize) -> Result<Option<Audio>> {
+        Smacker::parse(&self.data)?.decode_audio(track)
+    }
+
+    /// Index of the next stored frame.
+    pub fn position(&self) -> usize {
+        self.next
+    }
+
+    /// The last decoded frame.
+    pub fn frame(&self) -> &Frame {
+        &self.frame
+    }
+
+    /// Decodes the next stored frame (including the ring frame).
+    pub fn next_frame(&mut self) -> Result<Option<&Frame>> {
+        let Some((palette, video)) = self.frames.get(self.next).cloned() else {
+            return Ok(None);
+        };
+        let index = self.next;
+        self.next += 1;
+        if let Some(palette) = palette {
+            apply_palette(&mut self.frame.palette, &self.data[palette]).ok_or(
+                SmackerError::InvalidFrame {
+                    frame: index,
+                    reason: "invalid palette",
+                },
+            )?;
         }
-        let [mmap, mclr, full, kind] = &mut self.trees;
-        let width = self.smk.header.width as usize;
-        let bw = width / 4;
-        let blocks = bw * self.smk.header.height as usize / 4;
-        let pixels = &mut self.frame.pixels;
-        let mut block = 0;
-        while block < blocks {
-            let code = kind.get(&mut bits)?;
-            let run = BLOCK_RUNS[((code >> 2) & 0x3F) as usize];
-            let end = (block + run).min(blocks);
-            for b in block..end {
-                let origin = (b / bw) * width * 4 + (b % bw) * 4;
-                match code & 3 {
-                    MONO => {
-                        let colors = mclr.get(&mut bits)?;
-                        let mut map = mmap.get(&mut bits)?;
-                        let (hi, lo) = ((colors >> 8) as u8, colors as u8);
-                        for y in 0..4 {
-                            for x in 0..4 {
-                                pixels[origin + y * width + x] = if map & 1 != 0 { hi } else { lo };
-                                map >>= 1;
-                            }
-                        }
-                    }
-                    FULL => {
-                        for y in 0..4 {
-                            let row = origin + y * width;
-                            let right = full.get(&mut bits)?;
-                            let left = full.get(&mut bits)?;
-                            pixels[row + 2..row + 4].copy_from_slice(&right.to_le_bytes());
-                            pixels[row..row + 2].copy_from_slice(&left.to_le_bytes());
-                        }
-                    }
-                    SKIP => {}
-                    _ => {
-                        let color = (code >> 8) as u8;
-                        for y in 0..4 {
-                            let row = origin + y * width;
-                            pixels[row..row + 4].fill(color);
+        decode_blocks(
+            &mut self.trees,
+            &mut self.frame.pixels,
+            self.header.width as usize,
+            self.header.height as usize,
+            &self.data[video],
+        )
+        .ok_or(SmackerError::InvalidFrame {
+            frame: index,
+            reason: "truncated video",
+        })?;
+        Ok(Some(&self.frame))
+    }
+}
+
+fn read_trees(data: &[u8]) -> Result<[BigTree; 4]> {
+    let mut bits = BitReader::new(data);
+    Ok([
+        BigTree::read(&mut bits)?,
+        BigTree::read(&mut bits)?,
+        BigTree::read(&mut bits)?,
+        BigTree::read(&mut bits)?,
+    ])
+}
+
+/// Decodes one frame's video chunk over `pixels`, returning the bits read.
+fn decode_blocks(
+    trees: &mut [BigTree; 4],
+    pixels: &mut [u8],
+    width: usize,
+    height: usize,
+    data: &[u8],
+) -> Option<usize> {
+    let mut bits = BitReader::new(data);
+    for tree in trees.iter_mut() {
+        tree.recent = [0; 3];
+    }
+    let [mmap, mclr, full, kind] = trees;
+    let bw = width / 4;
+    let blocks = bw * height / 4;
+    let mut block = 0;
+    while block < blocks {
+        let code = kind.get(&mut bits)?;
+        let run = BLOCK_RUNS[((code >> 2) & 0x3F) as usize];
+        let end = (block + run).min(blocks);
+        for b in block..end {
+            let origin = (b / bw) * width * 4 + (b % bw) * 4;
+            match code & 3 {
+                MONO => {
+                    let colors = mclr.get(&mut bits)?;
+                    let mut map = mmap.get(&mut bits)?;
+                    let (hi, lo) = ((colors >> 8) as u8, colors as u8);
+                    for y in 0..4 {
+                        for x in 0..4 {
+                            pixels[origin + y * width + x] = if map & 1 != 0 { hi } else { lo };
+                            map >>= 1;
                         }
                     }
                 }
+                FULL => {
+                    for y in 0..4 {
+                        let row = origin + y * width;
+                        let right = full.get(&mut bits)?;
+                        let left = full.get(&mut bits)?;
+                        pixels[row + 2..row + 4].copy_from_slice(&right.to_le_bytes());
+                        pixels[row..row + 2].copy_from_slice(&left.to_le_bytes());
+                    }
+                }
+                SKIP => {}
+                _ => {
+                    let color = (code >> 8) as u8;
+                    for y in 0..4 {
+                        let row = origin + y * width;
+                        pixels[row..row + 4].fill(color);
+                    }
+                }
             }
-            block = end;
         }
-        self.consumed_bits = bits.pos;
-        Some(())
+        block = end;
     }
+    Some(bits.pos)
 }
 
 /// Applies a palette delta (the chunk after its size byte).
@@ -1341,6 +1450,16 @@ mod tests {
         assert_eq!(decoder.next_frame().unwrap().unwrap().pixels, frames[0]);
         assert!(decoder.next_frame().unwrap().is_none());
         assert_eq!(encode(&smk, &frames).unwrap(), encoded);
+
+        let mut stream = Stream::new(encoded.clone()).unwrap();
+        for expected in &decoded {
+            assert_eq!(stream.next_frame().unwrap().unwrap(), expected);
+        }
+        assert_eq!(stream.position(), 3);
+        assert_eq!(
+            stream.audio(0).unwrap().map(|a| a.samples),
+            smk.decode_audio(0).unwrap().map(|a| a.samples)
+        );
     }
 
     #[test]
