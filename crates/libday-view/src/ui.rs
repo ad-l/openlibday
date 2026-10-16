@@ -415,6 +415,9 @@ pub enum Button {
     OptionsSave,
     OptionsQuit,
     OptionsBack,
+    /// Scroll the options table (the technology dialog's arrows).
+    OptionsUp,
+    OptionsDown,
     // Main menu.
     NewCampaign,
     LoadCampaign,
@@ -591,6 +594,8 @@ impl Button {
             Button::OptionsSave => OPTIONS_SAVE,
             Button::OptionsQuit => OPTIONS_QUIT,
             Button::OptionsBack => OPTIONS_BACK,
+            Button::OptionsUp => TECH_UP,
+            Button::OptionsDown => TECH_DOWN,
             Button::NewCampaign => NEW_CAMPAIGN,
             Button::LoadCampaign => LOAD_CAMPAIGN,
             Button::MainSkirmish => MAIN_SKIRMISH,
@@ -716,6 +721,9 @@ impl Button {
             Button::OptionsSave => (132, 340),
             Button::OptionsQuit => (198, 340),
             Button::OptionsBack => (336, 340),
+            // The technology dialog's arrows, between QUIT and BACK.
+            Button::OptionsUp => (273, 340),
+            Button::OptionsDown => (295, 340),
             // Relative to the main menu panel, one row apart.
             Button::NewCampaign => (15, 40),
             Button::LoadCampaign => (15, 70),
@@ -977,7 +985,9 @@ impl Layout {
             Button::OptionsRestart
             | Button::OptionsSave
             | Button::OptionsQuit
-            | Button::OptionsBack => self.s(native).offset_by(self.options_dialog()),
+            | Button::OptionsBack
+            | Button::OptionsUp
+            | Button::OptionsDown => self.s(native).offset_by(self.options_dialog()),
             Button::NewCampaign
             | Button::LoadCampaign
             | Button::MainSkirmish
@@ -1219,6 +1229,8 @@ impl Layout {
                 Button::OptionsSave,
                 Button::OptionsQuit,
                 Button::OptionsBack,
+                Button::OptionsUp,
+                Button::OptionsDown,
             ]),
             Screen::Options { ask: Some(_) } => buttons.extend([Button::Yes, Button::No]),
             Screen::MainMenu => buttons.extend([

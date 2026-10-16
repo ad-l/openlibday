@@ -538,7 +538,9 @@ impl Viewer {
             | Button::OptionsRestart
             | Button::OptionsSave
             | Button::OptionsQuit
-            | Button::OptionsBack => self.menu_enabled(button),
+            | Button::OptionsBack
+            | Button::OptionsUp
+            | Button::OptionsDown => self.menu_enabled(button),
             Button::EndTurn => self.flow.phase == Phase::Free || self.can_end_turn(),
             Button::SkirmishUp => self.flow.pick > 0,
             Button::SkirmishDown => self.flow.pick + 1 < self.flow.catalog.len(),
@@ -643,7 +645,9 @@ impl Viewer {
             | Button::OptionsRestart
             | Button::OptionsSave
             | Button::OptionsQuit
-            | Button::OptionsBack => self.menu_activate(button),
+            | Button::OptionsBack
+            | Button::OptionsUp
+            | Button::OptionsDown => self.menu_activate(button),
             Button::Yes | Button::No if matches!(self.screen, Screen::Options { .. }) => {
                 self.menu_activate(button)
             }

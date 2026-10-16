@@ -26,6 +26,8 @@ pub struct Settings {
     pub zoom: u32,
     /// How unit moves are animated.
     pub moves: MoveSpeed,
+    /// Inspecting an enemy shows the tiles it covers on overwatch.
+    pub overwatch_zone: bool,
     /// `0` means fit to the screen.
     pub width: u32,
     pub height: u32,
@@ -136,6 +138,7 @@ impl Default for Settings {
             scroll: ScrollSpeed::Normal,
             zoom: 200,
             moves: MoveSpeed::Normal,
+            overwatch_zone: true,
             width: 0,
             height: 0,
             fullscreen: false,
@@ -179,6 +182,9 @@ impl Settings {
         read("interface", "moves", &mut |v| {
             MoveSpeed::parse(v).map(|m| settings.moves = m).is_some()
         });
+        read("interface", "overwatch_zone", &mut |v| {
+            parse_bool(v).map(|b| settings.overwatch_zone = b).is_some()
+        });
         read("window", "width", &mut |v| {
             v.parse().map(|w| settings.width = w).is_ok()
         });
@@ -218,6 +224,9 @@ zoom = {zoom}
 ; speed, the walk between them twice as fast); or instant (no animation, the
 ; unit appears at its destination).
 moves = {moves}
+; Inspecting an enemy unit shows in red the tiles it covers on overwatch
+; (true/false).
+overwatch_zone = {overwatch_zone}
 
 [window]
 ; Initial window size in screen pixels; 0 fits the window to the screen.
@@ -239,6 +248,7 @@ mode = {ai}
             scroll = self.scroll.name(),
             zoom = self.zoom,
             moves = self.moves.name(),
+            overwatch_zone = self.overwatch_zone,
             width = self.width,
             height = self.height,
             fullscreen = self.fullscreen,
@@ -313,6 +323,7 @@ mod tests {
             scroll: ScrollSpeed::Fast,
             zoom: 300,
             moves: MoveSpeed::Instant,
+            overwatch_zone: false,
             width: 1600,
             height: 900,
             fullscreen: true,
@@ -334,6 +345,7 @@ mod tests {
                 scroll: ScrollSpeed::Normal,
                 zoom: 150,
                 moves: MoveSpeed::Fast,
+                overwatch_zone: true,
                 width: 1600,
                 height: 0,
                 fullscreen: true,

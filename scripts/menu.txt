@@ -46,6 +46,12 @@ key Left
 key Left
 expect menu.move_speed normal
 key Down
+expect menu.focus OverwatchZone
+expect menu.values.OverwatchZone true
+key Space
+expect menu.values.OverwatchZone false
+key Space
+key Down
 expect menu.focus Volume
 key Left
 expect menu.volume 90
@@ -62,6 +68,14 @@ expect menu.values.Ai MODERN
 option Ai
 expect menu.values.Ai LEGACY
 screenshot target/menu.png
+# The arrows scroll the table one row.
+key PageUp
+expect menu.scroll 0
+button OptionsDown
+expect menu.scroll 1
+screenshot target/menu_scrolled.png
+button OptionsUp
+expect menu.scroll 0
 # Clicks: a row toggles its check box; a selector's left end steps down.
 click 200 249
 expect menu.values.TerrainOnly true

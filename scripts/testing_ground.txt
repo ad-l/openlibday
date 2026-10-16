@@ -50,9 +50,17 @@ expect phase Player
 # overwatch shows the tiles it covers.
 inspect 72 26
 expect info 29
+expect watch.0 [63,22]
 tile 72 26
 expect info null
 expect watch []
+# The OPTIONS menu's Overwatch preview turns the zone off.
+option OverwatchZone
+inspect 72 26
+expect info 29
+expect watch []
+tile 72 26
+option OverwatchZone
 # Right-button inspection of structures: a building shows its armour, owner
 # and tech reward, a wall its armour left, a road its type's armour.
 inspect 68 14

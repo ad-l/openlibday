@@ -21,11 +21,12 @@ pub enum Item {
     Grid,
     TerrainOnly,
     Moves,
+    OverwatchZone,
     Volume,
     Ai,
 }
 
-pub const ITEMS: [Item; 13] = [
+pub const ITEMS: [Item; 14] = [
     Item::Heading("INTERFACE"),
     Item::Scale,
     Item::Fullscreen,
@@ -35,6 +36,7 @@ pub const ITEMS: [Item; 13] = [
     Item::Grid,
     Item::TerrainOnly,
     Item::Moves,
+    Item::OverwatchZone,
     Item::Heading("SOUND"),
     Item::Volume,
     Item::Heading("COMPUTER PLAYER"),
@@ -63,6 +65,7 @@ impl Item {
             Item::Grid => "Tile grid",
             Item::TerrainOnly => "Terrain only",
             Item::Moves => "Unit moves",
+            Item::OverwatchZone => "Overwatch preview",
             Item::Volume => "Volume",
             Item::Ai => "Behaviour",
         }
@@ -134,6 +137,7 @@ impl Viewer {
                 choice(format!("{}%", self.settings.zoom), i, settings::ZOOMS.len())
             }
             Item::Grid => Value::Check(self.grid),
+            Item::OverwatchZone => Value::Check(self.settings.overwatch_zone),
             Item::TerrainOnly => Value::Check(self.options.terrain_only),
             Item::Moves => {
                 let all = MoveSpeed::ALL;
@@ -187,6 +191,10 @@ impl Viewer {
                 let all = settings::ZOOMS;
                 let i = all.iter().position(|&z| z == self.settings.zoom);
                 self.settings.zoom = all[stepped(i.unwrap_or(0), all.len(), step)];
+            }
+            Item::OverwatchZone => {
+                self.settings.overwatch_zone ^= true;
+                self.watch.clear();
             }
             Item::Grid => {
                 self.grid ^= true;
@@ -370,6 +378,8 @@ impl Viewer {
                             | Screen::Options { ask: None }
                     )
             }
+            Button::OptionsUp => self.menu.scroll > 0,
+            Button::OptionsDown => self.menu.scroll < ITEMS.len().saturating_sub(OPTIONS_ROWS),
             _ => true,
         }
     }
@@ -388,6 +398,8 @@ impl Viewer {
                 }
             }
             Button::OptionsBack => self.close_menu(),
+            Button::OptionsUp => self.menu_scroll(-1),
+            Button::OptionsDown => self.menu_scroll(1),
             Button::Yes => {
                 if let Screen::Options { ask: Some(ask) } = self.screen {
                     self.answer(ask);

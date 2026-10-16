@@ -312,7 +312,8 @@ impl Viewer {
     }
 
     /// Shows unit `i`'s info while the right button is held and, for an
-    /// enemy ready to fire on overwatch, the tiles it covers, joined for an
+    /// enemy ready to fire on overwatch (unless turned off in OPTIONS), the
+    /// tiles it covers, joined for an
     /// anti-aircraft unit by those over which it fires at automated units
     /// (conveniences the original lacks).
     pub(crate) fn inspect(&mut self, i: usize) {
@@ -323,7 +324,7 @@ impl Viewer {
             .get(i)
             .is_some_and(|u| self.options.viewer.is_none_or(|v| u.owner != v));
         let mut tiles = libday_view::support::anti_air_zone(scenario, &self.defs, i);
-        if enemy {
+        if enemy && self.settings.overwatch_zone {
             tiles.extend(libday_view::overwatch::zone(scenario, &self.defs, i));
         }
         self.watch = libday_view::scene::zone_sprites(&tiles, 2)
