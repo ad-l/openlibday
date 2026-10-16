@@ -133,8 +133,28 @@ player-count factor (`0x41EF17`: 100/75/65/55 % for 1-4 players).
 
 ### Deployment zones (`0x47F8E7`, `0x47C350`)
 
-Player zones are cells within radius 3 of owned buildings; AI zones are
-candidate cells 11-14 tiles away from any human zone.
+The zone grid (`0x47C350`) marks blocked terrain (0x100, `0x47C3FD`),
+building footprints (`0x47C55C`: transformable ones by owner as
+0x40/0x50/0x60/0x70, others as 8/0xA/0xC/0xE), other objects (0x100) and
+units by owner (0x40...). The player zone (`0x47C6BB`) is every unmarked
+tile within Chebyshev 3 of a player building (value 8). The AI zone
+(`0x47C737`) is every unmarked tile with no 0x40-bit tile within 11 (map
+corners, x and y within 2 of an edge, are exempt) but some within 14.
+
+`0x47F8E7(1)` places the Counter Attack roster (its rows have no position):
+the AI tiles are collected row-major (`0x47C931`) and shuffled (for each i,
+swap with `rand() % n`, `0x4412F3`); each unit takes the first tile it may
+stand on (`0x42CF18`), and that tile and its 8 neighbours leave the list
+(`0x47CEAE`). Units with type field +0x30 in {4, 6} are placed after the
+others (`0x47CBF2`; not reproduced).
+
+### Defence towers (`0x47FB4E`)
+
+Buildings whose type has `transformIntoUnit` (types 100-103, loaded at
+`0x424A70` into +0x28, tested by `0x429550`) become that unit for the
+owner on the same tile, after the attackers are placed. Only base battles
+do this (`0x47E5BE`); in other scenarios towers stay buildings. Surviving
+player towers are stored back as tower buildings in the base layout.
 
 ## 2. Data sources
 
@@ -183,7 +203,7 @@ ignores.
 | Last continent = index 3 | Counterattack flag and roster per map |
 | Videos `FH2Intro`, `CounterA`, `FH2End`, `FH2Lose` | Continent intro video name, province-map animation |
 | HQ/Deploy Mk point values, player-count factors | Building types (`GLOBAL.MDB`) |
-| Zone rules (radius 3, AI band 11-14) | Map content (`sC-P-V.mdb`) |
+| Zone rules (radius 3, AI band 11-14 from units and towers) | Map content (`sC-P-V.mdb`) |
 | Reward formula (difficulty percentage of Province Credits) | Province Credits and Tech |
 
 ## 4. openlibday campaign format
@@ -277,7 +297,7 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu, NEW GAME dialog (name, difficulty 0–10), campaign state and saves (`openlibday::campaign`, `saves/campaign.json`), LOAD CAMPAIGN done; continent screen done (`openlibday::strategic`, `libday_view::continent`): animated `COLANMS\Cn.SMK` sea, selected/captured province overlays, province text and credits, adjacency ("Province is too far."), INTELLIGENCE (hint with a Satellite Uplink), ATTACK, "You are victorious" + CONTINUE |
 | C3 | Base-building mode on the base map (buildings, towers, roads, walls, mines; costs, refunds) | |
 | C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | Campaign tactic, capture, credit rewards, variant swap on loss done; army selection pending |
-| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster 11–14 tiles away moving first, 150 tech on a win, campaign over on a loss |
+| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster scattered 12–14 tiles from the zone (11 from units and towers) moving first, defence towers as player units, 150 tech on a win, campaign over on a loss |
 | C6 | Continent transitions, intro/end videos, game won/lost | |
 | C7 | Tech/research spending between battles | |
 

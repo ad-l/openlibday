@@ -371,6 +371,47 @@ impl Scenario {
         }
     }
 
+    /// Turns buildings whose type has `transformIntoUnit` (the defence
+    /// towers, 100-103) into that unit for their owner, at full strength:
+    /// the base map and the base editor hold towers as buildings, the battle
+    /// as units that fire.
+    pub fn transform_buildings(&mut self, defs: &crate::Definitions) {
+        let size = self.size as i64;
+        let mut id = self.next_unit_id();
+        let mut kept = Vec::with_capacity(self.buildings.len());
+        for b in std::mem::take(&mut self.buildings) {
+            let unit = defs
+                .buildings
+                .get(&b.kind)
+                .and_then(|k| k.transform_into)
+                .and_then(|kind| Some((kind, defs.unit_tech(kind, 0)?)));
+            let Some((kind, k)) = unit else {
+                kept.push(b);
+                continue;
+            };
+            self.units.push(Unit {
+                counter: 0,
+                id,
+                kind,
+                tech: 0,
+                owner: b.owner,
+                facing: deploy_facing(size, b.x, b.y),
+                x: b.x,
+                y: b.y,
+                arrival: 0,
+                reinforcement: false,
+                armor: Some(k.armor),
+                action_points: Some(k.action_points),
+                neg_ap: 0,
+                order: Order::default(),
+                objective_order: false,
+                overwatch: true,
+            });
+            id += 1;
+        }
+        self.buildings = kept;
+    }
+
     pub fn load(db: &Database) -> Result<Self, DataError> {
         let t = Records::read(db, "Map")?;
         let size = t.len().isqrt();

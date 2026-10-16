@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 
 use libday_data::Battle;
+use libday_data::Definitions;
 use libday_data::campaign::{Campaign, Continent, CounterAttackUnit, scenario_file};
 use libday_data::objective::Outcome;
 use libday_data::scenario::{Building, Deployment, Mine, Order, Scenario, Surface, Unit};
@@ -29,8 +30,9 @@ pub const HQ: i64 = 130;
 const DEPLOY_POINTS: [(i64, i64); 5] = [(HQ, 50), (131, 100), (173, 110), (174, 120), (175, 130)];
 /// Player zone: tiles within this many of an owned building (`0x47F8E7`).
 const ZONE_RADIUS: i64 = 3;
-/// AI zone: tiles this far from the player's zone (`0x47C350`).
-const AI_BAND: std::ops::RangeInclusive<i64> = 11..=14;
+/// AI zone: tiles this far from the player's zone and units (`0x47C737`:
+/// none within 11, some within 14).
+const AI_BAND: std::ops::RangeInclusive<i64> = 12..=14;
 /// Hardest difficulty.
 const DIFFICULTY_MAX: i64 = 10;
 
@@ -75,8 +77,9 @@ pub struct BaseLayout {
 }
 
 impl BaseLayout {
-    /// What `now` holds over the shipped base map `base`.
-    pub fn capture(now: &Scenario, base: &Scenario) -> Self {
+    /// What `now` holds over the shipped base map `base`. The player's
+    /// surviving defence towers turn back into their tower buildings.
+    pub fn capture(now: &Scenario, base: &Scenario, defs: &Definitions) -> Self {
         let terrain = now
             .cells
             .iter()
@@ -89,8 +92,33 @@ impl BaseLayout {
                 terrain: a.terrain.clone(),
             })
             .collect();
+        let mut buildings = now.buildings.clone();
+        let mut id = buildings.iter().map(|b| b.id + 1).max().unwrap_or(1);
+        for u in now
+            .units
+            .iter()
+            .filter(|u| u.owner == PLAYER && u.arrival == 0)
+        {
+            let tower = defs
+                .buildings
+                .iter()
+                .find(|(_, k)| k.transform_into == Some(u.kind));
+            if let Some((&kind, k)) = tower {
+                buildings.push(Building {
+                    counter: 0,
+                    id,
+                    kind,
+                    owner: PLAYER,
+                    armor: k.armor,
+                    x: u.x,
+                    y: u.y,
+                    ai_target: false,
+                });
+                id += 1;
+            }
+        }
         Self {
-            buildings: now.buildings.clone(),
+            buildings,
             roads: now.roads.clone(),
             walls: now.walls.clone(),
             mines: now.mines.clone(),
@@ -429,6 +457,8 @@ impl Viewer {
         }
         s.units.clear();
         s.merge_players(1);
+        // Base battles only (0x47e5be → 0x47fb4e): towers become units.
+        s.transform_buildings(&self.defs);
         battle.difficulty = session.state.difficulty;
         Some(battle)
     }
@@ -532,7 +562,7 @@ impl Viewer {
         if x + k.width > size || y + k.height > size {
             return false;
         }
-        let taken = s.units.iter().filter(|u| u.arrival == 0).any(|u| {
+        let taken = s.units.iter().any(|u| {
             let (w, h) = self
                 .defs
                 .unit(u.kind)
@@ -548,40 +578,63 @@ impl Viewer {
         grid.is_none_or(|g| g.get(x as i32, y as i32).0 == Access::Stop)
     }
 
-    /// Places the attackers 11-14 tiles from the player's zone, grouped
-    /// around a random tile of that band; later rows as reinforcements.
+    /// Places the attackers as `0x47F8E7(1)`: the AI zone is the free tiles
+    /// 12-14 tiles from the player's zone and units (`0x47C737`, any
+    /// distance up to 14 in the map's corners); it is shuffled
+    /// (`0x4412F3`) and each attacker takes the first tile it can stand on,
+    /// which with its 8 neighbours then leaves the zone (`0x47CEAE`). Later
+    /// rows arrive as reinforcements.
     fn place_attackers(&mut self, s: &mut Scenario, zone: &[(i64, i64)]) {
         let Some(session) = &self.campaign else {
             return;
         };
         let roster = session.roster();
         let size = s.size as i64;
-        let dist = distances(size, zone);
-        let band: Vec<(i64, i64)> = (0..size * size)
-            .filter(|&i| AI_BAND.contains(&dist[i as usize]))
-            .map(|i| (i % size, i / size))
-            .collect();
-        if band.is_empty() {
-            return;
+        let mut sources = zone.to_vec();
+        for u in s
+            .units
+            .iter()
+            .filter(|u| u.owner == PLAYER && u.arrival == 0)
+        {
+            let (w, h) = self
+                .defs
+                .unit(u.kind)
+                .map_or((1, 1), |k| (k.width, k.height));
+            for y in u.y..u.y + h {
+                for x in u.x..u.x + w {
+                    sources.push((x, y));
+                }
+            }
         }
-        let anchor = band[(self.rng.rand() as usize) % band.len()];
-        let mut cells = band;
-        cells.sort_by_key(|&(x, y)| (x - anchor.0).pow(2) + (y - anchor.1).pow(2));
-        let mut used = Vec::new();
+        let dist = distances(size, &sources);
+        let edge = |v: i64| v <= 1 || v >= size - 2;
+        let mut cells: Vec<(i64, i64)> = (0..size * size)
+            .map(|i| (i % size, i / size))
+            .filter(|&(x, y)| {
+                let d = dist[(y * size + x) as usize];
+                d > 0 && d <= *AI_BAND.end() && (d >= *AI_BAND.start() || edge(x) && edge(y))
+            })
+            .collect();
+        let n = cells.len();
+        for i in 0..n {
+            let j = self.rng.rand() as usize % n;
+            cells.swap(i, j);
+        }
         for row in roster {
             let Some(k) = self.defs.unit(row.unit_type) else {
                 continue;
             };
-            let Some(&cell) = cells
+            let Some(at) = cells
                 .iter()
-                .find(|&&c| !used.contains(&c) && self.can_stand(s, row.unit_type, c))
+                .position(|&c| self.can_stand(s, row.unit_type, c))
             else {
                 continue;
             };
-            used.push(cell);
+            let (x, y) = cells[at];
+            cells.retain(|&(cx, cy)| (cx - x).abs() > 1 || (cy - y).abs() > 1);
             let id = s.next_unit_id();
             s.units
-                .push(ai_unit(id, row.unit_type, cell, row.turn.max(0), size, k));
+                .push(ai_unit(id, row.unit_type, (x, y), row.turn.max(0), size, k));
         }
     }
 
@@ -689,10 +742,12 @@ impl Viewer {
     }
 
     /// The base battle's first turn is the AI's; the player's deployed
-    /// units have no action points during it.
+    /// units have no action points during it, except the defence towers.
     pub(crate) fn ai_first(&mut self) {
+        let defs = &self.defs;
         for u in &mut self.map.battle.scenario.units {
-            if u.owner == PLAYER {
+            let tower = defs.unit(u.kind).is_some_and(|k| k.movement == 0);
+            if u.owner == PLAYER && !tower {
                 u.action_points = Some(0);
             }
         }
@@ -748,18 +803,22 @@ impl Viewer {
             (Stage::FirstAttack, Some(Outcome::Won)) => {
                 state.tech += reward;
                 if let Some(base) = base {
-                    let mut now = self.map.battle.scenario.clone();
-                    now.units.clear();
-                    state.base = Some(BaseLayout::capture(&now, &base));
+                    state.base = Some(BaseLayout::capture(
+                        &self.map.battle.scenario,
+                        &base,
+                        &self.defs,
+                    ));
                 }
                 state.stage = Stage::Strategic;
             }
             (Stage::CounterAttack { province }, Some(Outcome::Won)) => {
                 state.tech += reward;
                 if let Some(base) = base {
-                    let mut now = self.map.battle.scenario.clone();
-                    now.units.clear();
-                    state.base = Some(BaseLayout::capture(&now, &base));
+                    state.base = Some(BaseLayout::capture(
+                        &self.map.battle.scenario,
+                        &base,
+                        &self.defs,
+                    ));
                 }
                 self.province_won(province);
                 return;

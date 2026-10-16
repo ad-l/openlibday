@@ -11,9 +11,14 @@ expect map s1-1-1.mdb
 expect campaign.stage.stage first_attack
 expect campaign.difficulty 4
 # The other players' headquarters are gone; the aliens wait beyond the zone.
-expect buildings.3.kind 137
-expect units.0.name Footman
-expect units.0.owner 0
+expect buildings.1.kind 137
+# The guard towers become the player's units.
+expect units.0.name Guard Tower
+expect units.0.owner 1
+expect units.0.x 26
+expect units.0.ap 4
+expect units.2.name Footman
+expect units.2.owner 0
 key Return
 deploy Trooper
 tile 22 57
@@ -25,7 +30,8 @@ wait 2000
 idle
 # The aliens have moved and it is the player's turn.
 expect phase Player
-expect units.0.x 34
+expect units.0.ap 4
+expect units.2.x 21
 win
 wait 500
 idle
@@ -34,7 +40,9 @@ expect report.tech New technologies found : 150
 key Return
 expect campaign.tech 150
 expect campaign.stage.stage strategic
-expect campaign.base.buildings.3.kind 137
+# Surviving towers are kept as tower buildings.
+expect campaign.base.buildings.1.kind 137
+expect campaign.base.buildings.2.kind 100
 # The continent overview: Milos pays 450 credits, 472 at difficulty 4.
 expect screen Strategic
 expect strategic.text.0 Choose the province you wish to attack.
