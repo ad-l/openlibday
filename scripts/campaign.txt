@@ -51,19 +51,13 @@ button StrategicContinue
 expect screen BaseEditor
 expect credits 625
 expect base_editor.list.0.0 Deploy Mk1
-# ARMY: the technology dialog over the greyed base (Trooper: 5 to level
-# 2, then 10 to level 3).
+# ARMY: the technology dialog over the greyed base; upgrades need a
+# Research Ctr.
 button BaseArmy
 expect screen Army
 expect setup.units [2]
 expect setup.points 150
-button TechUpgrade
-expect setup.tech [1]
-expect campaign.tech 145
-expect campaign.unit_tech.2 1
-button TechUpgrade
-expect campaign.tech 135
-expect campaign.unit_tech.2 2
+expect setup.tech [0]
 button TechBack
 expect screen BaseEditor
 build Deploy Mk1
@@ -104,6 +98,25 @@ expect credits 422
 tile 25 64
 expect message You might not get all your money back if you recycle this. Do you want to continue anyway?
 button Recycle
+# With a Research Ctr (after a Barracks), ARMY upgrades units (Trooper:
+# 5 to level 2, then 10 to level 3).
+credits 672
+build Barracks
+tile 20 57
+build Research Ctr
+tile 23 57
+expect message Research Ctr has been built for 150 credits
+expect credits 422
+button BaseArmy
+expect setup.units.0 2
+button TechUpgrade
+expect setup.tech.0 1
+expect campaign.tech 145
+expect campaign.unit_tech.2 1
+button TechUpgrade
+expect campaign.tech 135
+expect campaign.unit_tech.2 2
+button TechBack
 # CAMPAIGN keeps the base and returns to the continent.
 button Campaign
 expect screen Strategic

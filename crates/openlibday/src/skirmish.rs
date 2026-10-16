@@ -311,10 +311,12 @@ impl Viewer {
         let Some(setup) = &self.flow.setup else {
             return false;
         };
-        matches!(
-            self.screen,
-            Screen::Tech { read_only: false } | Screen::Army
-        ) && self
+        let open = match self.screen {
+            Screen::Tech { read_only: false } => true,
+            Screen::Army => self.has_research_center(),
+            _ => false,
+        };
+        open && self
             .next_tech_cost(setup.cell)
             .is_some_and(|c| c <= setup.points)
     }

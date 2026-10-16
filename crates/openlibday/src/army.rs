@@ -6,6 +6,9 @@ use libday_view::ui::Screen;
 use crate::Viewer;
 use crate::skirmish::Setup;
 
+/// Research Ctr (`H_Center_Laboratory`).
+const RESEARCH_CENTER: i64 = 135;
+
 impl Viewer {
     /// The technology grid for the units the base's buildings provide, at
     /// the campaign's levels and with its points.
@@ -31,6 +34,12 @@ impl Viewer {
             scroll: 0,
             deployed: Vec::new(),
         })
+    }
+
+    /// ARMY upgrades units only with a Research Ctr in the base.
+    pub(crate) fn has_research_center(&self) -> bool {
+        self.owned_buildings(&self.map.battle.scenario)
+            .contains(&RESEARCH_CENTER)
     }
 
     /// ARMY in base building.

@@ -22,6 +22,15 @@ key Return
 expect campaign.base.buildings.2.x 19
 expect campaign.base.buildings.-1.x 19
 button StrategicContinue
+# ARMY upgrades need a Research Ctr.
+credits 1000
+build Deploy Mk1
+tile 26 62
+build Barracks
+tile 20 57
+build Research Ctr
+tile 23 57
+expect credits 550
 button BaseArmy
 button TechUpgrade
 button TechBack
@@ -58,7 +67,7 @@ expect campaign.stage.province 6
 expect campaign.provinces.5.captured true
 expect map s1-1-1.mdb
 expect screen Briefing
-expect buildings.-1.kind 137
+expect buildings.1.kind 137
 key Return
 key Return
 key Y
@@ -111,7 +120,14 @@ expect map s2-1-1.mdb
 expect buildings.0.kind 130
 expect buildings.-1.kind 130
 button Campaign
+# Without a Satellite Uplink INTELLIGENCE only names the province.
 province 5
+button Intelligence
+expect strategic.intel.uplink false
+expect strategic.intel.preview null
+expect strategic.intel.text.0 You must build a Satellite Uplink to see more information.
+screenshot target/intel_no_uplink.png
+button IntelBack
 button Attack
 expect campaign.stage.province 5
 key Escape
