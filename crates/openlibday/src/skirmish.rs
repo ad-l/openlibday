@@ -18,17 +18,10 @@ use crate::Viewer;
 use crate::command::Command;
 use crate::sound::Effect;
 
-/// The human player's slot.
-pub const PLAYER: i64 = 1;
 /// The AI's player slot.
 pub const AI: i64 = 0;
 /// How long the AI's (empty) turn stays on screen.
 const AI_TURN: Duration = Duration::from_millis(1500);
-
-/// The overview's players in a skirmish: the human, then the AI.
-pub(crate) fn skirmish_players() -> Vec<i64> {
-    vec![PLAYER, AI]
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -38,7 +31,7 @@ pub enum Phase {
     Setup,
     /// Starting zone overview and unit placement.
     Deploy,
-    /// The player's turn.
+    /// A human's turn (`clock.player`'s).
     Player,
     /// The AI's turn.
     Ai,
@@ -147,20 +140,33 @@ impl Viewer {
         }
     }
 
-    /// Whether the player may give orders to unit `i`.
+    /// Whether the local player may give orders to unit `i`.
     pub(crate) fn controllable(&self, i: usize) -> bool {
         match self.flow.phase {
             Phase::Free => true,
             Phase::Player if self.flow.reinforcing => false,
-            Phase::Player => self
-                .map
-                .battle
-                .scenario
-                .units
-                .get(i)
-                .is_some_and(|u| u.owner == PLAYER),
+            Phase::Player => {
+                self.my_turn()
+                    && self
+                        .map
+                        .battle
+                        .scenario
+                        .units
+                        .get(i)
+                        .is_some_and(|u| u.owner == self.seats.local)
+            }
             _ => false,
         }
+    }
+
+    /// Whether it is human `player`'s turn.
+    pub(crate) fn turn_of(&self, player: i64) -> bool {
+        self.flow.phase == Phase::Player && self.map.battle.clock.player == player
+    }
+
+    /// Whether it is the local player's turn.
+    pub(crate) fn my_turn(&self) -> bool {
+        self.turn_of(self.seats.local)
     }
 
     /// Definition of unit `i` at its technology level.
@@ -169,8 +175,17 @@ impl Viewer {
         self.defs.unit_tech(unit.kind, unit.tech)
     }
 
-    /// The player's credits (deployment points).
+    /// The local player's credits (deployment points).
     pub(crate) fn credits(&self) -> i64 {
+        self.credits_of(self.seats.local)
+    }
+
+    pub(crate) fn credits_mut(&mut self) -> &mut i64 {
+        self.credits_mut_of(self.seats.local)
+    }
+
+    /// Human `player`'s credits: the campaign's in the base editor.
+    pub(crate) fn credits_of(&self, player: i64) -> i64 {
         if self.base_editor.is_some()
             && let Some(c) = &self.campaign
         {
@@ -180,28 +195,35 @@ impl Viewer {
             .battle
             .players
             .iter()
-            .find(|p| p.player == PLAYER)
+            .find(|p| p.player == player)
             .map_or(self.map.battle.scenario.info.points, |p| p.deploy_points)
     }
 
-    pub(crate) fn credits_mut(&mut self) -> &mut i64 {
+    pub(crate) fn credits_mut_of(&mut self, player: i64) -> &mut i64 {
         if self.base_editor.is_some()
             && let Some(c) = &mut self.campaign
         {
             return &mut c.state.credits;
         }
         let players = &mut self.map.battle.players;
-        let i = match players.iter().position(|p| p.player == PLAYER) {
+        let i = match players.iter().position(|p| p.player == player) {
             Some(i) => i,
             None => {
                 players.push(PlayerRecord {
-                    player: PLAYER,
+                    player,
                     ..PlayerRecord::default()
                 });
                 players.len() - 1
             }
         };
         &mut players[i].deploy_points
+    }
+
+    /// Sets every human's credits to `credits`.
+    fn credit_humans(&mut self, credits: i64) {
+        for h in self.seats.humans().collect::<Vec<_>>() {
+            *self.credits_mut_of(h) = credits;
+        }
     }
 
     // Skirmish selector.
@@ -249,8 +271,8 @@ impl Viewer {
             }
         };
         battle.scenario.restore(&self.defs);
-        let humans = skirmish_players().iter().filter(|&&p| p != AI).count();
-        battle.scenario.merge_players(humans);
+        self.seats.local = self.seats.first_human();
+        battle.scenario.merge_players(self.seats.humans().count());
         if let Some(i) = self
             .maps
             .iter()
@@ -285,7 +307,7 @@ impl Viewer {
             scroll: 0,
             deployed: Vec::new(),
         });
-        self.players = skirmish_players();
+        self.players = self.seats.overview();
         self.player = 0;
         if points == 0 {
             // Nothing to buy (openlibday's `TechPoints` = 0): straight to the briefing.
@@ -407,20 +429,26 @@ impl Viewer {
 
     // Deployment.
 
-    /// Starting zones of the player, or of anyone if the map has none for
-    /// player 1.
+    /// Whether `(x, y)` is in the local player's starting zone.
     pub(crate) fn zone(&self, x: i64, y: i64) -> bool {
+        self.zone_of(self.seats.local, x, y)
+    }
+
+    /// Starting zones of `player`, or of anyone if the map has none for
+    /// them.
+    pub(crate) fn zone_of(&self, player: i64, x: i64, y: i64) -> bool {
         let deps = &self.map.battle.scenario.deployments;
-        let own = deps.iter().any(|d| d.is_start_zone() && d.player == PLAYER);
+        let own = deps.iter().any(|d| d.is_start_zone() && d.player == player);
         deps.iter()
-            .any(|d| d.is_start_zone() && (!own || d.player == PLAYER) && (d.x, d.y) == (x, y))
+            .any(|d| d.is_start_zone() && (!own || d.player == player) && (d.x, d.y) == (x, y))
     }
 
     pub(crate) fn begin_briefing(&mut self) {
         self.flow.phase = Phase::Deploy;
         self.screen = Screen::Briefing;
+        self.seats.local = self.seats.first_human();
         let info_points = self.map.battle.scenario.info.points;
-        *self.credits_mut() = info_points;
+        self.credit_humans(info_points);
         self.centre_on_zone();
     }
 
@@ -516,15 +544,16 @@ impl Viewer {
         })
     }
 
-    /// Whether a unit of `kind` may be placed with its top corner on `(x, y)`.
-    fn can_deploy(&mut self, kind: i64, tech: i64, x: i64, y: i64) -> bool {
+    /// Whether `player` may place a unit of `kind` with its top corner on
+    /// `(x, y)`.
+    fn can_deploy(&mut self, player: i64, kind: i64, tech: i64, x: i64, y: i64) -> bool {
         let Some(k) = self.defs.unit_tech(kind, tech) else {
             return false;
         };
         let (w, h) = (k.width, k.height);
         for dy in 0..h {
             for dx in 0..w {
-                if !self.zone(x + dx, y + dy) || self.unit_at(x + dx, y + dy).is_some() {
+                if !self.zone_of(player, x + dx, y + dy) || self.unit_at(x + dx, y + dy).is_some() {
                     return false;
                 }
             }
@@ -533,19 +562,31 @@ impl Viewer {
         let size = scenario.size as i64;
         scenario
             .units
-            .push(new_unit(0, kind, tech, (x, y), size, k));
+            .push(new_unit(0, kind, tech, player, (x, y), size, k));
         let grid = movement::move_grid(scenario, &self.defs, scenario.units.len() - 1);
         scenario.units.pop();
         // Larger units cannot move, hence have no grid: the zone check is all.
         grid.is_none_or(|g| g.get(x as i32, y as i32).0 == Access::Stop)
     }
 
-    /// The unit on `(x, y)` that was deployed this phase, hence recallable.
-    pub(crate) fn recallable(&self, x: i64, y: i64) -> Option<usize> {
+    /// `player`'s unit on `(x, y)` that was deployed this phase, hence
+    /// recallable.
+    pub(crate) fn recallable(&self, player: i64, x: i64, y: i64) -> Option<usize> {
         let i = self.unit_at(x, y)?;
-        let id = self.map.battle.scenario.units[i].id;
+        let u = &self.map.battle.scenario.units[i];
         let setup = self.flow.setup.as_ref()?;
-        setup.deployed.contains(&id).then_some(i)
+        (u.owner == player && setup.deployed.contains(&u.id)).then_some(i)
+    }
+
+    /// Whether `player` may deploy now: everyone's in the deployment phase,
+    /// theirs while they reinforce.
+    fn deploying(&self, player: i64) -> bool {
+        self.seats.human(player)
+            && match self.flow.phase {
+                Phase::Deploy => true,
+                Phase::Player => self.flow.reinforcing && self.turn_of(player),
+                _ => false,
+            }
     }
 
     /// A click on map tile `(x, y)` while deploying (the original's
@@ -556,7 +597,7 @@ impl Viewer {
             self.refuse("You can only deploy units in the indicated zone");
             return;
         }
-        if self.recallable(x, y).is_some() {
+        if self.recallable(self.seats.local, x, y).is_some() {
             self.order(Command::Recall { x, y });
             return;
         }
@@ -570,7 +611,7 @@ impl Viewer {
             self.refuse("Need more tactical resource");
             return;
         }
-        if !self.can_deploy(kind, tech, x, y) {
+        if !self.can_deploy(self.seats.local, kind, tech, x, y) {
             self.refuse("Can't deploy unit there");
             return;
         }
@@ -578,11 +619,11 @@ impl Viewer {
     }
 
     /// [`Command::Recall`].
-    pub(crate) fn apply_recall(&mut self, x: i64, y: i64) -> bool {
-        if !self.zone(x, y) {
+    pub(crate) fn apply_recall(&mut self, player: i64, x: i64, y: i64) -> bool {
+        if !self.deploying(player) || !self.zone_of(player, x, y) {
             return false;
         }
-        if let Some(i) = self.recallable(x, y) {
+        if let Some(i) = self.recallable(player, x, y) {
             let id = self.map.battle.scenario.units[i].id;
             let (refund, name) = self
                 .kind_of(i)
@@ -591,7 +632,7 @@ impl Viewer {
             if let Some(setup) = &mut self.flow.setup {
                 setup.deployed.retain(|&d| d != id);
             }
-            *self.credits_mut() += refund;
+            *self.credits_mut_of(player) += refund;
             self.flow.message = Some(format!("Unit {name} has been recalled"));
             self.effect(Effect::Recall);
             self.deployed_changed();
@@ -602,12 +643,22 @@ impl Viewer {
 
     /// [`Command::Deploy`]: a unit of type `kind` at level `tech`, bought
     /// at its current price.
-    pub(crate) fn apply_deploy(&mut self, x: i64, y: i64, kind: i64, tech: i64) -> bool {
+    pub(crate) fn apply_deploy(
+        &mut self,
+        player: i64,
+        x: i64,
+        y: i64,
+        kind: i64,
+        tech: i64,
+    ) -> bool {
         let Some(k) = self.defs.unit_tech(kind, tech) else {
             return false;
         };
         let (name, cost) = (k.name.clone(), self.price(k.cost));
-        if cost > self.credits() || !self.zone(x, y) || !self.can_deploy(kind, tech, x, y) {
+        if !self.deploying(player)
+            || cost > self.credits_of(player)
+            || !self.can_deploy(player, kind, tech, x, y)
+        {
             return false;
         }
         let id = self.map.battle.scenario.next_unit_id();
@@ -615,12 +666,12 @@ impl Viewer {
             return false;
         };
         let size = self.map.battle.scenario.size as i64;
-        let unit = new_unit(id, kind, tech, (x, y), size, k);
+        let unit = new_unit(id, kind, tech, player, (x, y), size, k);
         self.map.battle.scenario.units.push(unit);
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.push(id);
         }
-        *self.credits_mut() -= cost;
+        *self.credits_mut_of(player) -= cost;
         self.flow.message = Some(format!("Unit {name} has been deployed"));
         self.effect(Effect::Deploy);
         self.deployed_changed();
@@ -636,7 +687,7 @@ impl Viewer {
     fn deployed_changed(&mut self) {
         self.rebuild();
         self.markers = libday_view::minimap::markers(&self.map.battle.scenario, &self.defs);
-        self.players = skirmish_players();
+        self.players = self.seats.overview();
         self.selected = None;
     }
 
@@ -647,18 +698,44 @@ impl Viewer {
         } else if self.credits() > 0 {
             self.screen = Screen::Confirm;
         } else {
-            self.start_battle();
+            self.deploy_done();
         }
+    }
+
+    /// The local player has deployed: the next human at this computer
+    /// deploys (hotseat), else the battle starts.
+    pub(crate) fn deploy_done(&mut self) {
+        let next = self
+            .seats
+            .next_human(self.seats.local)
+            .filter(|&h| self.seats.is_local(h));
+        let Some(next) = next else {
+            self.start_battle();
+            return;
+        };
+        self.seats.local = next;
+        if let Some(setup) = &mut self.flow.setup {
+            setup.deployed.clear();
+            setup.row = 0;
+            setup.scroll = 0;
+        }
+        self.screen = Screen::Deploy;
+        self.centre_on_zone();
+        self.flow.message = Some(format!(
+            "{}: place your units in the starting zone",
+            self.player_name(next)
+        ));
     }
 
     // Reinforcements.
 
     /// Whether REINFORCEMENT opens the deployment screen.
     pub(crate) fn can_reinforce(&self) -> bool {
-        self.flow.phase == Phase::Player
-            && !self.flow.reinforcing
-            && self.flow.setup.is_some()
-            && !self.busy()
+        self.can_reinforce_for(self.seats.local)
+    }
+
+    fn can_reinforce_for(&self, player: i64) -> bool {
+        self.turn_of(player) && !self.flow.reinforcing && self.flow.setup.is_some() && !self.busy()
     }
 
     /// REINFORCEMENT: the deployment screen over the battle, where units
@@ -671,8 +748,8 @@ impl Viewer {
     }
 
     /// [`Command::BeginReinforce`].
-    pub(crate) fn apply_begin_reinforce(&mut self) -> bool {
-        if !self.can_reinforce() {
+    pub(crate) fn apply_begin_reinforce(&mut self, player: i64) -> bool {
+        if !self.can_reinforce_for(player) {
             return false;
         }
         self.flow.reinforcing = true;
@@ -693,9 +770,9 @@ impl Viewer {
 
     /// CONTINUE while reinforcing ([`Command::FinishReinforce`]): the placed
     /// units join the battle with no action points left this turn.
-    pub(crate) fn apply_finish_reinforce(&mut self) {
-        if !self.flow.reinforcing {
-            return;
+    pub(crate) fn apply_finish_reinforce(&mut self, player: i64) -> bool {
+        if !self.flow.reinforcing || !self.turn_of(player) {
+            return false;
         }
         let placed = self
             .flow
@@ -713,6 +790,7 @@ impl Viewer {
         self.selected = self.flow.resume.take();
         self.screen = Screen::Battle;
         self.rebuild();
+        true
     }
 
     // Turns.
@@ -736,28 +814,30 @@ impl Viewer {
         }
         self.options.deployment = false;
         let reinf = self.map.battle.scenario.info.reinf_res;
-        *self.credits_mut() = reinf;
+        self.credit_humans(reinf);
         self.map.battle.clock.turn = 1;
-        self.map.battle.clock.player = PLAYER;
         self.rebuild();
         self.screen = Screen::Battle;
-        self.begin_player_turn();
+        self.begin_player_turn(self.seats.first_human());
         self.flow.message = Some("The battle has begun".into());
         if self.defending_base() {
             self.ai_first();
         }
     }
 
-    fn begin_player_turn(&mut self) {
+    /// Human `player`'s turn begins (handed to them if at this computer).
+    fn begin_player_turn(&mut self, player: i64) {
         self.flow.phase = Phase::Player;
-        self.map.battle.clock.player = PLAYER;
+        self.map.battle.clock.player = player;
+        self.seats.hand_over(player);
         self.selected = self
             .map
             .battle
             .scenario
             .units
             .iter()
-            .position(|u| u.owner == PLAYER && u.arrival == 0);
+            .position(|u| u.owner == player && u.arrival == 0)
+            .filter(|_| self.my_turn());
         self.preview = None;
         self.lock = None;
         self.fire_mode = None;
@@ -766,7 +846,11 @@ impl Viewer {
     }
 
     pub(crate) fn can_end_turn(&self) -> bool {
-        self.flow.phase == Phase::Player && !self.flow.reinforcing && self.motions.is_empty()
+        self.can_end_turn_for(self.seats.local)
+    }
+
+    fn can_end_turn_for(&self, player: i64) -> bool {
+        self.turn_of(player) && !self.flow.reinforcing && self.motions.is_empty()
     }
 
     pub(crate) fn end_turn(&mut self) {
@@ -775,10 +859,22 @@ impl Viewer {
         }
     }
 
-    /// [`Command::EndTurn`]: the AI's turn begins.
-    pub(crate) fn apply_end_turn(&mut self) -> bool {
-        if !self.can_end_turn() {
+    /// [`Command::EndTurn`]: the next human's turn begins, or the AI's
+    /// after the last.
+    pub(crate) fn apply_end_turn(&mut self, player: i64) -> bool {
+        if !self.can_end_turn_for(player) {
             return false;
+        }
+        if let Some(next) = self.seats.next_human(player) {
+            if matches!(self.screen, Screen::Automated) {
+                self.screen = Screen::Battle;
+            }
+            self.flow.support_row = None;
+            self.flow.pickup = None;
+            self.begin_player_turn(next);
+            self.flow.message = Some(format!("{}'s turn has begun", self.player_name(next)));
+            self.rebuild();
+            return true;
         }
         self.flow.phase = Phase::Ai;
         self.map.battle.clock.player = AI;
@@ -791,7 +887,7 @@ impl Viewer {
         self.flow.message = Some(format!("{}'s turn has begun", self.player_name(AI)));
         self.flow.ai_until = Some(self.started + AI_TURN);
         for unit in &mut self.map.battle.scenario.units {
-            if unit.owner != PLAYER
+            if !self.seats.human(unit.owner)
                 && let Some(k) = self.defs.unit_tech(unit.kind, unit.tech)
             {
                 unit.restore_ap(k.action_points);
@@ -836,9 +932,11 @@ impl Viewer {
         self.flow.ai_until = None;
         self.map.battle.clock.turn += 1;
         let reinf = self.map.battle.scenario.info.reinf_res;
-        *self.credits_mut() += reinf;
+        for h in self.seats.humans().collect::<Vec<_>>() {
+            *self.credits_mut_of(h) += reinf;
+        }
         for unit in &mut self.map.battle.scenario.units {
-            if unit.owner == PLAYER
+            if self.seats.human(unit.owner)
                 && let Some(k) = self.defs.unit_tech(unit.kind, unit.tech)
             {
                 unit.restore_ap(k.action_points);
@@ -847,8 +945,9 @@ impl Viewer {
         if matches!(self.screen, Screen::AiTurn) {
             self.screen = Screen::Battle;
         }
-        self.begin_player_turn();
-        self.flow.message = Some(format!("{}'s turn has begun", self.player_name(PLAYER)));
+        let first = self.seats.first_human();
+        self.begin_player_turn(first);
+        self.flow.message = Some(format!("{}'s turn has begun", self.player_name(first)));
         self.arrive_reinforcements();
         self.rebuild();
     }
@@ -1084,7 +1183,7 @@ impl Viewer {
             .battle
             .players
             .iter()
-            .find(|p| p.player == PLAYER)
+            .find(|p| p.player == self.seats.local)
             .cloned()
             .unwrap_or_default();
         let [ud, ul, bd, bl] = record.totals();
@@ -1107,7 +1206,7 @@ impl Viewer {
             ],
             rows: [
                 [
-                    self.player_name(PLAYER),
+                    self.player_name(self.seats.local),
                     units(ud),
                     units(ul),
                     record.rank(&self.defs).to_string(),
@@ -1159,7 +1258,15 @@ pub struct Report {
 
 /// A freshly deployed unit on `(x, y)` of a `size`-tile map, facing the
 /// centre when its type has facings.
-fn new_unit(id: i64, kind: i64, tech: i64, (x, y): (i64, i64), size: i64, k: &UnitType) -> Unit {
+fn new_unit(
+    id: i64,
+    kind: i64,
+    tech: i64,
+    owner: i64,
+    (x, y): (i64, i64),
+    size: i64,
+    k: &UnitType,
+) -> Unit {
     let facing = if k.facings {
         libday_data::scenario::deploy_facing(size, x, y)
     } else {
@@ -1170,7 +1277,7 @@ fn new_unit(id: i64, kind: i64, tech: i64, (x, y): (i64, i64), size: i64, k: &Un
         id,
         kind,
         tech,
-        owner: PLAYER,
+        owner,
         facing,
         x,
         y,

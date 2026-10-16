@@ -15,7 +15,7 @@ use libday_view::scatter::Rand;
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
-use crate::skirmish::{AI, PLAYER, Phase};
+use crate::skirmish::{AI, Phase};
 
 /// What a unit fires at, as sent over the wire ([`Target`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,7 +233,11 @@ impl Viewer {
         };
         match self.flow.phase {
             Phase::Free => true,
-            Phase::Player | Phase::Ai => !self.flow.reinforcing && u.owner == player,
+            Phase::Player | Phase::Ai => {
+                !self.flow.reinforcing
+                    && u.owner == player
+                    && self.map.battle.clock.player == player
+            }
             _ => false,
         }
     }
@@ -287,19 +291,16 @@ impl Viewer {
                 self.apply_scripted_support(index);
                 true
             }
-            Command::Deploy { x, y, kind, tech } => self.apply_deploy(x, y, kind, tech),
-            Command::Recall { x, y } => self.apply_recall(x, y),
+            Command::Deploy { x, y, kind, tech } => self.apply_deploy(player, x, y, kind, tech),
+            Command::Recall { x, y } => self.apply_recall(player, x, y),
             Command::Upgrade { cell } => self.apply_upgrade(cell),
             Command::StartBattle => {
                 self.apply_start_battle();
                 true
             }
-            Command::BeginReinforce => self.apply_begin_reinforce(),
-            Command::FinishReinforce => {
-                self.apply_finish_reinforce();
-                true
-            }
-            Command::EndTurn => self.apply_end_turn(),
+            Command::BeginReinforce => self.apply_begin_reinforce(player),
+            Command::FinishReinforce => self.apply_finish_reinforce(player),
+            Command::EndTurn => self.apply_end_turn(player),
             Command::Walk {
                 unit,
                 steps,
@@ -395,9 +396,9 @@ impl Viewer {
         self.order_ai(Command::Batch { walks })
     }
 
-    /// The local human's order (one seat for now).
+    /// The local human's order.
     pub(crate) fn order(&mut self, command: Command) -> bool {
-        self.submit(PLAYER, command)
+        self.submit(self.seats.local, command)
     }
 
     /// The AI's order.

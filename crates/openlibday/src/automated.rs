@@ -16,7 +16,7 @@ use libday_view::{tile_center, tile_coords};
 use crate::Viewer;
 use crate::combat::{Explosion, Gunner, Shot};
 use crate::command::Command;
-use crate::skirmish::{AI, PLAYER, Phase};
+use crate::skirmish::AI;
 
 /// Frames between two flak bursts (`0x41bc04` staggers the shooters).
 const FLAK_STEP: usize = 3;
@@ -54,10 +54,7 @@ impl Viewer {
 
     /// Whether AUTOMATED UNITS opens the support sidebar.
     pub(crate) fn can_support(&self) -> bool {
-        self.flow.phase == Phase::Player
-            && !self.flow.reinforcing
-            && self.flow.setup.is_some()
-            && !self.busy()
+        self.my_turn() && !self.flow.reinforcing && self.flow.setup.is_some() && !self.busy()
     }
 
     pub(crate) fn open_supports(&mut self) {
@@ -128,7 +125,7 @@ impl Viewer {
             Some(p) if transport => (p, Some((x, y))),
             _ => ((x, y), None),
         };
-        if !support::valid_target(scenario, &self.defs, &a, PLAYER, at, dest) {
+        if !support::valid_target(scenario, &self.defs, &a, self.seats.local, at, dest) {
             self.flow.message = Some("Invalid target".into());
             return;
         }
@@ -165,13 +162,15 @@ impl Viewer {
                 return false;
             };
             let scenario = &self.map.battle.scenario;
-            if self.credits() < a.cost
+            if !self.turn_of(player)
+                || self.flow.reinforcing
+                || self.credits_of(player) < a.cost
                 || !support::valid_target(scenario, &self.defs, a, player, at, dest)
             {
                 return false;
             }
             let (cost, once) = (a.cost, a.deploy_once);
-            *self.credits_mut() -= cost;
+            *self.credits_mut_of(player) -= cost;
             if once {
                 self.flow.used_once.push(id);
             }
@@ -228,7 +227,7 @@ impl Viewer {
     /// own level for that type (`0x4725a4`), as bought in this battle or
     /// researched in the campaign, else 0 (openlibday keeps no levels for the AI).
     pub(crate) fn drop_tech(&self, a: &AutomatedType, player: i64) -> i64 {
-        if player != PLAYER {
+        if !self.seats.human(player) {
             return 0;
         }
         let kind = a.int_or(auto_prop::UNIT_ID_DROP, 0);

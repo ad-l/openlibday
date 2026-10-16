@@ -288,7 +288,7 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         && viewer.zone(x, y)
     {
         let (left, top) = sprite_origin(size, x, y);
-        let name = if viewer.recallable(x, y).is_some() {
+        let name = if viewer.recallable(viewer.seats.local, x, y).is_some() {
             "CRECA"
         } else {
             "CDEPL"

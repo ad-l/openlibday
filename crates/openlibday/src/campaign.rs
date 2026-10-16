@@ -13,7 +13,8 @@ use libday_view::movement::{self, Access};
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
-use crate::skirmish::{AI, PLAYER, Phase, Setup, skirmish_players};
+use crate::players::{CAMPAIGN_PLAYER, Players};
+use crate::skirmish::{AI, Phase, Setup};
 
 /// Technology points for repelling the first city attack. *Unverified*: no
 /// such constant was found in the data or the executable, but the original
@@ -97,7 +98,7 @@ impl BaseLayout {
         for u in now
             .units
             .iter()
-            .filter(|u| u.owner == PLAYER && u.arrival == 0)
+            .filter(|u| u.owner == CAMPAIGN_PLAYER && u.arrival == 0)
         {
             let tower = defs
                 .buildings
@@ -108,7 +109,7 @@ impl BaseLayout {
                     counter: 0,
                     id,
                     kind,
-                    owner: PLAYER,
+                    owner: CAMPAIGN_PLAYER,
                     armor: k.armor,
                     x: u.x,
                     y: u.y,
@@ -462,7 +463,9 @@ impl Viewer {
     /// "Player N" in skirmishes and "Alien" for the computer.
     pub(crate) fn player_name(&self, owner: i64) -> String {
         match &self.campaign {
-            Some(c) if owner == PLAYER && !c.state.name.trim().is_empty() => c.state.name.clone(),
+            Some(c) if owner == CAMPAIGN_PLAYER && !c.state.name.trim().is_empty() => {
+                c.state.name.clone()
+            }
             _ => libday_view::minimap::player_name(owner),
         }
     }
@@ -562,7 +565,7 @@ impl Viewer {
     fn base_zone(&self, s: &Scenario) -> Vec<(i64, i64)> {
         let size = s.size as i64;
         let mut tiles = vec![false; (size * size) as usize];
-        for b in s.buildings.iter().filter(|b| b.owner == PLAYER) {
+        for b in s.buildings.iter().filter(|b| b.owner == CAMPAIGN_PLAYER) {
             let (w, h) = self
                 .defs
                 .buildings
@@ -592,7 +595,7 @@ impl Viewer {
         };
         let mut hq = false;
         let mut sum = 0;
-        for b in s.buildings.iter().filter(|b| b.owner == PLAYER) {
+        for b in s.buildings.iter().filter(|b| b.owner == CAMPAIGN_PLAYER) {
             if let Some(&(_, p)) = DEPLOY_POINTS.iter().find(|(k, _)| *k == b.kind) {
                 if b.kind == HQ {
                     if hq {
@@ -611,7 +614,7 @@ impl Viewer {
         let mut kinds: Vec<i64> = s
             .buildings
             .iter()
-            .filter(|b| b.owner == PLAYER)
+            .filter(|b| b.owner == CAMPAIGN_PLAYER)
             .map(|b| b.kind)
             .collect();
         kinds.sort_unstable();
@@ -695,7 +698,7 @@ impl Viewer {
         for u in s
             .units
             .iter()
-            .filter(|u| u.owner == PLAYER && u.arrival == 0)
+            .filter(|u| u.owner == CAMPAIGN_PLAYER && u.arrival == 0)
         {
             let (w, h) = self
                 .defs
@@ -752,7 +755,7 @@ impl Viewer {
             .enumerate()
             .map(|(i, &(x, y))| Deployment {
                 counter: i as i64 + 1,
-                player: PLAYER,
+                player: CAMPAIGN_PLAYER,
                 x,
                 y,
                 turn: 0,
@@ -828,7 +831,8 @@ impl Viewer {
             scroll: 0,
             deployed: Vec::new(),
         });
-        self.players = skirmish_players();
+        self.seats = Players::default();
+        self.players = self.seats.overview();
         self.player = 0;
         self.begin_briefing();
     }
@@ -853,12 +857,12 @@ impl Viewer {
         let defs = &self.defs;
         for u in &mut self.map.battle.scenario.units {
             let tower = defs.unit(u.kind).is_some_and(|k| k.movement == 0);
-            if u.owner == PLAYER && !tower {
+            if u.owner == CAMPAIGN_PLAYER && !tower {
                 u.action_points = Some(0);
             }
         }
         self.map.battle.clock.turn = 0;
-        self.apply_end_turn();
+        self.apply_end_turn(CAMPAIGN_PLAYER);
     }
 
     /// The campaign's say on a battle's outcome: a base battle goes on while
@@ -871,7 +875,7 @@ impl Viewer {
         if !s
             .buildings
             .iter()
-            .any(|b| b.owner == PLAYER && b.kind == HQ)
+            .any(|b| b.owner == CAMPAIGN_PLAYER && b.kind == HQ)
         {
             return Some(Outcome::Lost);
         }
@@ -1148,7 +1152,7 @@ mod tests {
         let road = Surface {
             counter: 0,
             kind: 1,
-            owner: PLAYER,
+            owner: CAMPAIGN_PLAYER,
             x: 3,
             y: 4,
             armor: 5,
@@ -1159,7 +1163,7 @@ mod tests {
                 counter: 0,
                 id: 1,
                 kind: 7,
-                owner: PLAYER,
+                owner: CAMPAIGN_PLAYER,
                 armor: 9,
                 x: 1,
                 y: 1,

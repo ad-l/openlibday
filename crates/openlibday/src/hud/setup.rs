@@ -18,7 +18,6 @@ use super::{
     fill, frect, portrait,
 };
 use crate::Viewer;
-use crate::skirmish::{AI, PLAYER};
 
 const RED: [u8; 3] = [255, 0, 0];
 const GREY: [u8; 3] = [160, 160, 160];
@@ -308,7 +307,7 @@ pub(super) fn draw_ai_sidebar(
     buttons(canvas, gfx, viewer, Screen::AiTurn)?;
     draw_credits(canvas, gfx, viewer)?;
     draw_turns(canvas, gfx, viewer, Field::Turn)?;
-    for (row, owner) in [PLAYER, AI].into_iter().enumerate() {
+    for (row, owner) in viewer.seats.overview().into_iter().enumerate() {
         let r = layout.ai_row(row);
         gfx.frame(canvas, minimap::swatch_frame(owner), r.x, r.y, s)?;
         let name = Rect::new(r.x + 22 * s, r.y, 100 * s, r.h);

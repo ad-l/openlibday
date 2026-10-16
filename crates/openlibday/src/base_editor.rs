@@ -12,7 +12,7 @@ use libday_view::ui::{BASE_ROWS, Button, Screen};
 
 use crate::Viewer;
 use crate::campaign::BaseLayout;
-use crate::skirmish::PLAYER;
+use crate::players::CAMPAIGN_PLAYER;
 
 /// String ids (`LIBDAYEN.DLL`).
 const CANT_MOVE_HQ: u32 = 391;
@@ -152,7 +152,7 @@ impl Viewer {
         let hq = s
             .buildings
             .iter()
-            .find(|b| b.owner == PLAYER && b.kind == base::HQ);
+            .find(|b| b.owner == CAMPAIGN_PLAYER && b.kind == base::HQ);
         if let Some(b) = hq {
             let (w, h) = Item::Building(b.kind).size(&self.defs);
             let centre = (b.x as f64 + w as f64 / 2.0, b.y as f64 + h as f64 / 2.0);
@@ -345,7 +345,7 @@ impl Viewer {
         let surface = |list: &[Surface], kind: i64, armor: i64| Surface {
             counter: list.iter().map(|r| r.counter + 1).max().unwrap_or(1),
             kind,
-            owner: PLAYER,
+            owner: CAMPAIGN_PLAYER,
             x,
             y,
             armor,
@@ -356,7 +356,7 @@ impl Viewer {
                 counter: s.buildings.iter().map(|b| b.counter + 1).max().unwrap_or(1),
                 id: s.buildings.iter().map(|b| b.id + 1).max().unwrap_or(1),
                 kind,
-                owner: PLAYER,
+                owner: CAMPAIGN_PLAYER,
                 armor: self.defs.buildings.get(&kind).map_or(1, |b| b.armor),
                 x,
                 y,
@@ -375,7 +375,7 @@ impl Viewer {
             Item::Mine(kind) => Thing::Mine(Mine {
                 counter: s.mines.iter().map(|m| m.counter + 1).max().unwrap_or(1),
                 kind,
-                owner: PLAYER,
+                owner: CAMPAIGN_PLAYER,
                 x,
                 y,
                 armed: true,
@@ -394,12 +394,12 @@ impl Viewer {
         at: (i64, i64),
         credits: i64,
     ) -> Result<(), Refusal> {
-        base::check(s, &self.defs, PLAYER, item, at)?;
+        base::check(s, &self.defs, CAMPAIGN_PLAYER, item, at)?;
         if let Item::Building(kind) = item
             && base::DEPLOY_CENTRES.contains(&kind)
             && s.buildings
                 .iter()
-                .filter(|b| b.owner == PLAYER && base::DEPLOY_CENTRES.contains(&b.kind))
+                .filter(|b| b.owner == CAMPAIGN_PLAYER && base::DEPLOY_CENTRES.contains(&b.kind))
                 .count()
                 >= base::MAX_DEPLOY_CENTRES
         {
@@ -419,7 +419,7 @@ impl Viewer {
         let mut scenario = self.map.battle.scenario.clone();
         if let Some((thing, _)) = &e.picked {
             let item = thing.item();
-            let r = base::check(&scenario, &self.defs, PLAYER, item, at);
+            let r = base::check(&scenario, &self.defs, CAMPAIGN_PLAYER, item, at);
             let thing = thing.clone().moved(at);
             thing.clone().add(&mut scenario);
             return Some(Plan {
@@ -570,7 +570,7 @@ impl Viewer {
 
     /// Why the player may not move or recycle `thing`.
     fn untouchable(&mut self, thing: &Thing, hq: (u32, &str)) -> bool {
-        if thing.owner() != PLAYER {
+        if thing.owner() != CAMPAIGN_PLAYER {
             self.base_message(NOT_YOURS, "Can't recycle other's structure", "", 0);
             return true;
         }

@@ -1,7 +1,7 @@
 # Multiplayer plan
 
-Status: **MP0 in progress** (state hash, frame-rate independence, command
-layer, seeds and replay done; player table next). Compatibility with the original
+Status: **MP0 done** (state hash, frame-rate independence, command layer,
+seeds, replay and player table); MP1 next. Compatibility with the original
 executable's network protocol is not a goal.
 
 ## Goals
@@ -119,6 +119,17 @@ Single player must pass all existing tests and scripts after each step.
   `replay_scripts` test; the client also matches at other frame rates).
 - AI-private decisions (its budget, which supports to buy, its plans) stay
   outside commands: only their effects are commands.
+- `players.rs`: `Players`, the seats (humans in slots 1-4, controller
+  local or AI, the AI in slot 0) and `local`, the human this computer
+  plays now. Turns run through the humans in slot order, then the AI.
+  Credits, start zones and drop tech are per slot; commands are validated
+  against `clock.player`. The UI asks for the local seat (`my_turn`,
+  `credits()`), applying a command uses the command's player. Several local
+  humans give hotseat play (script `humans N`, `scripts/hotseat.txt`):
+  they deploy one after the other (CONTINUE hands over) and take their
+  turns in order. Still shared: the skirmish tech setup. The campaign
+  stays one human (`CAMPAIGN_PLAYER`).
+
 ## Transport
 
 - **TCP** with length-prefixed messages. The game is turn-based and

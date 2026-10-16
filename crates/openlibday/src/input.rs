@@ -42,7 +42,7 @@ impl Viewer {
                 self.begin_deploy()
             }
             (Screen::Confirm, Keycode::Return | Keycode::KpEnter | Keycode::Y) => {
-                self.start_battle()
+                self.deploy_done()
             }
             (Screen::Confirm, Keycode::Escape | Keycode::N) => self.screen = Screen::Deploy,
             (Screen::Report, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {

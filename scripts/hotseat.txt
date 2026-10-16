@@ -1,0 +1,39 @@
+# MP0 hotseat: two humans take turns at one computer. Player 1 deploys,
+# hands over, player 2 deploys and starts the battle; turns then run
+# player 1, player 2, the AI.
+# Run: openlibday --headless --script scripts/hotseat.txt  (needs LIBDAY_ROOT)
+ai modern
+humans 2
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+expect local 1
+deploy Grenadier
+tile 44 18
+expect units.-1.owner 1
+key Return
+key Y
+expect local 2
+expect phase Deploy
+deploy Trooper
+tile 30 1
+expect units.-1.owner 2
+deploy Trooper
+tile 31 1
+expect units.-1.owner 2
+key Return
+key Y
+expect phase Player
+expect player 1
+expect local 1
+button EndTurn
+expect player 2
+expect local 2
+expect turn 1
+button EndTurn
+idle 6000
+expect player 1
+expect local 1
+expect turn 2
+state target/hotseat.json

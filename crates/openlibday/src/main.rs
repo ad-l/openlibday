@@ -31,6 +31,7 @@ mod input;
 mod menu;
 mod mixer;
 mod moves;
+mod players;
 mod render;
 mod script;
 mod settings;
@@ -201,6 +202,8 @@ struct Viewer {
     attack: Option<(usize, libday_view::fire::Target, bool)>,
     /// The command log and feed (multiplayer).
     net: command::Net,
+    /// The battle's seats and the local player.
+    seats: players::Players,
     shot: Option<combat::Shot>,
     /// Earlier shots of a burst still in the air, in firing order.
     flights: Vec<combat::Shot>,
@@ -363,7 +366,7 @@ impl Viewer {
 
     fn rebuild(&mut self) {
         // In a battle the player sees only the mines they know about.
-        self.options.viewer = (!matches!(self.flow.phase, Phase::Free)).then_some(skirmish::PLAYER);
+        self.options.viewer = (!matches!(self.flow.phase, Phase::Free)).then_some(self.seats.local);
         // Units of any side that can do nothing more this turn are dimmed.
         self.options.dimmed_units = (0..self.map.battle.scenario.units.len())
             .filter(|&i| {
@@ -663,7 +666,7 @@ impl Viewer {
             Button::Yes | Button::No if matches!(self.screen, Screen::Options { .. }) => {
                 self.menu_activate(button)
             }
-            Button::Yes => self.start_battle(),
+            Button::Yes => self.deploy_done(),
             Button::No => self.screen = Screen::Deploy,
             Button::NewCampaign
             | Button::LoadCampaign
@@ -943,6 +946,7 @@ fn main() -> Result {
         lock: None,
         attack: None,
         net: command::Net::default(),
+        seats: players::Players::default(),
         shot: None,
         flights: Vec::new(),
         supports: Vec::new(),

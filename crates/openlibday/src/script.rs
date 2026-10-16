@@ -42,6 +42,8 @@
 //! seed N                reseed the game's rand() (scripts start at 1)
 //! seeds N               act as a multiplayer host: every command gets a seed,
 //!                       drawn from a generator seeded with N
+//! humans N              N humans (1-4) take turns at this computer (hotseat)
+//!                       from the next skirmish on
 //! commands FILE         write the commands run so far as JSON
 //! replay FILE           follow the commands in FILE (as a multiplayer client:
 //!                       the AI does not think, its commands come in)
@@ -133,6 +135,7 @@ pub enum Command {
     Type(String),
     Seed(u32),
     Seeds(u32),
+    Humans(usize),
     Commands(PathBuf),
     Replay(PathBuf),
     Mine {
@@ -268,6 +271,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         "type" => Command::Type(text()?),
         "seed" => Command::Seed(num(args.first())?),
         "seeds" => Command::Seeds(num(args.first())?),
+        "humans" => Command::Humans(num(args.first())?),
         "commands" => Command::Commands(text()?.into()),
         "replay" => Command::Replay(text()?.into()),
         "mine" => Command::Mine {
@@ -523,6 +527,7 @@ impl Runner<'_, '_> {
             Command::Seeds(seed) => {
                 viewer.net.seeds = Some(libday_view::scatter::Rand::new(*seed));
             }
+            Command::Humans(n) => viewer.seats = crate::players::Players::new(*n),
             Command::Commands(file) => {
                 let text = serde_json::to_string_pretty(&viewer.net.log)?;
                 std::fs::write(file, text)?;
@@ -565,10 +570,10 @@ impl Runner<'_, '_> {
                     } else {
                         return Err(format!("no unit or building {id}").into());
                     };
-                let attacker = if owner == crate::skirmish::PLAYER {
+                let attacker = if viewer.seats.human(owner) {
                     crate::skirmish::AI
                 } else {
-                    crate::skirmish::PLAYER
+                    viewer.seats.local
                 };
                 viewer.map.battle.tally(&before, attacker);
                 viewer.selected = None;
@@ -780,7 +785,7 @@ pub fn state(viewer: &Viewer) -> Value {
     let mines: Vec<Value> = scenario
         .mines
         .iter()
-        .map(|m| json!({"kind": m.kind, "owner": m.owner, "x": m.x, "y": m.y, "seen": !m.hidden_to(crate::skirmish::PLAYER)}))
+        .map(|m| json!({"kind": m.kind, "owner": m.owner, "x": m.x, "y": m.y, "seen": !m.hidden_to(viewer.seats.local)}))
         .collect();
     let ruins: Vec<Value> = scenario
         .ruins
@@ -888,6 +893,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "players": players,
         "menu": menu_state(viewer),
     });
+    state["local"] = json!(viewer.seats.local);
     state["automated"] = automated;
     state["hash"] = json!(format!("{:016x}", viewer.state_hash()));
     state["desync"] = json!(viewer.net.desync);
