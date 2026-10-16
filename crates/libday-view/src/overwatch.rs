@@ -10,7 +10,10 @@
 //!   looked at there.
 //! - Reaction fire then follows (`0x41a46b`): every hostile unit that can
 //!   fire at it on overwatch shoots once, in unit order; rounds repeat while
-//!   one did and the target stands.
+//!   one did and the target stands. Each shot is resolved at once, with the
+//!   target checked after every unit, so none is wasted. A unit's shots merge
+//!   into one burst (`0x41b6b5`): raised once, fired back to back, lowered
+//!   once; the shooters' bursts play together.
 //!
 //! No accuracy modifier is specific to overwatch: the target being of the
 //! side whose turn it is, its `Jammer` scales the hit chance (`scatter`).

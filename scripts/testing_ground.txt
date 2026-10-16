@@ -89,7 +89,8 @@ expect units.29.ap 10
 expect sounds.-1 TLTK\P0\TLTK0I0.SMK
 # Reaction fire is simultaneous: the Light Tank and a Dreadnought beside it
 # both fire at a Main Tank spotted on its first step, their shots in the air
-# together.
+# together. The whole reaction resolves up front (0x41a46b), so it is
+# already over while the shots fly.
 ap 29 60
 place 31 72 28
 ap 31 150
@@ -99,8 +100,10 @@ expect selected 77
 tile 69 29
 tile 69 29
 wait 9
-expect reaction 77
+expect reaction null
 expect flights 2
+expect units.29.ap 10
+expect units.31.ap 60
 idle
 expect reaction null
 expect flights 0

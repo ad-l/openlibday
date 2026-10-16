@@ -495,8 +495,12 @@ impl Viewer {
                 })
             })
             .collect();
+        let now = self.clock.now();
         for s in self.flights.iter().chain(&self.shot) {
-            let f = s.frame(self.clock.now());
+            if s.waiting(now) {
+                continue;
+            }
+            let f = s.frame(now);
             // Simultaneous shots (reaction fire) by shooter.
             let base = 1000 + 100 * s.unit;
             if s.projectile(f).is_some() {
@@ -708,17 +712,26 @@ impl Viewer {
     /// The walking and shooting units: centre (map pixels), facing,
     /// animation frame counter and the tile whose depth each is drawn at.
     pub(crate) fn walkers(&self) -> Vec<Walker> {
-        let mut out: Vec<Walker> = self
-            .shot
-            .as_ref()
-            .and_then(|s| self.shooter(s, 0))
-            .into_iter()
+        // Each shooter's latest shot started: a burst's next shot takes
+        // over from the one before (lock and fire, reaction fire).
+        let now = self.clock.now();
+        let started: Vec<&crate::combat::Shot> = self
+            .flights
+            .iter()
+            .chain(&self.shot)
+            .filter(|s| !s.waiting(now))
             .collect();
-        // Reaction fire: the other shooters of the round.
-        for s in &self.flights {
-            if self.shot.as_ref().is_none_or(|c| c.unit != s.unit) {
-                out.extend(self.shooter(s, 10_000 + s.unit));
+        let mut out = Vec::new();
+        for s in &started {
+            if started
+                .iter()
+                .any(|o| o.unit == s.unit && o.started > s.started)
+            {
+                continue;
             }
+            let current = self.shot.as_ref().is_some_and(|c| std::ptr::eq(c, *s));
+            let slot = if current { 0 } else { 10_000 + s.unit };
+            out.extend(self.shooter(s, slot));
         }
         out.extend(self.gunners());
         for (k, m) in self.motions.iter().enumerate() {
@@ -1062,6 +1075,9 @@ pub fn draw_shot_effects(
 ) -> Result {
     let now = viewer.clock.now();
     for s in viewer.flights.iter().chain(&viewer.shot) {
+        if s.waiting(now) {
+            continue;
+        }
         let f = s.frame(now);
         if let Some((at, frame)) = s.projectile(f) {
             let name = shot::animation_name(&s.image, s.owner, Anim::Projectile, 0);

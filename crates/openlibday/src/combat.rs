@@ -43,8 +43,10 @@ fn mine_animation(image: &str) -> String {
 const REPEAT_LEAD: usize = 1;
 
 /// Reaction fire at a unit spotted moving ([`overwatch`]): rounds in which
-/// every hostile unit that can fire at it on overwatch shoots once, all at
-/// the same time, while one did and it stands.
+/// every hostile unit that can fire at it on overwatch shoots once, while
+/// one did and it stands. As in the original (`0x41b6b5`), each shooter's
+/// shots play as one burst, the weapon raised once and lowered after the
+/// last, and the shooters' bursts play at the same time.
 pub struct Reaction {
     pub target: usize,
     /// Units still to consider this round, last first.
@@ -126,6 +128,12 @@ impl Shot {
     /// Frames of the timeline played so far.
     pub fn frame(&self, now: Duration) -> usize {
         (now.saturating_sub(self.started).as_millis() / u128::from(WALK_POSITION_MS)) as usize
+    }
+
+    /// Whether the shot is scheduled to start later (a reaction burst's
+    /// next shot).
+    pub fn waiting(&self, now: Duration) -> bool {
+        now < self.started
     }
 
     /// The shooter's animation and its frame at timeline frame `f`, while
@@ -812,11 +820,13 @@ impl Viewer {
         self.next_reaction();
     }
 
-    /// Starts the reaction shots of a round (`0x41a46b`) together, their
-    /// damage resolved in firing order; returns whether any is playing,
-    /// ending the reaction fire otherwise. A shot that destroys something
-    /// is the round's last to leave (the unit indices shift when it lands);
-    /// the rest of the round fires after it.
+    /// Resolves the reaction rounds (`0x41a46b`) in firing order and
+    /// schedules their shots: a unit's first shot leaves straight away,
+    /// its next ones as its previous fire animation ends (the original
+    /// adds them to the same fire message, `0x41b6b5`, played back to back
+    /// by `0x41b7d2`). Returns whether any is playing, ending the reaction
+    /// fire otherwise. A shot that destroys something is the last to
+    /// leave (the unit indices shift when it lands); the rest fires after.
     fn next_reaction(&mut self) -> bool {
         loop {
             let units = self.map.battle.scenario.units.len();
@@ -825,25 +835,46 @@ impl Viewer {
             };
             let target = r.target;
             let Some(shooter) = r.queue.pop() else {
-                if !self.flights.is_empty() {
-                    return true;
+                // The next round is resolved straight away: its shots
+                // follow the bursts in the air.
+                if r.fired && target < units {
+                    r.fired = false;
+                    r.queue = (0..units).rev().collect();
+                    continue;
                 }
-                if !r.fired || target >= units {
-                    self.reaction = None;
-                    return false;
-                }
-                r.fired = false;
-                r.queue = (0..units).rev().collect();
-                continue;
+                self.reaction = None;
+                return !self.flights.is_empty();
             };
             let scenario = Self::projected(&self.flights, &self.map.battle.scenario);
             if !overwatch::reacts(scenario, &self.defs, shooter, target) {
                 continue;
             }
-            self.start_shot(shooter, Target::Unit(target), false, false);
-            let Some(s) = self.shot.take() else {
+            // The unit's previous shot, if its fire animation is still to
+            // end: this one follows it, the weapon kept raised.
+            let now = self.clock.now();
+            let previous = self
+                .flights
+                .iter_mut()
+                .filter(|f| f.unit == shooter)
+                .max_by_key(|f| f.started)
+                .map(|f| {
+                    let fire = (f.begin + f.shoot).saturating_sub(REPEAT_LEAD) as u64;
+                    let at = f.started + Duration::from_millis(fire * WALK_POSITION_MS);
+                    (f, at)
+                })
+                .filter(|(_, at)| *at > now);
+            let after = previous.map(|(f, at)| {
+                f.end = 0;
+                f.total = (f.begin + f.shoot).max(f.hit);
+                at
+            });
+            self.start_shot(shooter, Target::Unit(target), false, after.is_some());
+            let Some(mut s) = self.shot.take() else {
                 continue;
             };
+            if let Some(at) = after {
+                s.started = at;
+            }
             r_fired(&mut self.reaction);
             if s.removed_units.is_empty()
                 && s.removed_buildings.is_empty()
