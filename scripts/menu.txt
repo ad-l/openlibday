@@ -1,5 +1,12 @@
 # The OPTIONS dialog (MENU): settings table, RESTART SCENARIO, SAVE, QUIT.
 # Run: openlibday --headless --script scripts/menu.txt  (needs LIBDAY_ROOT)
+# Options over the main menu hide the map only while open.
+button Resolution
+expect screen Options
+expect menu.over_main true
+key Escape
+expect screen MainMenu
+expect menu.over_main false
 ai off
 skirmish s1-2-1
 key Return

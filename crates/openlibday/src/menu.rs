@@ -255,6 +255,7 @@ impl Viewer {
         } else {
             self.home()
         };
+        self.menu.over_main = false;
     }
 
     /// Scrolls the table by `rows`.

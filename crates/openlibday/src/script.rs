@@ -977,6 +977,7 @@ fn menu_state(viewer: &Viewer) -> Value {
         "values": values,
         "scroll": viewer.menu.scroll,
         "focus": viewer.menu.focus.map(|i| ITEMS[i].name()),
+        "over_main": viewer.menu.over_main,
         "question": viewer.menu.question,
         "volume": viewer.settings.volume,
         "scroll_speed": viewer.settings.scroll.name(),

@@ -392,7 +392,7 @@ pub(crate) fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer
     canvas.clear();
     let home_strategic = matches!(viewer.home(), Screen::Strategic { .. });
     if !viewer.screen.is_dialog()
-        && !viewer.menu.over_main
+        && !(viewer.menu.over_main && matches!(viewer.screen, Screen::Options { .. }))
         && !home_strategic
         && !matches!(viewer.screen, Screen::Overview | Screen::Briefing)
     {
