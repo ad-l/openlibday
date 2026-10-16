@@ -38,6 +38,10 @@ fn mine_animation(image: &str) -> String {
     format!("MINE\\{}.SMK", image.to_ascii_uppercase())
 }
 
+/// Frames the next lock-and-fire shot leaves before the fire animation
+/// ends.
+const REPEAT_LEAD: usize = 1;
+
 /// Reaction fire at a unit spotted moving ([`overwatch`]): rounds in which
 /// every hostile unit that can fire at it on overwatch shoots once, all at
 /// the same time, while one did and it stands.
@@ -733,13 +737,17 @@ impl Viewer {
         // Lock and fire: as in the original, the next shot leaves once the
         // fire animation is over, while this one is still in the air, its
         // damage already decided. Shots that destroy something end the
-        // burst the slow way, keeping the unit indices still.
+        // burst the slow way, keeping the unit indices still. The loop
+        // skips the fire animation's last frame: the original fires a
+        // LAV every ~0.73 s, 11 of its 12 frames.
         if s.repeat
             && f < total
-            && f >= s.begin + s.shoot
-            && s.result
-                .as_deref()
-                .is_some_and(|r| still_hostile(r, s.unit, s.target))
+            && f + REPEAT_LEAD >= s.begin + s.shoot
+            && still_hostile(
+                s.result.as_deref().unwrap_or(&self.map.battle.scenario),
+                s.unit,
+                s.target,
+            )
             && s.removed_units.is_empty()
             && s.removed_buildings.is_empty()
             && s.explosions.is_empty()
