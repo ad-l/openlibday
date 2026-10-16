@@ -851,7 +851,7 @@ impl Viewer {
             }
         }
         self.map.battle.clock.turn = 0;
-        self.end_turn();
+        self.apply_end_turn();
     }
 
     /// The campaign's say on a battle's outcome: a base battle goes on while

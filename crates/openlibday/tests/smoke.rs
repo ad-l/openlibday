@@ -4,10 +4,10 @@
 use std::path::Path;
 use std::process::Command;
 
-fn play(script: &str, done: &str) {
+fn play(script: &str, done: &str) -> String {
     if std::env::var_os("LIBDAY_ROOT").is_none() {
         eprintln!("skipping: LIBDAY_ROOT not set");
-        return;
+        return String::new();
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let output = Command::new(env!("CARGO_BIN_EXE_openlibday"))
@@ -19,11 +19,25 @@ fn play(script: &str, done: &str) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stdout}\n{stderr}");
     assert!(stdout.contains(done), "{stdout}");
+    stdout.into_owned()
 }
 
 #[test]
 fn smoke_script() {
     play("scripts/smoke.txt", "smoke test passed");
+}
+
+/// A client following a host's command log ends in the host's state.
+#[test]
+fn replay_scripts() {
+    let host = play("scripts/mp_host.txt", "hash ");
+    let client = play("scripts/mp_client.txt", "hash ");
+    let hash = |out: &str| {
+        out.lines()
+            .find(|l| l.starts_with("hash "))
+            .map(String::from)
+    };
+    assert_eq!(hash(&host), hash(&client));
 }
 
 #[test]

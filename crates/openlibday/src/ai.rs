@@ -13,6 +13,7 @@ use libday_view::movement::{self, Access, DIRS, Flood, MoveGrid, Step, executabl
 use libday_view::support::placeable;
 
 use crate::Viewer;
+use crate::command::Command;
 use crate::settings::AiMode;
 
 /// The record score meaning "no target" (`0x4f4330`).
@@ -807,7 +808,7 @@ impl Viewer {
 
     /// Launches automated unit `id` on `at` and pays for it.
     fn buy(&mut self, id: i64, at: (i64, i64)) {
-        self.launch_support(id, AI, at, None);
+        self.order_ai(Command::Support { id, at, dest: None });
         self.flow.ai_budget -= self.support_cost(id);
     }
 
@@ -981,7 +982,11 @@ impl Viewer {
                 .into_iter()
                 .find(|&t| placeable(s, &self.defs, unit.kind, unit.tech, AI, t));
             if let Some(dest) = dest {
-                self.launch_support(TRANSPORT, AI, (unit.x, unit.y), Some(dest));
+                self.order_ai(Command::Support {
+                    id: TRANSPORT,
+                    at: (unit.x, unit.y),
+                    dest: Some(dest),
+                });
                 return;
             }
         }
@@ -1167,7 +1172,7 @@ impl Viewer {
         let steps = path[1..n].to_vec();
         let spent: i64 = steps.iter().map(|s| i64::from(s.cost)).sum();
         self.watch_tile(a.dest);
-        if self.start_walk(idx, steps, (ap - spent).max(0)) {
+        if self.ai_walk(idx, &steps, (ap - spent).max(0)) {
             Issued::Walk
         } else {
             Issued::Nothing
@@ -1450,8 +1455,12 @@ impl Viewer {
         {
             let u = &self.units()[idx];
             self.watch_tile((u.x, u.y));
-            self.start_shot(idx, t, true, false);
-            if self.shot.is_some() {
+            let shoot = Command::Shoot {
+                unit: idx,
+                target: t.into(),
+                repeat: true,
+            };
+            if self.order_ai(shoot) {
                 a.pending = Some(Pending::Fire);
                 return;
             }
@@ -1972,11 +1981,14 @@ impl Viewer {
                 let last = p[p.len() - 1];
                 self.watch_tile((i64::from(last.x), i64::from(last.y)));
             }
-            for (nth, (idx, p)) in walks.into_iter().enumerate() {
-                let ap = self.ap(idx);
-                let spent: i64 = p[1..].iter().map(|s| i64::from(s.cost)).sum();
-                self.start_batch_walk(idx, p[1..].to_vec(), (ap - spent).max(0), nth, false);
-            }
+            let walks = walks
+                .into_iter()
+                .map(|(idx, p)| {
+                    let spent: i64 = p[1..].iter().map(|s| i64::from(s.cost)).sum();
+                    (idx, p[1..].to_vec(), (self.ap(idx) - spent).max(0))
+                })
+                .collect();
+            self.ai_batch(walks);
             b.flushing = true;
             return false;
         }

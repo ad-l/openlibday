@@ -1,6 +1,7 @@
 # Multiplayer plan
 
-Status: **plan, not implemented.** Compatibility with the original
+Status: **MP0 in progress** (state hash, frame-rate independence, command
+layer, seeds and replay done; player table next). Compatibility with the original
 executable's network protocol is not a goal.
 
 ## Goals
@@ -94,6 +95,30 @@ outcome whatever the frame rate, animation speed options or window size.
 
 Single player must pass all existing tests and scripts after each step.
 
+### Done so far
+
+- `sync.rs`: `state_hash` (script `hash`, `hash` in the state JSON). It
+  leaves out what only the host keeps: the AI's unit orders and order
+  targets, its support budget, and `rand()` (each command restarts it).
+- Walk events play in a global due-time order, so walks give the same
+  result whatever the frame rate.
+- `command.rs`: `Command` (move, attack, turn, overwatch, auto fire,
+  support, scripted support, deploy, recall, upgrade, start battle,
+  begin/finish reinforcement, end turn; the AI's walk, batch walk, shoot
+  and end of turn) and `Entry { player, seed, check, command }`. The UI
+  checks what it can and calls `order`; the AI calls `order_ai`; both go
+  through `submit`, which on a host (`net.seeds`) draws a seed and records
+  `check`, the state hash the command was given in. `run` reseeds `rand()`,
+  logs the entry and applies it, validating ownership and phase again.
+  A follower (`net.inbox`) runs received entries one at a time while
+  nothing plays, does not run the AI, and records the first entry whose
+  `check` it does not match (`net.desync`).
+- Script commands `seeds N`, `commands FILE` and `replay FILE`;
+  `scripts/mp_host.txt` plays a modern-AI skirmish as a host and
+  `scripts/mp_client.txt` follows its log to the same hash (the
+  `replay_scripts` test; the client also matches at other frame rates).
+- AI-private decisions (its budget, which supports to buy, its plans) stay
+  outside commands: only their effects are commands.
 ## Transport
 
 - **TCP** with length-prefixed messages. The game is turn-based and

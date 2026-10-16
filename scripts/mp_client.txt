@@ -1,0 +1,12 @@
+# MP0 replay, client side: follows the commands `mp_host.txt` logged (the
+# AI does not think here) and must end with the host's state hash.
+# Run: openlibday --headless --script scripts/mp_client.txt  (needs LIBDAY_ROOT,
+# after mp_host.txt)
+ai modern
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+replay target/mp_commands.json
+idle 30000
+hash

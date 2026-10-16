@@ -22,6 +22,7 @@ mod base_editor;
 mod campaign;
 mod clock;
 mod combat;
+mod command;
 mod cutscene;
 mod front;
 mod group;
@@ -196,6 +197,10 @@ struct Viewer {
     volley: Vec<(usize, libday_view::fire::Target, bool)>,
     /// Enemy locked as the selected unit's target, and a shot playing.
     lock: Option<combat::Lock>,
+    /// A unit walking into range to attack: (unit, target, repeat).
+    attack: Option<(usize, libday_view::fire::Target, bool)>,
+    /// The command log and feed (multiplayer).
+    net: command::Net,
     shot: Option<combat::Shot>,
     /// Earlier shots of a burst still in the air, in firing order.
     flights: Vec<combat::Shot>,
@@ -608,7 +613,10 @@ impl Viewer {
             Button::Right => self.cycle_selected(1),
             Button::Overwatch => self.toggle_overwatch(),
             Button::Group => self.toggle_group(),
-            Button::AutoFire => self.map.battle.auto_fire ^= true,
+            Button::AutoFire => {
+                let on = !self.map.battle.auto_fire;
+                self.order(command::Command::AutoFire { on });
+            }
             Button::Fire => self.toggle_fire_mode(),
             Button::Objectives => self.objectives = !self.objectives,
             Button::Swatch(slot) => {
@@ -933,6 +941,8 @@ fn main() -> Result {
         ends: Vec::new(),
         volley: Vec::new(),
         lock: None,
+        attack: None,
+        net: command::Net::default(),
         shot: None,
         flights: Vec::new(),
         supports: Vec::new(),

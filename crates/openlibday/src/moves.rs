@@ -7,7 +7,7 @@ use std::time::Duration;
 use libday_view::fire::{self, Fire};
 use libday_view::mines;
 use libday_view::movement::{
-    self, Movement, Step, WALK_POSITION_MS, affordable_steps, executable_steps, move_budget,
+    self, Movement, Step, WALK_POSITION_MS, affordable_steps, move_budget,
 };
 use libday_view::overwatch;
 use libday_view::shot::{self, Anim};
@@ -16,6 +16,7 @@ use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
 
 use crate::Viewer;
+use crate::command::Command;
 use crate::hud::{self, Gfx, Result};
 use crate::settings::MoveSpeed;
 use crate::sound::{Effect, Playing};
@@ -281,20 +282,15 @@ impl Viewer {
     }
 
     pub(crate) fn toggle_overwatch(&mut self) {
-        if !self.selected.is_some_and(|i| self.controllable(i)) {
+        let Some(unit) = self.selected.filter(|&i| self.controllable(i)) else {
             return;
-        }
-        if let Some(unit) = self
-            .selected
-            .and_then(|i| self.map.battle.scenario.units.get_mut(i))
-        {
-            unit.overwatch ^= true;
-        }
-        self.refresh_preview();
+        };
+        let on = !self.map.battle.scenario.units[unit].overwatch;
+        self.order(Command::Overwatch { unit, on });
     }
 
     /// AP of one shot reserved by overwatch, if on.
-    fn reserve(&self, i: usize) -> Option<u32> {
+    pub(crate) fn reserve(&self, i: usize) -> Option<u32> {
         let kind = self.kind_of(i)?;
         self.overwatch(i)
             .then_some(kind.shoot_action_points.max(0) as u32)
@@ -316,7 +312,7 @@ impl Viewer {
         })
     }
 
-    fn refresh_preview(&mut self) {
+    pub(crate) fn refresh_preview(&mut self) {
         if let Some(p) = &self.preview {
             self.preview = self.plan(p.unit, p.target);
         }
@@ -380,27 +376,36 @@ impl Viewer {
             return;
         }
         self.preview = None;
+        self.order(Command::Turn { unit: u });
+    }
+
+    /// [`Command::Turn`].
+    pub(crate) fn apply_turn(&mut self, u: usize) -> bool {
+        let unit = &self.map.battle.scenario.units[u];
+        if unit.arrival != 0 || !self.defs.unit(unit.kind).is_some_and(|k| k.facings) {
+            return false;
+        }
         let unit = &mut self.map.battle.scenario.units[u];
         unit.facing = (unit.facing + 1).rem_euclid(8);
         self.rebuild();
+        true
     }
 
+    /// Walks the previewed path: the selection's move.
     pub(crate) fn start_move(&mut self) {
         let Some(p) = self.preview.take() else {
             return;
         };
-        if self.selection().len() > 1 {
-            self.move_group(p.target);
-            return;
-        }
-        let Some((ap, _)) = self.action_points(p.unit) else {
-            return;
+        let units = if self.selection().len() > 1 {
+            self.stale = true;
+            self.members()
+        } else {
+            vec![p.unit]
         };
-        let budget = move_budget(ap.max(0) as u32, self.reserve(p.unit));
-        let (n, spent) = executable_steps(&p.steps, budget);
-        let mut steps = p.steps;
-        steps.truncate(n);
-        self.start_walk(p.unit, steps, ap - i64::from(spent));
+        self.order(Command::Move {
+            units,
+            to: p.target,
+        });
     }
 
     /// Walks unit `unit` along `steps`, ending with `final_ap` AP; returns
@@ -603,6 +608,9 @@ impl Viewer {
             let (i, end) = self.ends.remove(0);
             if end != End::Arrived && self.lock.as_ref().is_some_and(|l| l.unit == i) {
                 self.lock = None;
+            }
+            if end != End::Arrived && self.attack.is_some_and(|a| a.0 == i) {
+                self.attack = None;
             }
             match end {
                 End::Mine(k) => {

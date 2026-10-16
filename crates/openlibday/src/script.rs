@@ -10,8 +10,8 @@
 //! ```text
 //! fps N                 frame rate of wait/idle/record (default 30)
 //! wait N                advance N frames
-//! idle [N]              advance until no unit moves and the AI's turn is
-//!                       over (at most N frames, default 3000)
+//! idle [N]              advance until no unit moves, the AI's turn is over
+//!                       and no command waits (at most N frames, default 3000)
 //! key NAME              press a key (SDL name: Return, Escape, Up, F5, A...)
 //! click X Y [right]     click output pixel (X, Y)
 //! move X Y              move the mouse to output pixel (X, Y)
@@ -40,6 +40,11 @@
 //! hash                  print the simulation state hash (`hash` in `state`)
 //! type TEXT             type TEXT on the keyboard (the NEW GAME name)
 //! seed N                reseed the game's rand() (scripts start at 1)
+//! seeds N               act as a multiplayer host: every command gets a seed,
+//!                       drawn from a generator seeded with N
+//! commands FILE         write the commands run so far as JSON
+//! replay FILE           follow the commands in FILE (as a multiplayer client:
+//!                       the AI does not think, its commands come in)
 //! mine KIND OWNER X Y [seen]  lay an armed mine of type KIND, hidden from
 //!                       all but OWNER (from nobody with `seen`)
 //! grant ID            add automated unit ID to the support list
@@ -127,6 +132,9 @@ pub enum Command {
     /// Text typed on the keyboard (the NEW GAME dialog's name).
     Type(String),
     Seed(u32),
+    Seeds(u32),
+    Commands(PathBuf),
+    Replay(PathBuf),
     Mine {
         kind: i64,
         owner: i64,
@@ -259,6 +267,9 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         "hash" => Command::Hash,
         "type" => Command::Type(text()?),
         "seed" => Command::Seed(num(args.first())?),
+        "seeds" => Command::Seeds(num(args.first())?),
+        "commands" => Command::Commands(text()?.into()),
+        "replay" => Command::Replay(text()?.into()),
         "mine" => Command::Mine {
             kind: num(args.first())?,
             owner: num(args.get(1))?,
@@ -309,7 +320,10 @@ impl Runner<'_, '_> {
             }
             Command::Idle(max) => {
                 let mut n = 0;
-                while viewer.busy() || viewer.flow.ai_until.is_some() {
+                while viewer.busy()
+                    || viewer.flow.ai_until.is_some()
+                    || viewer.net.inbox.as_ref().is_some_and(|i| !i.is_empty())
+                {
                     if n == *max {
                         return Err(format!("still busy after {max} frames").into());
                     }
@@ -506,6 +520,18 @@ impl Runner<'_, '_> {
             Command::Hash => println!("hash {:016x}", viewer.state_hash()),
             Command::Type(text) => viewer.text_input(text),
             Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
+            Command::Seeds(seed) => {
+                viewer.net.seeds = Some(libday_view::scatter::Rand::new(*seed));
+            }
+            Command::Commands(file) => {
+                let text = serde_json::to_string_pretty(&viewer.net.log)?;
+                std::fs::write(file, text)?;
+            }
+            Command::Replay(file) => {
+                let text = std::fs::read_to_string(file)?;
+                let entries: Vec<crate::command::Entry> = serde_json::from_str(&text)?;
+                viewer.net.inbox = Some(entries.into());
+            }
             &Command::Mine {
                 kind,
                 owner,
@@ -864,6 +890,7 @@ pub fn state(viewer: &Viewer) -> Value {
     });
     state["automated"] = automated;
     state["hash"] = json!(format!("{:016x}", viewer.state_hash()));
+    state["desync"] = json!(viewer.net.desync);
     state["reinf_res"] = json!(scenario.info.reinf_res);
     state["hidden"] = json!(viewer.options.hidden_units.len());
     state["front"] = json!({

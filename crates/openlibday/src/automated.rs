@@ -15,6 +15,7 @@ use libday_view::{tile_center, tile_coords};
 
 use crate::Viewer;
 use crate::combat::{Explosion, Gunner, Shot};
+use crate::command::Command;
 use crate::skirmish::{AI, PLAYER, Phase};
 
 /// Frames between two flak bursts (`0x41bc04` staggers the shooters).
@@ -145,13 +146,38 @@ impl Viewer {
             self.flow.message = Some("Need more tactical resource".into());
             return;
         }
-        *self.credits_mut() -= a.cost;
-        if a.deploy_once {
-            self.flow.used_once.push(a.id);
-        }
         self.close_supports();
         self.flow.message = None;
-        self.launch_support(a.id, PLAYER, at, dest);
+        self.order(Command::Support { id: a.id, at, dest });
+    }
+
+    /// [`Command::Support`]: a human pays for it; the AI's budget is kept
+    /// where it decides.
+    pub(crate) fn apply_support(
+        &mut self,
+        player: i64,
+        id: i64,
+        at: (i64, i64),
+        dest: Option<(i64, i64)>,
+    ) -> bool {
+        if player != AI {
+            let Some(a) = self.defs.automated.get(&id) else {
+                return false;
+            };
+            let scenario = &self.map.battle.scenario;
+            if self.credits() < a.cost
+                || !support::valid_target(scenario, &self.defs, a, player, at, dest)
+            {
+                return false;
+            }
+            let (cost, once) = (a.cost, a.deploy_once);
+            *self.credits_mut() -= cost;
+            if once {
+                self.flow.used_once.push(id);
+            }
+        }
+        self.launch_support(id, player, at, dest);
+        true
     }
 
     /// Calls in support `id` for `player` on `at` (and `dest`): its legs
@@ -336,21 +362,30 @@ impl Viewer {
             return false;
         }
         let turn = self.map.battle.clock.turn;
-        let supports = &mut self.map.battle.scenario.info.supports;
-        let Some(i) = supports.iter().position(|s| s.turn == turn) else {
+        let supports = &self.map.battle.scenario.info.supports;
+        let Some(index) = supports.iter().position(|s| s.turn == turn) else {
             return false;
         };
-        let s = supports.remove(i);
+        self.order_ai(Command::ScriptedSupport { index });
+        true
+    }
+
+    /// [`Command::ScriptedSupport`].
+    pub(crate) fn apply_scripted_support(&mut self, index: usize) {
+        let supports = &mut self.map.battle.scenario.info.supports;
+        if index >= supports.len() {
+            return;
+        }
+        let s = supports.remove(index);
         let Some(a) = self.defs.automated.get(&s.kind) else {
-            return true;
+            return;
         };
         // `0x470acf`: the AI cannot fly Human transports, drops, repairs,
         // mine detectors or bridges.
         if a.race == 0 && !(4..=6).contains(&a.id) {
-            return true;
+            return;
         }
         let dest = (a.category() == Some(AutomatedCategory::Transport)).then_some(s.dest);
         self.launch_support(s.kind, AI, s.start, dest);
-        true
     }
 }

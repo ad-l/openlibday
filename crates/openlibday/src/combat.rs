@@ -20,6 +20,7 @@ use libday_view::shot::{self, Anim};
 use libday_view::tile_center;
 
 use crate::Viewer;
+use crate::command::Command;
 use crate::moves::Preview;
 
 /// A target locked by a first click.
@@ -352,22 +353,19 @@ impl Viewer {
             if once {
                 self.fire_mode = None;
             }
-            if group {
+            let units = if group {
                 self.lock = None;
-                self.preview = None;
-                self.fire_group(target, !once);
-                return;
-            }
-            match &self.preview {
-                Some(p) if p.unit == sel => {
-                    lock.pending = true;
-                    self.start_move();
-                    if self.motions.is_empty() && self.ends.is_empty() {
-                        self.lock = None;
-                    }
-                }
-                _ => self.start_shot(sel, target, !once, false),
-            }
+                self.stale = true;
+                self.members()
+            } else {
+                vec![sel]
+            };
+            self.preview = None;
+            self.order(Command::Attack {
+                units,
+                target: target.into(),
+                repeat: !once,
+            });
             return;
         }
         self.lock = None;
@@ -393,7 +391,7 @@ impl Viewer {
     /// Path to the cheapest tile the unit can hit `target` from with the AP
     /// left after walking there, or failing that the cheapest with a clear
     /// shot (walked as far as it can afford).
-    fn approach(&self, unit: usize, target: Target) -> Option<Preview> {
+    pub(crate) fn approach(&self, unit: usize, target: Target) -> Option<Preview> {
         self.approach_avoiding(unit, target, &[])
     }
 
@@ -598,11 +596,9 @@ impl Viewer {
 
     /// After unit `unit` moved: its confirmed attack shoots if it now can.
     pub(crate) fn arrived(&mut self, unit: usize) {
-        let Some(lock) = self.lock.take_if(|l| l.unit == unit) else {
-            return;
-        };
-        if lock.pending {
-            self.start_shot(lock.unit, lock.target, !lock.once, false);
+        self.lock.take_if(|l| l.unit == unit);
+        if let Some((u, target, repeat)) = self.attack.take_if(|a| a.0 == unit) {
+            self.start_shot(u, target, repeat, false);
         }
     }
 

@@ -1,0 +1,54 @@
+# MP0 replay, host side: a skirmish played with seeded commands (`seeds`),
+# its command log written out (`commands`). `mp_client.txt` follows the log
+# and must end with the same state hash.
+# Run: openlibday --headless --script scripts/mp_host.txt  (needs LIBDAY_ROOT)
+ai modern
+skirmish Opportunity Knocks
+key Return
+key Return
+key Return
+seeds 7
+deploy Grenadier
+tile 44 18
+deploy Grenadier
+tile 45 18
+deploy Trooper
+tile 44 19
+deploy Trooper
+tile 44 20
+key Return
+key Y
+button EndTurn
+idle 6000
+# Turn 2: reinforce, transport, a group attack and a single attack.
+button Reinforcement
+deploy Trooper
+tile 44 20
+key Return
+support 0
+tile 44 19
+tile 41 20
+idle
+tile 12 19
+button Group
+tile 13 19
+tile 19 16
+tile 19 16
+idle
+button Group
+tile 45 18
+tile 39 13
+tile 39 13
+idle
+button EndTurn
+idle 6000
+# Turn 3: the LAV moves (and is shot at as it starts).
+tile 11 18
+tile 11 18
+idle
+button EndTurn
+idle 6000
+button EndTurn
+idle 6000
+commands target/mp_commands.json
+hash

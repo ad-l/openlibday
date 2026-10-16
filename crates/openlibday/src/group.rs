@@ -81,7 +81,7 @@ impl Viewer {
     }
 
     /// The group's units able to take an order, the leader first.
-    fn members(&self) -> Vec<usize> {
+    pub(crate) fn members(&self) -> Vec<usize> {
         let units = &self.map.battle.scenario.units;
         let mut out = self.selection();
         out.reverse();
@@ -89,14 +89,12 @@ impl Viewer {
         out
     }
 
-    /// Moves the selection to `target` (`0x452165`): the leader onto it,
-    /// the others onto free tiles around it, each as far as its AP goes.
-    /// Units are planned one after the other, each standing where the ones
-    /// before end, then all walk together.
-    pub(crate) fn move_group(&mut self, target: (i64, i64)) {
-        self.preview = None;
-        self.stale = true;
-        let mut todo = self.members();
+    /// Moves a group (`units`, the leader first) to `target` (`0x452165`):
+    /// the leader onto it, the others onto free tiles around it, each as far
+    /// as its AP goes. Units are planned one after the other, each standing
+    /// where the ones before end, then all walk together.
+    pub(crate) fn move_units(&mut self, units: Vec<usize>, target: (i64, i64)) {
+        let mut todo = units;
         let mut walks = Vec::new();
         let saved: Vec<(usize, (i64, i64))> = {
             let units = &self.map.battle.scenario.units;
@@ -183,13 +181,9 @@ impl Viewer {
         }
     }
 
-    /// The selection attacks `target`: each member walks into range if it
-    /// must, then all fire in turn, the leader first.
-    pub(crate) fn fire_group(&mut self, target: Target, repeat: bool) {
-        self.preview = None;
-        self.lock = None;
-        self.stale = true;
-        let members = self.members();
+    /// A group (`members`, the leader first) attacks `target`: each member
+    /// walks into range if it must, then all fire in turn, the leader first.
+    pub(crate) fn fire_units(&mut self, members: Vec<usize>, target: Target, repeat: bool) {
         let saved: Vec<(usize, (i64, i64))> = {
             let units = &self.map.battle.scenario.units;
             members

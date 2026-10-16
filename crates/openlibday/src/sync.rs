@@ -31,17 +31,24 @@ impl Write for Fnv {
 
 impl Viewer {
     /// Hash of the simulation state: the battle (every scenario layer,
-    /// clock, records and settings), the battle flow's rule state, the
-    /// rule RNG and the campaign.
+    /// clock, records and settings), the battle flow's rule state and the
+    /// campaign. What only the AI's copy keeps is left out: the units' AI
+    /// orders, the AI's support budget and `rand()`, which every command
+    /// restarts from its seed.
     pub(crate) fn state_hash(&self) -> u64 {
         let mut h = Fnv::new();
         let b = &self.map.battle;
         let f = &self.flow;
+        let mut scenario = b.scenario.clone();
+        scenario.order_targets.clear();
+        for u in &mut scenario.units {
+            u.order = Default::default();
+        }
         // Writing to `Fnv` cannot fail.
         let _ = write!(
             h,
-            "{:?}|{:?}|{:?}|{}|{}|{}|{:?}|{:?}|{:?}|{}|{:?}|{:?}|{:?}",
-            b.scenario,
+            "{:?}|{:?}|{:?}|{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            scenario,
             b.clock,
             b.players,
             b.difficulty,
@@ -50,9 +57,7 @@ impl Viewer {
             f.phase,
             f.used_once,
             f.tech,
-            f.ai_budget,
             f.outcome,
-            self.rng,
             self.campaign.as_ref().map(|c| &c.state),
         );
         if let Some(s) = &f.setup {

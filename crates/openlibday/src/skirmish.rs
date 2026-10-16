@@ -15,6 +15,7 @@ use libday_view::ui::{
 };
 
 use crate::Viewer;
+use crate::command::Command;
 use crate::sound::Effect;
 
 /// The human player's slot.
@@ -329,15 +330,22 @@ impl Viewer {
             return;
         }
         let cell = self.flow.setup.as_ref().map_or(0, |s| s.cell);
+        self.order(Command::Upgrade { cell });
+    }
+
+    /// [`Command::Upgrade`].
+    pub(crate) fn apply_upgrade(&mut self, cell: usize) -> bool {
         let Some(cost) = self.next_tech_cost(cell) else {
-            return;
+            return false;
         };
-        if let Some(setup) = &mut self.flow.setup {
-            setup.points -= cost;
-            setup.tech[cell] += 1;
-        }
+        let Some(setup) = self.flow.setup.as_mut().filter(|s| s.points >= cost) else {
+            return false;
+        };
+        setup.points -= cost;
+        setup.tech[cell] += 1;
         self.effect(Effect::Cashout);
         self.army_sync();
+        true
     }
 
     /// Moves the technology selection by `step` cells, scrolling the grid
@@ -548,6 +556,32 @@ impl Viewer {
             self.refuse("You can only deploy units in the indicated zone");
             return;
         }
+        if self.recallable(x, y).is_some() {
+            self.order(Command::Recall { x, y });
+            return;
+        }
+        let Some((kind, tech, cost)) = self.deploy_choice() else {
+            return;
+        };
+        if self.defs.unit_tech(kind, tech).is_none() {
+            return;
+        }
+        if cost > self.credits() {
+            self.refuse("Need more tactical resource");
+            return;
+        }
+        if !self.can_deploy(kind, tech, x, y) {
+            self.refuse("Can't deploy unit there");
+            return;
+        }
+        self.order(Command::Deploy { x, y, kind, tech });
+    }
+
+    /// [`Command::Recall`].
+    pub(crate) fn apply_recall(&mut self, x: i64, y: i64) -> bool {
+        if !self.zone(x, y) {
+            return false;
+        }
         if let Some(i) = self.recallable(x, y) {
             let id = self.map.battle.scenario.units[i].id;
             let (refund, name) = self
@@ -561,25 +595,24 @@ impl Viewer {
             self.flow.message = Some(format!("Unit {name} has been recalled"));
             self.effect(Effect::Recall);
             self.deployed_changed();
-            return;
+            return true;
         }
-        let Some((kind, tech, cost)) = self.deploy_choice() else {
-            return;
+        false
+    }
+
+    /// [`Command::Deploy`]: a unit of type `kind` at level `tech`, bought
+    /// at its current price.
+    pub(crate) fn apply_deploy(&mut self, x: i64, y: i64, kind: i64, tech: i64) -> bool {
+        let Some(k) = self.defs.unit_tech(kind, tech) else {
+            return false;
         };
-        let Some(name) = self.defs.unit_tech(kind, tech).map(|k| k.name.clone()) else {
-            return;
-        };
-        if cost > self.credits() {
-            self.refuse("Need more tactical resource");
-            return;
-        }
-        if !self.can_deploy(kind, tech, x, y) {
-            self.refuse("Can't deploy unit there");
-            return;
+        let (name, cost) = (k.name.clone(), self.price(k.cost));
+        if cost > self.credits() || !self.zone(x, y) || !self.can_deploy(kind, tech, x, y) {
+            return false;
         }
         let id = self.map.battle.scenario.next_unit_id();
         let Some(k) = self.defs.unit_tech(kind, tech) else {
-            return;
+            return false;
         };
         let size = self.map.battle.scenario.size as i64;
         let unit = new_unit(id, kind, tech, (x, y), size, k);
@@ -591,6 +624,7 @@ impl Viewer {
         self.flow.message = Some(format!("Unit {name} has been deployed"));
         self.effect(Effect::Deploy);
         self.deployed_changed();
+        true
     }
 
     /// Shows why an action was refused, with the INVALID sound.
@@ -609,7 +643,7 @@ impl Viewer {
     /// CONTINUE on the deployment screen.
     pub(crate) fn finish_deploy(&mut self) {
         if self.flow.reinforcing {
-            self.finish_reinforce();
+            self.order(Command::FinishReinforce);
         } else if self.credits() > 0 {
             self.screen = Screen::Confirm;
         } else {
@@ -631,8 +665,15 @@ impl Viewer {
     /// bought with the turn's credits are placed and recalled until
     /// CONTINUE.
     pub(crate) fn begin_reinforce(&mut self) {
+        if self.can_reinforce() {
+            self.order(Command::BeginReinforce);
+        }
+    }
+
+    /// [`Command::BeginReinforce`].
+    pub(crate) fn apply_begin_reinforce(&mut self) -> bool {
         if !self.can_reinforce() {
-            return;
+            return false;
         }
         self.flow.reinforcing = true;
         self.flow.resume = self.selected;
@@ -647,11 +688,15 @@ impl Viewer {
         self.options.deployment = true;
         self.rebuild();
         self.flow.message = None;
+        true
     }
 
-    /// CONTINUE while reinforcing: the placed units join the battle with
-    /// no action points left this turn.
-    fn finish_reinforce(&mut self) {
+    /// CONTINUE while reinforcing ([`Command::FinishReinforce`]): the placed
+    /// units join the battle with no action points left this turn.
+    pub(crate) fn apply_finish_reinforce(&mut self) {
+        if !self.flow.reinforcing {
+            return;
+        }
         let placed = self
             .flow
             .setup
@@ -673,6 +718,14 @@ impl Viewer {
     // Turns.
 
     pub(crate) fn start_battle(&mut self) {
+        self.order(Command::StartBattle);
+    }
+
+    /// [`Command::StartBattle`].
+    pub(crate) fn apply_start_battle(&mut self) {
+        if !matches!(self.flow.phase, Phase::Setup | Phase::Deploy) {
+            return;
+        }
         self.flow.phase = Phase::Player;
         self.flow.reinforcing = false;
         self.flow.used_once.clear();
@@ -717,8 +770,15 @@ impl Viewer {
     }
 
     pub(crate) fn end_turn(&mut self) {
+        if self.can_end_turn() {
+            self.order(Command::EndTurn);
+        }
+    }
+
+    /// [`Command::EndTurn`]: the AI's turn begins.
+    pub(crate) fn apply_end_turn(&mut self) -> bool {
         if !self.can_end_turn() {
-            return;
+            return false;
         }
         self.flow.phase = Phase::Ai;
         self.map.battle.clock.player = AI;
@@ -737,9 +797,13 @@ impl Viewer {
                 unit.restore_ap(k.action_points);
             }
         }
-        self.brain = self.ai_mode.map(crate::ai::Brain::new);
+        // Only the copy that runs the AI thinks; the others follow.
+        if !self.net.follows() {
+            self.brain = self.ai_mode.map(crate::ai::Brain::new);
+        }
         // The restored AP undims the AI's units.
         self.rebuild();
+        true
     }
 
     /// Plays the AI's turn, then ends it once its time is up and nothing
@@ -748,6 +812,9 @@ impl Viewer {
         let Some(until) = self.flow.ai_until else {
             return false;
         };
+        if self.net.follows() {
+            return false;
+        }
         if self.launch_authored_support() {
             return true;
         }
@@ -756,6 +823,15 @@ impl Viewer {
         }
         if self.busy() || self.clock.now() < until {
             return false;
+        }
+        self.order_ai(Command::EndAiTurn);
+        true
+    }
+
+    /// [`Command::EndAiTurn`]: the human's turn begins.
+    pub(crate) fn apply_end_ai_turn(&mut self) {
+        if self.flow.ai_until.is_none() {
+            return;
         }
         self.flow.ai_until = None;
         self.map.battle.clock.turn += 1;
@@ -775,13 +851,13 @@ impl Viewer {
         self.flow.message = Some(format!("{}'s turn has begun", self.player_name(PLAYER)));
         self.arrive_reinforcements();
         self.rebuild();
-        true
     }
 
     /// The turn flow, technology capture, then the objective: returns
     /// whether anything changed.
     pub(crate) fn battle_tick(&mut self) -> bool {
-        let turned = self.ai_tick();
+        let received = self.pump();
+        let turned = self.ai_tick() || received;
         let captured = self.capture_tech();
         self.judge() || turned || captured
     }
