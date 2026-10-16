@@ -1,21 +1,18 @@
 # openlibday
 
 An open-source reimplementation of the engine of **Liberation Day** (1998),
-the turn-based isometric tactics game, for modern Windows (Linux to
-follow).
+the turn-based isometric tactics game, for modern platforms.
 
-openlibday contains **no original game assets or code**: it plays the game
-from the data of a Liberation Day installation you own.
+openlibday contains **no original game assets or code**.
+You can buy the game on (GOG)[https://www.gog.com/en/game/fallen_haven_liberation_day] or find it on many (Abandonware)[https://www.myabandonware.com/game/liberation-day-dqg] sites.
 
-What it plays:
+Most of the game engine has been ported except for PvP modes.
 
-- the campaign, with base building, counterattacks and the continent
-  map;
-- skirmishes, on every original map;
-- co-operative multiplayer for 2–4 players against the computer
-  (skirmishes and campaigns), over the local network or the internet;
-- unlimited saves;
-- any window size, with interface scaling and map zoom.
+## Why port an old game from 1998?
+
+There has been a lot of noise about the capabilities of frontier model to decompile and port anything. I wanted to see for myself and was not disappointed. Rewriting an entire game engine like this would take months of dedicated manual effort but with AI assistance can be done in just a couple days.
+
+Besides, this is one of the best turn-based strategy games with excellent multiplayer, and after almost 3 decades the DirectPlay networking has finally stopped working.
 
 ## Installation (Windows)
 
@@ -27,7 +24,7 @@ What it plays:
    [releases](https://github.com/ad-l/openlibday/releases).
 3. Extract `openlibday.exe` into that game directory, next to `IMGS`
    (for example `C:\libday\openlibday.exe`).
-4. Double-click `openlibday.exe`.
+4. Run `openlibday.exe`.
 
 openlibday looks for the game data in the directory it is started from.
 To keep it elsewhere, set the `LIBDAY_ROOT` environment variable to the
