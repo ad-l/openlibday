@@ -92,8 +92,9 @@ pub struct Art {
     /// Complete owner-colour frames of each unit type (0 = alien/neutral,
     /// 1-4 = players 1-4).
     pub owner_frames: BTreeMap<i64, Vec<u8>>,
-    /// Construction level shown for each building type.
-    pub building_levels: BTreeMap<i64, u8>,
+    /// Complete owner-colour images of each building type (the digit after
+    /// the image prefix: 0 = alien/neutral, 1-4 = players 1-4).
+    pub building_levels: BTreeMap<i64, Vec<u8>>,
 }
 
 impl Art {
@@ -145,24 +146,25 @@ impl Art {
                 footprint(kind.width, kind.height)
                     .all(|(dx, dy)| has(&art, &kind.sprite(dx, dy, false, level)))
             };
-            // Defence towers show their deployed (upgraded) artwork.
-            let preferred = match id {
-                131 => Some(1),
-                173 => Some(2),
-                174 => Some(3),
-                175 => Some(4),
-                _ => None,
-            };
-            let level = preferred
-                .filter(|&level| complete(level))
-                .or_else(|| (0..5u8).find(|&level| complete(level)));
-            if let Some(level) = level {
-                levels.insert(*id, level);
+            let owners: Vec<u8> = (0..5u8).filter(|&level| complete(level)).collect();
+            if !owners.is_empty() {
+                levels.insert(*id, owners);
             }
         }
         art.unit_frames = frames;
         art.building_levels = levels;
         art
+    }
+
+    /// Image digit drawn for a building of type `kind` owned by `owner`:
+    /// the owner's colour when the artwork has it, else the first there is.
+    pub fn building_level(&self, kind: i64, owner: i64) -> Option<u8> {
+        let levels = self.building_levels.get(&kind)?;
+        levels
+            .iter()
+            .copied()
+            .find(|&l| i64::from(l) == owner)
+            .or_else(|| levels.first().copied())
     }
 
     /// Frame drawn for a unit of type `kind` owned by `owner`: the owner's
@@ -269,6 +271,16 @@ pub fn load_ui(game: &GameData) -> Result<ui::UiArt, DataError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buildings_wear_their_owners_colour() {
+        let mut art = Art::new(BTreeMap::new(), &Definitions::default());
+        art.building_levels.insert(173, vec![1, 2, 3, 4]);
+        assert_eq!(art.building_level(173, 1), Some(1));
+        assert_eq!(art.building_level(173, 3), Some(3));
+        assert_eq!(art.building_level(173, 0), Some(1), "no alien artwork");
+        assert_eq!(art.building_level(999, 1), None);
+    }
 
     #[test]
     fn projection_round_trips() {

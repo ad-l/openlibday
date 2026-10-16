@@ -1,6 +1,7 @@
 //! Map drawing.
 
 use libday_data::defs::AutomatedCategory;
+use libday_view::base::{self, Item};
 use libday_view::scene::DIM;
 use libday_view::support;
 use libday_view::ui::Screen;
@@ -294,26 +295,32 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         };
         cell(canvas, gfx, left, top, name)?;
     }
-    // An armed support's cursor; a transport's pickup keeps its own.
-    if let Some(a) = viewer.armed_support() {
-        // A bridge's sites without a road: those buildable now crossed in
-        // red, the others as girders (`0x4722b3`).
-        if a.category() == Some(AutomatedCategory::Build) {
-            let (s, defs) = (&viewer.map.battle.scenario, &viewer.defs);
-            let sites = support::bridge_sites(s, defs);
-            for &(x, y) in &sites {
-                if s.roads.iter().any(|r| (r.x, r.y) == (x, y)) {
-                    continue;
-                }
-                let name = if support::bridge_buildable(s, defs, &sites, (x, y)) {
-                    "BRIDGE"
-                } else {
-                    "BRIDG001"
-                };
-                let (left, top) = sprite_origin(size, x, y);
-                cell(canvas, gfx, left, top, name)?;
+    // A bridge's sites without a road: those buildable now crossed in
+    // red, the others as girders (`0x4722b3`); for the bridge support and
+    // for the base editor's paved road.
+    let paved = viewer
+        .base_editor
+        .as_ref()
+        .is_some_and(|e| e.selected == Some(Item::Road(base::PAVED)));
+    let armed = viewer.armed_support();
+    if paved || armed.as_ref().and_then(|a| a.category()) == Some(AutomatedCategory::Build) {
+        let (s, defs) = (&viewer.map.battle.scenario, &viewer.defs);
+        let sites = support::bridge_sites(s, defs);
+        for &(x, y) in &sites {
+            if s.roads.iter().any(|r| (r.x, r.y) == (x, y)) {
+                continue;
             }
+            let name = if support::bridge_buildable(s, defs, &sites, (x, y)) {
+                "BRIDGE"
+            } else {
+                "BRIDG001"
+            };
+            let (left, top) = sprite_origin(size, x, y);
+            cell(canvas, gfx, left, top, name)?;
         }
+    }
+    // An armed support's cursor; a transport's pickup keeps its own.
+    if let Some(a) = armed {
         if let Some((x, y)) = viewer.flow.pickup {
             let (left, top) = sprite_origin(size, x, y);
             cell(canvas, gfx, left, top, &a.cursor)?;

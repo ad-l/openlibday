@@ -301,9 +301,9 @@ pub fn build(scenario: &Scenario, defs: &Definitions, art: &Art, options: &Optio
         }
 
         for building in &scenario.buildings {
-            let (Some(kind), Some(&level)) = (
+            let (Some(kind), Some(level)) = (
                 defs.buildings.get(&building.kind),
-                art.building_levels.get(&building.kind),
+                art.building_level(building.kind, building.owner),
             ) else {
                 missing.push(format!("building type {}", building.kind));
                 continue;
