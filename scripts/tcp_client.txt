@@ -1,9 +1,14 @@
 # MP2 over TCP, client side: joins `tcp_host.txt` (another process) on
-# port 41531 and plays the second human slot.
+# port 41531 (found by LAN discovery) and plays the second human slot.
 # Run after starting the host: openlibday --headless --script scripts/tcp_client.txt
 ai modern
 name Bob
-connect 127.0.0.1:41531
+# Finds the host on the local network and joins it from the list.
+discover on
+sessions
+await games.0.name Alice
+click 420 391
+key Return
 await screen Lobby
 expect online.slot 2
 expect online.names.1 Alice

@@ -6,6 +6,7 @@ use libday_view::ui::{Button, Rect, Screen};
 use sdl3::keyboard::Keycode;
 
 use crate::Viewer;
+use crate::router::{PortMap, Wan};
 
 /// Hardest difficulty; the slider runs from 0 (easy) to this.
 /// The introduction video (`0x4ae014`), also played at start-up.
@@ -22,6 +23,18 @@ pub const SLIDER: Rect = Rect::new(39, 114, 210, 17);
 /// SESSIONS name and address boxes in dialog coordinates.
 pub const SESSION_NAME: Rect = Rect::new(120, 80, 220, 22);
 pub const SESSION_ADDRESS: Rect = Rect::new(120, 112, 220, 22);
+/// SESSIONS: the list of games found on the local network.
+pub const GAMES_LIST: Rect = Rect::new(22, 158, 318, 4 * GAME_ROW + 4);
+pub const GAMES_SHOWN: usize = 4;
+const GAME_ROW: i32 = 18;
+pub fn game_row(i: usize) -> Rect {
+    Rect::new(
+        GAMES_LIST.x + 2,
+        GAMES_LIST.y + 2 + i as i32 * GAME_ROW,
+        GAMES_LIST.w - 4,
+        GAME_ROW,
+    )
+}
 /// A row of the WAITING AREA's game information: its rectangle (dialog
 /// coordinates), labels left of [`INFO_VALUE_X`].
 pub fn info_row(row: usize) -> Rect {
@@ -94,6 +107,13 @@ pub struct Front {
     pub chatting: bool,
     /// Text for the clipboard (the main loop puts it there).
     pub clipboard: Option<String>,
+    /// Whether a host asks the router to open its port, and whether games
+    /// are announced and looked for on the local network (both off in
+    /// scripted runs unless the script turns them on).
+    pub router: bool,
+    pub discover: bool,
+    /// SESSIONS: the games found on the local network.
+    pub search: Option<crate::discovery::Search>,
 }
 
 impl Default for Front {
@@ -111,6 +131,9 @@ impl Default for Front {
             chat: String::new(),
             chatting: false,
             clipboard: None,
+            router: true,
+            discover: true,
+            search: None,
         }
     }
 }
@@ -295,7 +318,46 @@ impl Viewer {
             Some(o) if o.is_host() => o.lan.clone().unwrap_or_default(),
             _ => self.front.address.trim().to_owned(),
         };
-        (lan, String::new())
+        let wan = match self.net.online.as_ref().and_then(|o| o.port_map.as_ref()) {
+            Some(PortMap {
+                wan: Wan::Open { address, .. },
+                ..
+            }) => address.to_string(),
+            _ => String::new(),
+        };
+        (lan, wan)
+    }
+
+    /// What the waiting area shows when there is no internet address.
+    pub(crate) fn wan_note(&self) -> &'static str {
+        match &self.net.online {
+            Some(o) if o.is_host() => match o.port_map.as_ref().map(|m| &m.wan) {
+                Some(Wan::Searching) => "Asking the router...",
+                Some(Wan::Open { .. }) => "",
+                Some(Wan::Failed(_)) => "Router did not open the port",
+                None => "Port mapping off",
+            },
+            _ => "Ask the host",
+        }
+    }
+
+    /// The SESSIONS dialog's list of games on the local network.
+    pub(crate) fn found_games(&self) -> &[crate::discovery::Found] {
+        self.front.search.as_ref().map_or(&[], |s| &s.games)
+    }
+
+    /// Looks for games on the local network while SESSIONS is open.
+    pub(crate) fn search_tick(&mut self) {
+        if self.screen != Screen::Sessions || !self.front.discover {
+            self.front.search = None;
+            return;
+        }
+        if self.front.search.is_none() {
+            self.front.search = crate::discovery::Search::new();
+        }
+        if let Some(search) = &mut self.front.search {
+            search.tick();
+        }
     }
 
     /// A click in the waiting area's game information: COPY an address,
@@ -344,6 +406,12 @@ impl Viewer {
             if layout.in_sessions(SESSION_NAME).contains(x, y) {
                 self.front.focus_address = false;
             } else if layout.in_sessions(SESSION_ADDRESS).contains(x, y) {
+                self.front.focus_address = true;
+            } else if let Some(game) = (0..GAMES_SHOWN)
+                .find(|&i| layout.in_sessions(game_row(i)).contains(x, y))
+                .and_then(|i| self.found_games().get(i))
+            {
+                self.front.address = game.address.to_string();
                 self.front.focus_address = true;
             }
             return;

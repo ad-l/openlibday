@@ -10,6 +10,8 @@
 //! ```text
 //! fps N                 frame rate of wait/idle/record (default 30)
 //! wait N                advance N frames
+//! sleep MS              advance frames for MS real milliseconds (for
+//!                       network threads, e.g. the router's answer)
 //! idle [N]              advance until no unit moves, the AI's turn is over
 //!                       and no command waits (at most N frames, default 3000)
 //! key NAME              press a key (SDL name: Return, Escape, Up, F5, A...)
@@ -66,9 +68,13 @@
 //! synced                fail unless every copy has the host's state hash
 //! name NAME             the player's name (for network games)
 //! host [PORT]           host a network game (default port 41530)
+//! sessions              open the SESSIONS dialog (MULTI PLAYER)
 //! connect ADDRESS       join the network game at ADDRESS[:PORT]
 //! say TEXT              send a chat line in a network game
 //! turnlimit MINUTES     the host's turn limit (0: none)
+//! upnp on|off           whether hosting asks the router to open the port
+//!                       (off in scripts: it changes the router's tables)
+//! discover on|off       LAN discovery: hosts answer, SESSIONS looks
 //! await PATH VALUE [S]  advance frames until the state at PATH is VALUE,
 //!                       failing after S seconds of real time (default 60);
 //!                       (how a network game waits for the other computers)
@@ -98,6 +104,7 @@ const IDLE_FRAMES: u32 = 3000;
 pub enum Command {
     Fps(f64),
     Wait(u32),
+    Sleep(u64),
     Idle(u32),
     Key(String),
     Click {
@@ -173,6 +180,9 @@ pub enum Command {
     Name(String),
     Host(u16),
     TurnLimit(u8),
+    Upnp(bool),
+    Sessions,
+    Discover(bool),
     Connect(String),
     Say(String),
     Await(String, String, f64),
@@ -204,6 +214,13 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         let s = s.ok_or("missing argument")?;
         s.parse().map_err(|_| format!("bad number {s}"))
     }
+    fn switch(s: Option<&&str>) -> std::result::Result<bool, String> {
+        match s {
+            Some(&"on") => Ok(true),
+            Some(&"off") => Ok(false),
+            _ => Err("expected on or off".into()),
+        }
+    }
     let right = |i: usize| match args.get(i) {
         None => Ok(false),
         Some(&"right") => Ok(true),
@@ -222,6 +239,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
                 .and_then(|f: f64| (f > 0.0).then_some(f).ok_or("fps must be positive".into()))?,
         ),
         "wait" => Command::Wait(num(args.first())?),
+        "sleep" => Command::Sleep(num(args.first())?),
         "idle" => Command::Idle(match args.first() {
             Some(_) => num(args.first())?,
             None => IDLE_FRAMES,
@@ -326,8 +344,11 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             None => crate::link::DEFAULT_PORT,
         }),
         "connect" => Command::Connect(text()?),
+        "sessions" => Command::Sessions,
         "say" => Command::Say(text()?),
         "turnlimit" => Command::TurnLimit(num(args.first())?),
+        "upnp" => Command::Upnp(switch(args.first())?),
+        "discover" => Command::Discover(switch(args.first())?),
         "await" => Command::Await(
             args.first().ok_or("missing path")?.to_string(),
             args.get(1).ok_or("missing value")?.to_string(),
@@ -403,6 +424,13 @@ impl Runner<'_, '_> {
             Command::Wait(n) => {
                 for _ in 0..*n {
                     self.step(viewer)?;
+                }
+            }
+            Command::Sleep(ms) => {
+                let end = std::time::Instant::now() + Duration::from_millis(*ms);
+                while std::time::Instant::now() < end {
+                    self.step(viewer)?;
+                    std::thread::sleep(Duration::from_millis(10));
                 }
             }
             Command::Idle(max) => {
@@ -605,12 +633,15 @@ impl Runner<'_, '_> {
                     return Err(status.into());
                 }
             }
+            Command::Sessions => viewer.open_sessions(),
             Command::Connect(address) => {
                 viewer.front.address = address.clone();
                 viewer.open_sessions();
                 viewer.join_game();
             }
             Command::TurnLimit(minutes) => viewer.set_turn_limit(*minutes),
+            Command::Upnp(on) => viewer.front.router = *on,
+            Command::Discover(on) => viewer.front.discover = *on,
             Command::Say(text) => {
                 viewer.front.chat = text.clone();
                 viewer.send_chat();
@@ -707,7 +738,7 @@ impl Runner<'_, '_> {
             Command::As(slot, inner) => {
                 if matches!(
                     **inner,
-                    Command::Wait(_) | Command::Idle(_) | Command::Fps(_)
+                    Command::Wait(_) | Command::Sleep(_) | Command::Idle(_) | Command::Fps(_)
                 ) {
                     return self.command(viewer, inner);
                 }
@@ -1099,8 +1130,23 @@ pub fn state(viewer: &Viewer) -> Value {
             "difficulty": o.settings.difficulty,
             "turn_minutes": o.settings.turn_minutes,
             "turn_left": viewer.turn_left().map(|d| d.as_secs()),
+            "lan": viewer.game_addresses().0,
+            "wan": viewer.game_addresses().1,
+            "wan_note": viewer.wan_note(),
         })
     });
+    state["games"] = json!(
+        viewer
+            .found_games()
+            .iter()
+            .map(|g| json!({
+                "address": g.address.to_string(),
+                "name": g.announce.name,
+                "players": g.announce.players,
+                "started": g.announce.started,
+            }))
+            .collect::<Vec<_>>()
+    );
     state["video"] = json!(viewer.cutscene.as_ref().map(|c| &c.name));
     state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
         serde_json::to_value(&c.state).unwrap_or(Value::Null)

@@ -21,8 +21,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
 use crate::command::{Command, Net};
+use crate::discovery::{Announce, Responder};
 use crate::link::{self, ClientLink, HostLink, Listener, Peer, ToClient, ToHost};
 use crate::players::Players;
+use crate::router::{PortMap, Wan};
 use crate::skirmish::Phase;
 
 /// Most humans in a game (the original's four player colours).
@@ -103,12 +105,25 @@ pub struct Online {
     pub settings: Settings,
     /// On a host: its address on the local network and port.
     pub lan: Option<String>,
+    /// On a host: the port opened on the router for internet players, and
+    /// the answers to LAN discovery (with the id telling this game apart).
+    pub port_map: Option<PortMap>,
+    pub responder: Option<Responder>,
+    pub id: u64,
 }
 
 impl Online {
     pub fn is_host(&self) -> bool {
         self.listener.is_some()
     }
+}
+
+/// A number telling this hosted game from others found on the network.
+fn game_id() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u32(std::process::id());
+    hasher.finish()
 }
 
 /// `text` without control characters, at most `max` characters.
@@ -176,11 +191,19 @@ impl Viewer {
         };
         self.leave_network();
         let port = listener.port;
+        let lan = link::lan_address();
+        let port_map = match lan {
+            Some(std::net::IpAddr::V4(ip)) if self.front.router => Some(PortMap::open(port, ip)),
+            _ => None,
+        };
         let mut online = Online {
             listener: Some(listener),
             slot: 1,
             digest: self.data_digest(),
-            lan: link::lan_address().map(|a| format!("{a}:{port}")),
+            lan: lan.map(|a| format!("{a}:{port}")),
+            port_map,
+            responder: self.front.discover.then(Responder::bind).flatten(),
+            id: game_id(),
             ..Online::default()
         };
         online.names.insert(1, self.my_name(1));
@@ -370,6 +393,7 @@ impl Viewer {
     /// Network work of a frame: a host greets new clients, a client
     /// finishes connecting.
     pub(crate) fn network_tick(&mut self) {
+        self.search_tick();
         let Some(online) = &mut self.net.online else {
             return;
         };
@@ -400,6 +424,26 @@ impl Viewer {
         let Some(listener) = &online.listener else {
             return;
         };
+        if let Some(responder) = &online.responder {
+            responder.answer(&Announce {
+                id: online.id,
+                version: link::PROTOCOL,
+                name: online.names.get(&1).cloned().unwrap_or_default(),
+                port: listener.port,
+                lan: online
+                    .lan
+                    .as_ref()
+                    .and_then(|a| a.parse::<std::net::SocketAddr>().ok())
+                    .map(|a| a.ip()),
+                players: online.names.len(),
+                max: MAX_HUMANS,
+                started: online.started,
+            });
+        }
+        let wan = online
+            .port_map
+            .as_mut()
+            .and_then(|m| m.poll().then(|| m.wan.clone()));
         while let Some(link) = listener.accept() {
             online.joining.push(link);
         }
@@ -419,6 +463,44 @@ impl Viewer {
         if let Some(online) = &mut self.net.online {
             online.joining.extend(waiting);
         }
+        if let Some(wan) = wan {
+            self.wan_notice(&wan);
+        }
+    }
+
+    /// Tells everyone how internet players can now join.
+    fn wan_notice(&mut self, wan: &Wan) {
+        let text = match wan {
+            Wan::Searching => return,
+            Wan::Open {
+                address,
+                method,
+                private: false,
+            } => format!(
+                "Internet players can join at {address} ({} opened the port)",
+                method.name()
+            ),
+            Wan::Open {
+                address,
+                private: true,
+                ..
+            } => format!(
+                "The router opened the port, but its address {} is behind another router (carrier-grade NAT?): internet players may not reach it",
+                address.ip()
+            ),
+            Wan::Failed(e) => {
+                eprintln!("port mapping: {e}");
+                format!(
+                    "The router did not open the port (no UPnP or NAT-PMP): for internet players, forward TCP port {} to this computer",
+                    self.net
+                        .online
+                        .as_ref()
+                        .and_then(|o| o.listener.as_ref())
+                        .map_or(0, |l| l.port)
+                )
+            }
+        };
+        self.post(None, text);
     }
 
     /// The host's answer to a client's hello.

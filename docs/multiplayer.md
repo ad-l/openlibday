@@ -176,6 +176,34 @@ Single player must pass all existing tests and scripts after each step.
   elapsed; when it runs out the host finishes reinforcing or ends the turn
   for that player through the command log. Script command `turnlimit N`;
   `scripts/lobby_settings.txt` and turn 3 of the TCP scripts test them.
+- MP4, internet play:
+  - `router.rs`: hosting asks the router to forward the TCP port to this
+    computer, first with UPnP IGD (`igd-next`; a 1-hour lease, or a
+    permanent one if that is all the router takes, or another external
+    port if the port is taken), then NAT-PMP (`natpmp`). A thread renews
+    the lease every 20 min and removes the mapping when the game is left
+    or closed (if the game crashes the lease expires on its own). The
+    WAN row shows the external `IP:port` (the join code, with COPY), or
+    "Asking the router..." / "Router did not open the port"; a chat
+    notice says which, and warns when the router's own address is
+    private (carrier-grade NAT or a second router), where the mapping
+    does not help. Tested with UPnP on a home router: the mapping is
+    listed while hosting and gone afterwards.
+  - `discovery.rs`: hosts answer UDP questions on port 41530 with
+    `{id, version, name, port, lan, players, max, started}`. The SESSIONS
+    dialog asks every second (to 255.255.255.255, each interface's
+    broadcast address and 127.0.0.1) and lists the games heard in the
+    last 4 s; a host answering on several networks is shown at its main
+    LAN address. Clicking a game fills the host address; JOIN joins it.
+  - Transport: an idle link sends an empty frame every 20 s and one
+    silent for 90 s is closed, so routers keep connections open and dead
+    peers are noticed. Hosts also listen on IPv6 (`[::]:port`), so IPv6
+    addresses can be joined directly. Protocol 4.
+  - Scripted runs never touch the router or the network's broadcast:
+    script commands `upnp on|off`, `discover on|off`, `sessions` (open
+    SESSIONS) and `sleep MS` (real time, for network threads); state
+    `online.lan`, `online.wan`, `online.wan_note` and `games`. The TCP
+    scripts find the host by discovery and join it from the list.
 
 ## Transport
 
@@ -190,11 +218,11 @@ Single player must pass all existing tests and scripts after each step.
   1. LAN: UDP broadcast discovery, which lists hosts in the session menu.
   2. Internet: the host asks the router for a port mapping with **UPnP IGD**
      (`igd-next` crate) and, where available, NAT-PMP/PCP. It shows its
-     external `IP:port` as a copyable join code.
+     external `IP:port` as a copyable join code. (Done, MP4.)
   3. Fallback: manual port forwarding, IPv6 direct, or a VPN such as
      Tailscale or ZeroTier. Document these in the README.
   4. Hole punching needs a rendezvous server, so it is out of scope.
-- Keepalive pings; a timeout marks a player disconnected.
+- Keepalive pings; a timeout marks a player disconnected. (Done, MP4.)
 
 ## Protocol sketch
 
@@ -270,7 +298,7 @@ this is not a cheating concern.
 | MP1 | In-process loopback host + client, 2-player hotseat-over-channels skirmish | loopback script plays a full battle with equal hashes |
 | MP2 | TCP transport, handshake, manual IP join, waiting/turn HUD, chat | two local processes finish a skirmish |
 | MP3 | Lobby UI, slots (human/closed), zone merge, turn timer | 3–4 players against the AI from the menu |
-| MP4 | LAN discovery, UPnP/NAT-PMP, join code | internet game between two homes |
+| MP4 | LAN discovery, UPnP/NAT-PMP, join code (done; awaiting a game between two homes) | internet game between two homes |
 | MP5 | Disconnect/reconnect, resync, host saves/loads | fault-injection tests pass |
 | MP6 | Co-op campaign: shared continent, bases, counterattacks | a continent played by two players |
 | later | Player versus player (`SCENS\DEATHM.ZIP`) | not planned yet |

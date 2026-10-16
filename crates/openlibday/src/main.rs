@@ -24,6 +24,7 @@ mod clock;
 mod combat;
 mod command;
 mod cutscene;
+mod discovery;
 mod front;
 mod group;
 mod hud;
@@ -35,6 +36,7 @@ mod mixer;
 mod moves;
 mod players;
 mod render;
+mod router;
 mod script;
 mod settings;
 mod skirmish;
@@ -961,6 +963,8 @@ impl Viewer {
         viewer.zoom = self.zoom;
         viewer.scale = self.scale;
         viewer.front.name.clear();
+        viewer.front.router = false;
+        viewer.front.discover = false;
         viewer.options.arrival = Some(0);
         viewer.reset();
         viewer.open_main_menu();
@@ -1129,6 +1133,8 @@ fn main() -> Result {
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.
         viewer.front.name.clear();
+        viewer.front.router = false;
+        viewer.front.discover = false;
     }
     viewer.options.arrival = Some(0);
     viewer.reset();

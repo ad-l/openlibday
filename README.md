@@ -108,9 +108,23 @@ the SIL Open Font License 1.1.
 
 Co-operative skirmishes for 2–4 humans against the AI, without a central
 server. One player hosts (MULTI PLAYER, enter a name, HOST); the others
-JOIN with the host's address. Games use TCP port 41530: for players
-outside the host's home network, forward that port on the host's router.
-Everyone needs the same openlibday build and game data. From the command
+JOIN with the host's address. Games on the local network are listed in
+the SESSIONS dialog: click one, then JOIN. Everyone needs the same
+openlibday build and game data.
+
+Over the internet, hosting asks the router to open TCP port 41530 (UPnP
+or NAT-PMP) and the waiting area shows the address to give the others
+(WAN, with COPY). If the router does not do it (the chat says so):
+
+- forward TCP port 41530 on the host's router to the host's LAN address
+  (shown in the waiting area), and give the others the host's public IP;
+- or join over IPv6, if both homes have it (`[2001:db8::1]:41530`);
+- or put everyone on a virtual network such as Tailscale or ZeroTier and
+  use the host's address there.
+
+A WAN address the chat flags as behind another router (carrier-grade
+NAT, common with mobile and some fibre providers) cannot be reached from
+outside: use IPv6 or a virtual network then. From the command
 line: `openlibday --host --name Alice` or `openlibday --join 192.168.1.20
 --name Bob` (`--port N` to change the port). See
 [docs/multiplayer.md](docs/multiplayer.md).

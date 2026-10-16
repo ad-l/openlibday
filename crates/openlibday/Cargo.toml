@@ -14,6 +14,9 @@ png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sdl3 =  { version = "0.20", features = ["build-from-source-static"] }
+igd-next = "0.18"
+natpmp = { version = "0.5", default-features = false }
+netdev = "0.31"
 
 [lints]
 workspace = true

@@ -10,8 +10,8 @@ use sdl3::video::Window;
 use super::{Gfx, LINE, Result, TEXT_PX, WHITE, fill, frect};
 use crate::Viewer;
 use crate::front::{
-    DIFFICULTY_MAX, InfoRow, NAME_BOX, SESSION_ADDRESS, SESSION_NAME, SLIDER, info_address,
-    info_arrows, info_copy, info_row, info_rows, info_value,
+    DIFFICULTY_MAX, GAMES_LIST, GAMES_SHOWN, InfoRow, NAME_BOX, SESSION_ADDRESS, SESSION_NAME,
+    SLIDER, game_row, info_address, info_arrows, info_copy, info_row, info_rows, info_value,
 };
 use crate::lobby::{Chat, Mode, Setting};
 
@@ -214,14 +214,57 @@ pub(super) fn draw_sessions(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: 
         };
         gfx.text_in(canvas, &viewer.fonts, &shown, px, WHITE, r, 0.0, 4 * s)?;
     }
-    let below = layout.in_sessions(SESSION_ADDRESS).bottom() + 10 * s;
-    let note = format!(
-        "Games are hosted on TCP port {}. For players outside your home network to join, forward that port on your router to this computer.",
-        front.port
-    );
-    let y = paragraph(canvas, gfx, viewer, &note, GREY, inner, below, s)?;
+    // The games found on the local network (a click fills the address).
+    let list = layout.in_sessions(GAMES_LIST);
+    let label = Rect::new(list.x, list.y - 16 * s, list.w, 14 * s);
+    let games = viewer.found_games();
+    let heading = if !front.discover {
+        "Looking for local games is off"
+    } else if games.is_empty() {
+        "Looking for games on your network..."
+    } else {
+        "Games on your network"
+    };
+    gfx.text_in(canvas, &viewer.fonts, heading, px, KHAKI, label, 0.0, 0)?;
+    draw_box(canvas, list, s, false)?;
+    for (i, game) in games.iter().take(GAMES_SHOWN).enumerate() {
+        let a = &game.announce;
+        let r = layout.in_sessions(game_row(i));
+        let selected = front.address.trim() == game.address.to_string();
+        if selected {
+            fill(canvas, frect(r), [80, 72, 40])?;
+        }
+        let state = if a.version != crate::link::PROTOCOL {
+            "other version".to_owned()
+        } else if a.started {
+            "playing".to_owned()
+        } else {
+            format!("{}/{} players", a.players, a.max)
+        };
+        let rgb = if a.version == crate::link::PROTOCOL && !a.started {
+            WHITE
+        } else {
+            GREY
+        };
+        let name = Rect::new(r.x, r.y, r.w * 2 / 5, r.h);
+        let addr = Rect::new(name.right(), r.y, r.w * 2 / 5, r.h);
+        let info = Rect::new(addr.right(), r.y, r.right() - addr.right(), r.h);
+        gfx.text_in(canvas, &viewer.fonts, &a.name, px, rgb, name, 0.0, 4 * s)?;
+        let address = game.address.to_string();
+        gfx.text_in(canvas, &viewer.fonts, &address, px, rgb, addr, 0.0, 0)?;
+        gfx.text_in(canvas, &viewer.fonts, &state, px, rgb, info, 1.0, 4 * s)?;
+    }
     if let Some(status) = &front.status {
-        paragraph(canvas, gfx, viewer, status, WHITE, inner, y + 8 * s, s)?;
+        paragraph(
+            canvas,
+            gfx,
+            viewer,
+            status,
+            WHITE,
+            inner,
+            list.bottom() + 6 * s,
+            s,
+        )?;
     }
     Ok(())
 }
@@ -277,7 +320,7 @@ pub(super) fn draw_lobby(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Vi
                 let field = layout.in_lobby(info_address(i));
                 draw_box(canvas, field, s, false)?;
                 let (text, rgb) = if address.is_empty() {
-                    ("Not available yet", GREY)
+                    (viewer.wan_note(), GREY)
                 } else {
                     (address.as_str(), WHITE)
                 };

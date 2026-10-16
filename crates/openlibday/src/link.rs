@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::Path;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -95,7 +95,7 @@ pub struct Peer {
 }
 
 /// Version of the messages above; both ends must speak the same.
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 /// The port a host listens on unless told otherwise.
 pub const DEFAULT_PORT: u16 = 41530;
 /// Longest message accepted (a corrupt or hostile length otherwise
@@ -103,6 +103,10 @@ pub const DEFAULT_PORT: u16 = 41530;
 const MAX_FRAME: usize = 16 << 20;
 /// How long joining waits for the host to answer.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// An idle link sends an empty frame this often, so routers keep the
+/// connection open; one silent for [`SILENCE`] is taken as broken.
+const KEEPALIVE: Duration = Duration::from_secs(20);
+const SILENCE: Duration = Duration::from_secs(90);
 
 /// Two ends of a link within this process.
 pub fn loopback() -> (ClientLink, HostLink) {
@@ -128,6 +132,7 @@ pub fn loopback() -> (ClientLink, HostLink) {
 /// the channels close and [`End::receive`] fails.
 pub fn tcp<In, Out>(stream: TcpStream) -> std::io::Result<End<In, Out>> {
     stream.set_nodelay(true)?;
+    stream.set_read_timeout(Some(SILENCE))?;
     let mut reader = stream.try_clone()?;
     let mut writer = stream;
     let (in_tx, in_rx) = channel::<String>();
@@ -138,6 +143,10 @@ pub fn tcp<In, Out>(stream: TcpStream) -> std::io::Result<End<In, Out>> {
             let n = u32::from_le_bytes(len) as usize;
             if n > MAX_FRAME {
                 break;
+            }
+            // Keeping the link alive.
+            if n == 0 {
+                continue;
             }
             let mut buf = vec![0; n];
             if reader.read_exact(&mut buf).is_err() {
@@ -153,7 +162,12 @@ pub fn tcp<In, Out>(stream: TcpStream) -> std::io::Result<End<In, Out>> {
         let _ = reader.shutdown(std::net::Shutdown::Both);
     });
     std::thread::spawn(move || {
-        for text in out_rx {
+        loop {
+            let text = match out_rx.recv_timeout(KEEPALIVE) {
+                Ok(text) => text,
+                Err(RecvTimeoutError::Timeout) => String::new(),
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
             let len = (text.len() as u32).to_le_bytes();
             if writer.write_all(&len).is_err() || writer.write_all(text.as_bytes()).is_err() {
                 break;
@@ -170,24 +184,33 @@ pub fn tcp<In, Out>(stream: TcpStream) -> std::io::Result<End<In, Out>> {
 
 /// A host's listening socket.
 pub struct Listener {
-    socket: TcpListener,
+    sockets: Vec<TcpListener>,
     pub port: u16,
 }
 
 impl Listener {
-    /// Listens on `port` of every IPv4 interface (0: any free port).
+    /// Listens on `port` of every IPv4 interface (0: any free port), and
+    /// of every IPv6 one where the computer has IPv6.
     pub fn bind(port: u16) -> std::io::Result<Self> {
         let socket = TcpListener::bind(("0.0.0.0", port))?;
         socket.set_nonblocking(true)?;
         let port = socket.local_addr()?.port();
-        Ok(Self { socket, port })
+        let mut sockets = vec![socket];
+        if let Ok(v6) = TcpListener::bind(("::", port))
+            && v6.set_nonblocking(true).is_ok()
+        {
+            sockets.push(v6);
+        }
+        Ok(Self { sockets, port })
     }
 
     /// A client that has just connected, if any.
     pub fn accept(&self) -> Option<ClientLink> {
-        let (stream, _) = self.socket.accept().ok()?;
-        stream.set_nonblocking(false).ok()?;
-        tcp(stream).ok()
+        self.sockets.iter().find_map(|socket| {
+            let (stream, _) = socket.accept().ok()?;
+            stream.set_nonblocking(false).ok()?;
+            tcp(stream).ok()
+        })
     }
 }
 
@@ -357,6 +380,31 @@ mod tests {
             client.receive().is_err()
         });
         assert!(gone);
+    }
+
+    #[test]
+    fn empty_frames_keep_the_link_alive_unseen() {
+        let listener = Listener::bind(0).unwrap();
+        let mut raw = TcpStream::connect(("127.0.0.1", listener.port)).unwrap();
+        let host = (0..500)
+            .find_map(|_| {
+                let link = listener.accept();
+                if link.is_none() {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                link
+            })
+            .unwrap();
+        let hello = ToHost::Hello {
+            version: PROTOCOL,
+            data: "x".into(),
+            name: "Ann".into(),
+        };
+        let text = serde_json::to_string(&hello).unwrap();
+        raw.write_all(&0u32.to_le_bytes()).unwrap();
+        raw.write_all(&(text.len() as u32).to_le_bytes()).unwrap();
+        raw.write_all(text.as_bytes()).unwrap();
+        assert_eq!(next(&host), hello);
     }
 
     #[test]

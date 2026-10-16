@@ -5,6 +5,7 @@
 #           openlibday --headless --script scripts/tcp_client.txt
 ai modern
 name Alice
+discover on
 host 41531
 seeds 7
 expect screen Lobby
