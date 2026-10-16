@@ -60,6 +60,10 @@ Each shooter's impact animation is drawn at `AAPos`, staggered by 3 frames.
 
 ## Drops and transports
 
+- Dropped units take their owner's technology level for their type
+  (`0x4725a4` reads it from the player's information; `unitTLDrop` is never
+  read): the player's level bought in the battle or researched in the
+  campaign, 0 for the AI.
 - A drop onto a mine sets it off.
 - A spot where the unit cannot stand loses that unit, which plays its
   explosion there.

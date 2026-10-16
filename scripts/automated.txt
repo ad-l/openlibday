@@ -6,6 +6,10 @@
 ai off
 skirmish Opportunity Knocks
 key Return
+# Grenadiers to technology level 2: Troopers drop them at it.
+button TechUpgrade
+button TechUpgrade
+expect setup.tech.0 2
 key Return
 key Return
 deploy Grenadier
@@ -70,5 +74,14 @@ expect credits 350
 expect units.8.x 38
 expect units.9.x 28
 expect units.9.y 14
+# Troopers drop Grenadiers at the player's level (`0x4725a4`), not unitTLDrop's 0.
+credits 500
+support Troopers
+tile 40 30
+idle
+expect units.-1.kind 2
+expect units.-1.tech 2
+expect units.-1.x 39
+expect units.-1.y 31
 echo automated test passed
 quit

@@ -435,7 +435,10 @@ fn removed(before: &Scenario, after: &Scenario) -> (Vec<usize>, Vec<usize>) {
 }
 
 /// Executes support `kind` of `player` on `at` (and `dest` for a
-/// transport): its legs, each with the scenario it leaves.
+/// transport): its legs, each with the scenario it leaves. Dropped units
+/// get `drop_tech`, the owner's level for their type (`0x4725a4` looks it
+/// up in the player's information; `unitTLDrop` is never read).
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     scenario: &Scenario,
     defs: &Definitions,
@@ -444,6 +447,7 @@ pub fn execute(
     player: i64,
     at: (i64, i64),
     dest: Option<(i64, i64)>,
+    drop_tech: i64,
 ) -> Vec<Leg> {
     let Some(category) = kind.category() else {
         return Vec::new();
@@ -570,7 +574,7 @@ pub fn execute(
         }
         AutomatedCategory::Drop => {
             let unit = kind.int_or(auto_prop::UNIT_ID_DROP, 0);
-            let tech = kind.int_or(auto_prop::UNIT_TL_DROP, 0);
+            let tech = drop_tech;
             let mut n = kind.int_or(auto_prop::NB_DROP, 0);
             if taken > 0 {
                 n /= 2;
@@ -815,7 +819,7 @@ mod tests {
     fn troopers_drop_four_units_with_full_ap() {
         let d = defs();
         let s = scenario();
-        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None, 0);
         assert_eq!(legs.len(), 1);
         let l = &legs[0];
         assert_eq!(l.anim, 1);
@@ -843,20 +847,20 @@ mod tests {
         let mut s = scenario();
         s.units.push(unit(5, 9, 0, 8, 8));
         // DamageAA 15 against 20 armour: damaged, half the troopers.
-        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None, 0);
         let l = &legs[0];
         assert_eq!((l.anim, l.shooters.clone()), (2, vec![0]));
         assert_eq!(l.scenario.units.len(), 3);
         assert_eq!(l.scenario.units[0].action_points, Some(70));
         // Two guns bring it down.
         s.units.push(unit(6, 9, 0, 9, 9));
-        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None, 0);
         assert_eq!(legs[0].anim, 3);
         assert_eq!(legs[0].scenario.units.len(), 2);
         // Out of range: [x - R, x + R).
         let mut s = scenario();
         s.units.push(unit(5, 9, 0, 4, 8));
-        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None, 0);
         assert_eq!(legs[0].anim, 1);
         // The zone is the same square.
         let zone = anti_air_zone(&s, &d, 0);
@@ -880,7 +884,7 @@ mod tests {
             hidden: [true; 4],
         });
         s.units.push(unit(3, 1, 1, 10, 10));
-        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None, 0);
         let l = &legs[0];
         assert!(l.scenario.mines.is_empty());
         // The mine's spot and the occupied spot lose their units; the
@@ -900,7 +904,7 @@ mod tests {
         s.units.push(unit(1, 1, 0, 8, 8));
         s.units.push(unit(2, 1, 1, 9, 8));
         let bomber = support(0, &[(0, "40"), (1, "30"), (2, "AR"), (4, "3")]);
-        let legs = execute(&s, &d, &mut Rand::new(1), &bomber, 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &bomber, 1, (8, 8), None, 0);
         let u = &legs[0].scenario.units;
         // 31 at the centre, 31 - 31 / 2 one tile away.
         assert_eq!(u[0].armor, Some(9));
@@ -917,7 +921,7 @@ mod tests {
         // Gas (typeID 5): 300 "AP" damage over 3x3; anything but "AR"
         // paralyses (0x47246a).
         let gas = support(0, &[(0, "40"), (1, "300"), (2, "AP"), (4, "3")]);
-        let legs = execute(&s, &d, &mut Rand::new(1), &gas, 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &gas, 1, (8, 8), None, 0);
         let u = &legs[0].scenario.units;
         // 301 at the centre, 151 one tile away: the AP go, the rest is
         // withheld from the next turn (at most a turn's worth).
@@ -945,7 +949,7 @@ mod tests {
             });
         }
         let sweep = support(3, &[(0, "70"), (3, "5")]);
-        let legs = execute(&s, &d, &mut Rand::new(1), &sweep, 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &sweep, 1, (8, 8), None, 0);
         let seen: Vec<_> = legs[0]
             .scenario
             .mines
@@ -966,7 +970,7 @@ mod tests {
         let medic = support(1, &[(0, "60"), (28, "20"), (35, "200"), (4, "1")]);
         assert!(valid_target(&s, &d, &medic, 1, (8, 8), None));
         assert!(!valid_target(&s, &d, &medic, 1, (9, 8), None));
-        let legs = execute(&s, &d, &mut Rand::new(1), &medic, 1, (8, 8), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &medic, 1, (8, 8), None, 0);
         let u = &legs[0].scenario.units[0];
         assert_eq!((u.armor, u.action_points), (Some(25), Some(100)));
     }
@@ -988,6 +992,7 @@ mod tests {
             1,
             (2, 2),
             Some((11, 11)),
+            0,
         );
         assert_eq!(legs.len(), 2);
         assert_eq!(legs[0].scenario.units[0].arrival, -1);
@@ -1026,7 +1031,7 @@ mod tests {
         assert!(bridgeable(&s, &d, (5, 0)) && bridgeable(&s, &d, (9, 0)));
         assert!(!bridgeable(&s, &d, (6, 0)) && !bridgeable(&s, &d, (5, 1)));
         let bridge = support(2, &[(0, "40")]);
-        let legs = execute(&s, &d, &mut Rand::new(1), &bridge, 1, (5, 0), None);
+        let legs = execute(&s, &d, &mut Rand::new(1), &bridge, 1, (5, 0), None, 0);
         let s = &legs[0].scenario;
         assert_eq!(s.roads.len(), 1);
         assert!(bridgeable(s, &d, (6, 0)) && !bridgeable(s, &d, (5, 0)));

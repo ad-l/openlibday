@@ -166,6 +166,7 @@ impl Viewer {
         let Some(a) = self.defs.automated.get(&id).cloned() else {
             return;
         };
+        let drop_tech = self.drop_tech(&a, player);
         let legs = support::execute(
             &self.map.battle.scenario,
             &self.defs,
@@ -174,6 +175,7 @@ impl Viewer {
             player,
             at,
             dest,
+            drop_tech,
         );
         let mut before = self.map.battle.scenario.clone();
         let mut shots: Vec<Shot> = Vec::new();
@@ -194,6 +196,31 @@ impl Viewer {
         self.centre_on_tile(first.lands.0 as f64 + 0.5, first.lands.1 as f64 + 0.5);
         self.shot = Some(first);
         self.rebuild();
+    }
+
+    /// The level of the units support `a` drops for `player`: the owner's
+    /// own level for that type (`0x4725a4`), as bought in this battle or
+    /// researched in the campaign, else 0 (openlibday keeps no levels for the AI).
+    pub(crate) fn drop_tech(&self, a: &AutomatedType, player: i64) -> i64 {
+        if player != PLAYER {
+            return 0;
+        }
+        let kind = a.int_or(auto_prop::UNIT_ID_DROP, 0);
+        let bought = self.flow.setup.as_ref().and_then(|s| {
+            let i = s.units.iter().position(|&k| k == kind)?;
+            s.tech.get(i).copied()
+        });
+        let researched = || {
+            self.campaign
+                .as_ref()
+                .and_then(|c| c.state.unit_tech.get(&kind).copied())
+        };
+        let tech = bought.or_else(researched).unwrap_or(0);
+        // A level the type lacks would leave no unit at all.
+        (0..=tech)
+            .rev()
+            .find(|&t| self.defs.unit_tech(kind, t).is_some())
+            .unwrap_or(0)
     }
 
     /// The animation of one leg: the support's SMK centred on the target,
