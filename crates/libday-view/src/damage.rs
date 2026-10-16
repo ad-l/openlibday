@@ -532,6 +532,7 @@ mod tests {
             ai_category: 0,
             is_convoy: false,
             is_ai_target: false,
+            prerequisite: 65535,
         }
     }
 
@@ -592,6 +593,9 @@ mod tests {
                 ai_category: 9,
                 cost: 0,
                 tech_reward: 0,
+                can_build: false,
+                prerequisite: 65535,
+                recycle: 0,
             },
         );
         for id in ["UHRUI233"]

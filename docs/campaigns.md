@@ -274,10 +274,10 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | # | Scope | Status |
 |---|---|---|
 | C1 | Data model, original importer, JSON format, `libday campaign-info`/`campaign-export`, tests | **Done** |
-| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu and NEW GAME dialog (name, difficulty 0–10) done |
+| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu, NEW GAME dialog (name, difficulty 0–10), campaign state and saves (`openlibday::campaign`, `saves/campaign.json`), LOAD CAMPAIGN done; continent screen pending |
 | C3 | Base-building mode on the base map (buildings, towers, roads, walls, mines; costs, refunds) | |
 | C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | |
-| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | |
+| C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster 11–14 tiles away moving first, 150 tech on a win, campaign over on a loss |
 | C6 | Continent transitions, intro/end videos, game won/lost | |
 | C7 | Tech/research spending between battles | |
 

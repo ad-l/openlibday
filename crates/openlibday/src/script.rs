@@ -830,6 +830,9 @@ pub fn state(viewer: &Viewer) -> Value {
         "difficulty": viewer.front.difficulty,
     });
     state["notice"] = json!(viewer.notice);
+    state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
+        serde_json::to_value(&c.state).unwrap_or(Value::Null)
+    });
     state["selection"] = json!(viewer.selection());
     state["grouping"] = json!(viewer.grouping);
     state["walking"] = json!(viewer.motions.iter().map(|m| m.unit).collect::<Vec<_>>());

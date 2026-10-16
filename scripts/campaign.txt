@@ -1,0 +1,53 @@
+# Campaign: NEW GAME starts the alien attack on the player's base (s1-1-1,
+# HQ only): troopers deploy around the HQ, the aliens move first, and a win
+# grants 150 tech points and moves on to the continent overview.
+# Run: openlibday --headless --script scripts/campaign.txt  (needs LIBDAY_ROOT)
+button NewCampaign
+type Max
+button NewGameContinue
+expect screen Briefing
+expect map s1-1-1.mdb
+expect campaign.stage.stage first_attack
+expect campaign.difficulty 4
+# The other players' headquarters are gone; the aliens wait beyond the zone.
+expect buildings.3.kind 137
+expect units.0.name Footman
+expect units.0.owner 0
+key Return
+deploy Trooper
+tile 22 57
+deploy Trooper
+tile 23 57
+key Return
+key Y
+wait 2000
+idle
+# The aliens have moved and it is the player's turn.
+expect phase Player
+expect units.0.x 34
+win
+wait 500
+idle
+expect screen Report
+expect report.tech New technologies found : 150
+key Return
+expect campaign.tech 150
+expect campaign.stage.stage strategic
+expect campaign.base.buildings.3.kind 137
+# Losing the base battle ends the campaign.
+button MainSkirmish
+button SkirmishBack
+button NewCampaign
+button NewGameContinue
+key Return
+key Return
+key Y
+wait 2000
+idle
+lose
+wait 500
+idle
+key Return
+expect screen MainMenu
+expect campaign null
+echo campaign test passed

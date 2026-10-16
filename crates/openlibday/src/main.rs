@@ -17,6 +17,7 @@
 
 mod ai;
 mod automated;
+mod campaign;
 mod clock;
 mod combat;
 mod front;
@@ -243,6 +244,8 @@ struct Viewer {
     fullscreen: Option<bool>,
     /// Main menu and NEW GAME dialog state.
     front: front::Front,
+    /// The campaign being played, if any.
+    campaign: Option<campaign::Session>,
 }
 
 impl Viewer {
@@ -938,6 +941,7 @@ fn main() -> Result {
         menu: menu::Menu::default(),
         fullscreen: None,
         front: front::Front::default(),
+        campaign: None,
     };
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.

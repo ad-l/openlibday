@@ -133,6 +133,7 @@ mod tests {
             ai_category: 0,
             is_convoy: false,
             is_ai_target: false,
+            prerequisite: 65535,
         }
     }
 

@@ -37,16 +37,15 @@ impl Default for Front {
 impl Viewer {
     pub(crate) fn open_main_menu(&mut self) {
         self.flow = crate::skirmish::Flow::new();
+        self.campaign = None;
         self.screen = Screen::MainMenu;
     }
 
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
-            // Not implemented (no multiplayer, cutscenes or mode switch), and
-            // no campaign to load yet.
-            Button::MultiPlayer | Button::Intro | Button::Resolution | Button::LoadCampaign => {
-                false
-            }
+            // Not implemented (no multiplayer, cutscenes or mode switch).
+            Button::MultiPlayer | Button::Intro | Button::Resolution => false,
+            Button::LoadCampaign => self.campaign_saved(),
             Button::DifficultyLeft => self.front.difficulty > 0,
             Button::DifficultyRight => self.front.difficulty < DIFFICULTY_MAX,
             Button::NewGameContinue => !self.front.name.trim().is_empty(),
@@ -57,6 +56,7 @@ impl Viewer {
     pub(crate) fn front_activate(&mut self, button: Button) {
         match button {
             Button::NewCampaign => self.screen = Screen::NewGame,
+            Button::LoadCampaign => self.load_campaign(),
             Button::MainSkirmish => {
                 if let Err(err) = self.open_selector() {
                     self.error = Some(err);
@@ -84,11 +84,8 @@ impl Viewer {
         if !self.front_enabled(Button::NewGameContinue) {
             return;
         }
-        self.notice = Some(format!(
-            "campaign for {} at difficulty {}",
-            self.front.name.trim(),
-            self.front.difficulty
-        ));
+        let name = self.front.name.trim().to_owned();
+        self.new_campaign(&name, i64::from(self.front.difficulty));
     }
 
     /// Keys of the main menu and the NEW GAME dialog; `None` elsewhere.

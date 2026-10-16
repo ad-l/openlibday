@@ -82,6 +82,13 @@ pub struct BuildingType {
     /// `TechReward`: technology found by standing next to it (tech
     /// centres and ancient ruins); 0 for every other building.
     pub tech_reward: i64,
+    /// `CanBuild`: offered in the campaign base editor.
+    pub can_build: bool,
+    /// `Prerequisite`: building type the player must own first (65535
+    /// none).
+    pub prerequisite: i64,
+    /// `Recycle`: credits refunded when recycled in a later base session.
+    pub recycle: i64,
 }
 
 impl BuildingType {
@@ -165,6 +172,9 @@ pub struct UnitType {
     /// flags differ is a target for the AI (escorted convoys).
     pub is_convoy: bool,
     pub is_ai_target: bool,
+    /// `Prerequisite`: building type a campaign player must own to deploy
+    /// it.
+    pub prerequisite: i64,
 }
 
 /// Which shot animations a unit type has (`Shoot*Animation_Begin` != -1)
@@ -467,6 +477,9 @@ impl Definitions {
                 ai_category: t.int_or(r, "AIcategory", 0)?,
                 cost: t.int_or(r, "Cost", 0)?,
                 tech_reward: t.int_or(r, "TechReward", 0)?,
+                can_build: t.flag_or(r, "CanBuild", false)?,
+                prerequisite: t.int_or(r, "Prerequisite", 65535)?,
+                recycle: t.int_or(r, "Recycle", 0)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));
@@ -529,6 +542,7 @@ impl Definitions {
                 ai_category: t.int_or(r, "AIcategory", 0)?,
                 is_convoy: t.flag_or(r, "isConvoy", false)?,
                 is_ai_target: t.flag_or(r, "isAITarget", false)?,
+                prerequisite: t.int_or(r, "Prerequisite", 65535)?,
             };
             if !(1..=9).contains(&item.width) || !(1..=9).contains(&item.height) {
                 return Err(invalid(&t.table, format!("type {}: bad size", item.id)));

@@ -664,6 +664,9 @@ impl Viewer {
         self.screen = Screen::Battle;
         self.begin_player_turn();
         self.flow.message = Some("The battle has begun".into());
+        if self.defending_base() {
+            self.ai_first();
+        }
     }
 
     fn begin_player_turn(&mut self) {
@@ -934,7 +937,7 @@ impl Viewer {
             turn,
             self.flow.forced,
         );
-        match outcome {
+        match self.campaign_outcome(outcome) {
             Some(o) => {
                 self.end_battle(o);
                 true
@@ -1007,12 +1010,26 @@ impl Viewer {
                 ],
                 [String::new(), buildings(bd), buildings(bl), String::new()],
             ],
-            tech: count(0x206, "New technologies found : %1!d!", self.tech_found()),
+            tech: count(
+                0x206,
+                "New technologies found : %1!d!",
+                self.campaign_tech_reward()
+                    .filter(|_| outcome == Outcome::Won)
+                    .unwrap_or_else(|| self.tech_found()),
+            ),
         }
     }
 
-    /// CONTINUE on the battle report: back to the skirmish selector.
+    /// CONTINUE on the battle report: back to the skirmish selector, or on
+    /// with the campaign.
     pub(crate) fn close_report(&mut self) {
+        if self.campaign_battle().is_some() {
+            self.campaign_report_closed();
+            self.flow.outcome = None;
+            self.flow.forced = None;
+            self.flow.report = None;
+            return;
+        }
         self.flow.outcome = None;
         self.flow.forced = None;
         self.flow.report = None;

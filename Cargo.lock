@@ -410,6 +410,7 @@ dependencies = [
  "libday-view",
  "png",
  "sdl3",
+ "serde",
  "serde_json",
 ]
 
