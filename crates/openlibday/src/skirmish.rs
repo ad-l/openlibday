@@ -834,13 +834,14 @@ impl Viewer {
                 continue;
             }
             let size = s.size as i64;
-            let (armor, ap, facings, name) = (k.armor, k.action_points, k.facings, k.name.clone());
+            let (armor, facings, name) = (k.armor, k.facings, k.name.clone());
             let u = &mut self.map.battle.scenario.units[i];
             u.arrival = 0;
             u.owner = AI;
             u.tech = 0;
             u.armor = Some(armor);
-            u.action_points = Some(ap);
+            // Placed with its AP spent (`0x434179`): it acts next turn.
+            u.action_points = Some(0);
             u.neg_ap = 0;
             if facings {
                 u.facing = libday_data::scenario::deploy_facing(size, u.x, u.y);
@@ -851,8 +852,12 @@ impl Viewer {
             }
             arrived.push(name);
         }
-        if let Some(name) = arrived.last() {
-            self.flow.message = Some(format!("Enemy reinforcement {name} has arrived"));
+        // The arrival notice (`0x4542c5`): string 896 in the status bar
+        // and the `reinf` sound.
+        if !arrived.is_empty() {
+            let text = self.string(896, "%1 reinforcements have arrived");
+            self.flow.message = Some(text.replace("%1", &self.player_name(AI)));
+            self.effect(Effect::Reinf);
             self.rebuild();
         }
     }

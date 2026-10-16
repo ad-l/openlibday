@@ -126,6 +126,28 @@ impl BaseLayout {
         }
     }
 
+    /// After a won base defence: the burnt and felled terrain (with the
+    /// destroyed buildings' rubble) grows back and what survived is
+    /// repaired; what was destroyed stays lost.
+    pub fn repair(&mut self, defs: &Definitions) {
+        self.terrain.clear();
+        for b in &mut self.buildings {
+            if let Some(k) = defs.buildings.get(&b.kind) {
+                b.armor = k.armor;
+            }
+        }
+        for r in &mut self.roads {
+            if let Some(k) = defs.roads.get(&r.kind) {
+                r.armor = k.armor;
+            }
+        }
+        for w in &mut self.walls {
+            if let Some(k) = defs.walls.get(&w.kind) {
+                w.armor = k.armor;
+            }
+        }
+    }
+
     pub fn apply(&self, s: &mut Scenario) {
         s.buildings = self.buildings.clone();
         s.roads = self.roads.clone();
@@ -872,22 +894,20 @@ impl Viewer {
             (Stage::FirstAttack, Some(Outcome::Won)) => {
                 state.tech += reward;
                 if let Some(base) = base {
-                    state.base = Some(BaseLayout::capture(
-                        &self.map.battle.scenario,
-                        &base,
-                        &self.defs,
-                    ));
+                    let mut layout =
+                        BaseLayout::capture(&self.map.battle.scenario, &base, &self.defs);
+                    layout.repair(&self.defs);
+                    state.base = Some(layout);
                 }
                 state.stage = Stage::Strategic;
             }
             (Stage::CounterAttack { province }, Some(Outcome::Won)) => {
                 state.tech += reward;
                 if let Some(base) = base {
-                    state.base = Some(BaseLayout::capture(
-                        &self.map.battle.scenario,
-                        &base,
-                        &self.defs,
-                    ));
+                    let mut layout =
+                        BaseLayout::capture(&self.map.battle.scenario, &base, &self.defs);
+                    layout.repair(&self.defs);
+                    state.base = Some(layout);
                 }
                 self.province_won(province);
                 return;
@@ -1076,5 +1096,57 @@ mod tests {
         s.difficulty = 10;
         let json = s.to_json();
         assert_eq!(State::from_json(&json).unwrap(), s);
+    }
+
+    #[test]
+    fn repair_regrows_terrain_and_mends_survivors() {
+        let mut defs = Definitions::default();
+        defs.buildings.insert(
+            7,
+            libday_data::defs::BuildingType {
+                armor: 50,
+                ..Default::default()
+            },
+        );
+        defs.roads.insert(
+            1,
+            libday_data::defs::SurfaceType {
+                armor: 20,
+                ..Default::default()
+            },
+        );
+        let road = Surface {
+            counter: 0,
+            kind: 1,
+            owner: PLAYER,
+            x: 3,
+            y: 4,
+            armor: 5,
+            broken: false,
+        };
+        let mut layout = BaseLayout {
+            buildings: vec![Building {
+                counter: 0,
+                id: 1,
+                kind: 7,
+                owner: PLAYER,
+                armor: 9,
+                x: 1,
+                y: 1,
+                ai_target: false,
+            }],
+            roads: vec![road],
+            terrain: vec![TerrainChange {
+                x: 2,
+                y: 2,
+                terrain: "ARIX000".into(),
+            }],
+            ..Default::default()
+        };
+        layout.repair(&defs);
+        assert!(layout.terrain.is_empty());
+        assert_eq!(layout.buildings[0].armor, 50);
+        assert_eq!(layout.roads.len(), 1);
+        assert_eq!(layout.roads[0].armor, 20);
     }
 }

@@ -587,12 +587,21 @@ pub fn execute(
                     }
                     continue;
                 }
-                if !placeable(&s, defs, unit, tech, player, p) {
-                    continue;
-                }
                 let Some(k) = defs.unit_tech(unit, tech) else {
                     continue;
                 };
+                if !placeable(&s, defs, unit, tech, player, p) {
+                    // Blown up where it lands, unless off the map.
+                    let size = s.size as i64;
+                    if (0..size).contains(&p.0) && (0..size).contains(&p.1) {
+                        destroyed.push(Destroyed::Unit {
+                            image: k.image.clone(),
+                            owner: player,
+                            at: p,
+                        });
+                    }
+                    continue;
+                }
                 let id = s.next_unit_id();
                 s.units.push(new_unit(id, unit, tech, player, p, facing, k));
             }
@@ -874,8 +883,14 @@ mod tests {
         let legs = execute(&s, &d, &mut Rand::new(1), &troopers(), 1, (8, 8), None);
         let l = &legs[0];
         assert!(l.scenario.mines.is_empty());
-        // The mine's spot and the occupied spot lose their units.
+        // The mine's spot and the occupied spot lose their units; the
+        // occupied one explodes.
         assert_eq!(l.scenario.units.len(), 3);
+        assert!(
+            l.destroyed
+                .iter()
+                .any(|d| matches!(d, Destroyed::Unit { at: (10, 10), .. }))
+        );
     }
 
     #[test]

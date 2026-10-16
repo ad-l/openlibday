@@ -71,6 +71,11 @@ pub struct Playing {
     pub started: Duration,
     /// Frame counter (wraps around the animation's length).
     pub frame: usize,
+    /// First frame of the range of the file it plays (a building's
+    /// explosion follows its intact frame 0). The sound starts from the
+    /// file's first chunk, which carries the whole sound ahead of the
+    /// picture.
+    pub first: usize,
 }
 
 struct Active {
@@ -92,6 +97,8 @@ pub enum Effect {
     Invalid,
     /// A technology building is captured (`tech`, `0x46ac4d`).
     Tech,
+    /// Reinforcements arrive (`reinf`, `0x4542c5`).
+    Reinf,
     /// A base structure is built (`build`, with string 403/406).
     Build,
     /// A base structure is recycled (`cashin`, with string 404).
@@ -114,6 +121,7 @@ impl Effect {
             Effect::Recall => "RECALL.WAV",
             Effect::Invalid => "INVALIDE.WAV",
             Effect::Tech => "TECH.WAV",
+            Effect::Reinf => "REINF.WAV",
             Effect::Build => "BUILD.WAV",
             Effect::Cashin => "CASHIN.WAV",
             Effect::Click => "CLICK.WAV",
@@ -194,6 +202,7 @@ impl Sound {
                         (a.playing.frame + 1).max((p.frame + 1).saturating_sub(MAX_CATCH_UP));
                     (from..=p.frame, a.voice)
                 }
+                None if p.first > 0 && p.frame >= p.first => (0..=p.frame, None),
                 None => (p.frame..=p.frame, None),
             };
             let voice = if frames.is_empty() {

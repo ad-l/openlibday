@@ -58,8 +58,9 @@ probability 100) replacing its targets:
 | Escort, Keep | 6 Attack | objective ids |
 | Destroy all except | none | |
 
-The arrival message is openlibday's own wording. Scheduled support
-(`Automated Units`) is not implemented yet.
+Arrivals have no action points (`0x434179`). The arrival is announced as
+string 896 "%1 reinforcements have arrived" for 2 s with the `reinf` sound
+(`0x4542c5`).
 
 ## Player reinforcements
 

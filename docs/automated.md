@@ -61,7 +61,8 @@ Each shooter's impact animation is drawn at `AAPos`, staggered by 3 frames.
 ## Drops and transports
 
 - A drop onto a mine sets it off.
-- A spot where the unit cannot stand loses that unit.
+- A spot where the unit cannot stand loses that unit, which plays its
+  explosion there.
 - A transport's lifted unit leaves the map between the two legs and arrives
   with no action points left.
 

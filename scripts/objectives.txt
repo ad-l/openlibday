@@ -20,6 +20,10 @@ button EndTurn
 idle
 expect turn 4
 expect units.id=126.arrival 0
+# They arrive with their AP spent, announced with the reinf sound.
+expect units.id=126.ap 0
+expect message Alien reinforcements have arrived
+expect sounds.-1 REINF.WAV
 expect units.id=126.order 3
 expect units.id=126.targets 2
 expect units.id=127.arrival 6

@@ -492,6 +492,7 @@ impl Viewer {
                     name: w.anim?,
                     started: w.started,
                     frame: w.frame,
+                    first: 0,
                 })
             })
             .collect();
@@ -509,6 +510,7 @@ impl Viewer {
                     name: shot::animation_name(&s.image, s.owner, Anim::Projectile, 0),
                     started: s.started,
                     frame: f - s.launch,
+                    first: 0,
                 });
             }
             if let Some(frame) = s.impact(f) {
@@ -517,6 +519,7 @@ impl Viewer {
                     name: s.impact_name.clone(),
                     started: s.started,
                     frame,
+                    first: 0,
                 });
             }
             for (i, e, frame) in s.explosions(f) {
@@ -525,6 +528,7 @@ impl Viewer {
                     name: e.name.clone(),
                     started: s.started,
                     frame,
+                    first: e.first,
                 });
             }
         }
