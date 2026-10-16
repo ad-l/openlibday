@@ -25,4 +25,13 @@ expect units.1.dimmed false
 expect units.3.dimmed false
 ap 3 0
 expect units.3.dimmed true
+# A new turn restores the AP and undims them.
+ap 1 0
+expect units.1.dimmed true
+button EndTurn
+wait 1
+expect units.3.dimmed false
+expect units.1.dimmed true
+idle
+expect units.1.dimmed false
 echo dim test passed

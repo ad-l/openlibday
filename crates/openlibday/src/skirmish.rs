@@ -738,6 +738,8 @@ impl Viewer {
             }
         }
         self.brain = self.ai_mode.map(crate::ai::Brain::new);
+        // The restored AP undims the AI's units.
+        self.rebuild();
     }
 
     /// Plays the AI's turn, then ends it once its time is up and nothing
@@ -772,6 +774,7 @@ impl Viewer {
         self.begin_player_turn();
         self.flow.message = Some(format!("{}'s turn has begun", self.player_name(PLAYER)));
         self.arrive_reinforcements();
+        self.rebuild();
         true
     }
 

@@ -27,4 +27,6 @@ expect units.2.id 115
 expect units.2.x 21
 expect units.2.y 51
 expect units.2.ap 0
+# Overwatch bursts end with every shooter shown again.
+expect hidden 0
 echo ai supports test passed

@@ -856,6 +856,7 @@ pub fn state(viewer: &Viewer) -> Value {
     });
     state["automated"] = automated;
     state["reinf_res"] = json!(scenario.info.reinf_res);
+    state["hidden"] = json!(viewer.options.hidden_units.len());
     state["front"] = json!({
         "name": viewer.front.name,
         "difficulty": viewer.front.difficulty,

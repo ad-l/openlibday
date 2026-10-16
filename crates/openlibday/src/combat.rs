@@ -692,10 +692,12 @@ impl Viewer {
             }
         }
         let mut done = Vec::new();
+        let mut finished = Vec::new();
         self.flights.retain_mut(|f| {
             let over = f.result.is_none() && f.frame(now) >= f.total;
             if over {
                 done.append(&mut f.ruins);
+                finished.push(f.unit);
             }
             !over
         });
@@ -703,7 +705,7 @@ impl Viewer {
             self.map.battle.scenario.ruins.extend(done);
             self.rebuild();
         }
-        self.unhide_flight_shooters(now);
+        self.unhide_flight_shooters(now, finished);
         let landed = self.flights.iter().all(|f| f.result.is_none());
         let Some(s) = &self.shot else {
             if self.flights.is_empty() && self.reaction.is_some() {
@@ -888,9 +890,10 @@ impl Viewer {
         }
     }
 
-    /// Shows the units of shots in the air again once their fire
-    /// animations are over, unless another shot animates them.
-    fn unhide_flight_shooters(&mut self, now: Duration) {
+    /// Shows the units of shots in the air (or just over, `finished`)
+    /// again once their fire animations are over, unless another shot
+    /// animates them.
+    fn unhide_flight_shooters(&mut self, now: Duration, finished: Vec<usize>) {
         let animating = |u: usize| {
             self.flights
                 .iter()
@@ -900,8 +903,10 @@ impl Viewer {
         let done: Vec<usize> = self
             .flights
             .iter()
-            .filter(|f| f.shooter(f.frame(now)).is_none() && !animating(f.unit))
+            .filter(|f| f.shooter(f.frame(now)).is_none())
             .map(|f| f.unit)
+            .chain(finished)
+            .filter(|&u| !animating(u))
             .filter(|u| self.options.hidden_units.contains(u))
             .filter(|u| !self.motions.iter().any(|m| m.unit == *u))
             .collect();
