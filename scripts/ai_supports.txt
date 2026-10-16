@@ -24,7 +24,7 @@ idle 20000
 expect phase Player
 expect automated.ai_budget 50
 expect units.2.id 115
-expect units.2.x 25
-expect units.2.y 49
+expect units.2.x 21
+expect units.2.y 51
 expect units.2.ap 0
 echo ai supports test passed

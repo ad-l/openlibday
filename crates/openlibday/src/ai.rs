@@ -34,6 +34,13 @@ const HORDE_TYPES: [i64; 5] = [2, 56, 58, 8, 9];
 /// Automated units: the Shubblar Pyro-Maniac drop and the alien transport.
 const PYRO_DROP: i64 = 19;
 const TRANSPORT: i64 = 7;
+/// Automated units stages 2 and 7 can buy (`0x470749`), by target
+/// chooser: the alien mine detector, the medic, the air strikes and the
+/// drops.
+const MINE_DETECTOR: i64 = 9;
+const MEDIC: i64 = 10;
+const STRIKES: [i64; 3] = [11, 12, 13];
+const DROPS: [i64; 8] = [14, 19, 20, 21, 22, 23, 24, 25];
 
 /// What a target record points at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,8 +175,8 @@ pub(crate) struct Brain {
     batch: Vec<(i64, (i64, i64))>,
     /// The goto batch is walking (`0x47142f`).
     flushing: bool,
-    /// Stage 3 Pyro-Maniac drops still to launch.
-    drops: u8,
+    /// Stage 3 Pyro-Maniac drops still to launch, once counted.
+    drops: Option<u8>,
 }
 
 impl Brain {
@@ -183,7 +190,7 @@ impl Brain {
             best: Record::none(),
             batch: Vec::new(),
             flushing: false,
-            drops: 0,
+            drops: None,
         }
     }
 }
@@ -637,25 +644,36 @@ impl Viewer {
         match b.stage {
             0 => {
                 self.build_orders(b);
-                b.drops = self.pyro_drops();
+                b.stage = 2;
+            }
+            2 => {
+                self.buy_support();
+                b.drops = None;
                 b.stage = 3;
             }
-            3 => {
-                if b.drops == 0 {
-                    b.stage = 4;
-                } else {
-                    b.drops -= 1;
-                    self.pyro_drop();
+            3 => match b.drops {
+                None => b.drops = Some(self.pyro_drops()),
+                Some(0) => b.stage = 4,
+                Some(n) => {
+                    b.drops = Some(n - 1);
+                    // `0x470281`: the drop's cost is given first, so it is
+                    // free; kept if no target is found.
+                    self.flow.ai_budget += self.support_cost(PYRO_DROP);
+                    self.support_drop(PYRO_DROP);
                 }
-            }
+            },
             4 => {
                 self.build_shooters(b);
                 b.stage = 5;
             }
             5 => {
                 if !self.run_first(b, |b| &mut b.shooters) {
-                    b.stage = 8;
+                    b.stage = 7;
                 }
+            }
+            7 => {
+                self.buy_support();
+                b.stage = 8;
             }
             8 => {
                 self.build_base(b);
@@ -774,9 +792,132 @@ impl Viewer {
         drop_count(&hostiles, self.map.battle.scenario.info.reinf_res)
     }
 
-    /// `0x47084a`: one drop on the first hostile soft land or hover unit
+    /// The cost of automated unit `id`.
+    fn support_cost(&self, id: i64) -> i64 {
+        self.defs.automated.get(&id).map_or(0, |a| a.cost)
+    }
+
+    /// Whether the support budget covers automated unit `id`.
+    fn affordable(&self, id: i64) -> bool {
+        self.defs
+            .automated
+            .get(&id)
+            .is_some_and(|a| a.cost <= self.flow.ai_budget)
+    }
+
+    /// Launches automated unit `id` on `at` and pays for it.
+    fn buy(&mut self, id: i64, at: (i64, i64)) {
+        self.launch_support(id, AI, at, None);
+        self.flow.ai_budget -= self.support_cost(id);
+    }
+
+    /// Stages 2 and 7 (`0x470658`), campaign only: with the continent's
+    /// `AiAutoUnitChanceCall` percent (25 on the base), one random type of
+    /// `AI automated available`, if the AI owns its prerequisite building
+    /// on the map (any on the base), aimed by its own chooser.
+    fn buy_support(&mut self) {
+        let Some(chance) = self.ai_support_chance() else {
+            return;
+        };
+        if self.rng.rand() % 100 >= chance {
+            return;
+        }
+        let types = self.ai_support_types();
+        if types.is_empty() {
+            return;
+        }
+        let id = types[(self.rng.rand() % types.len() as i64) as usize];
+        let Some(a) = self.defs.automated.get(&id) else {
+            return;
+        };
+        let counter = self.defending_base();
+        let owned = self
+            .map
+            .battle
+            .scenario
+            .buildings
+            .iter()
+            .any(|b| b.owner == AI && b.kind == a.prerequisite);
+        if !owned && !counter {
+            return;
+        }
+        match id {
+            MINE_DETECTOR => self.support_mine_detector(id, counter),
+            MEDIC => self.support_medic(id),
+            _ if STRIKES.contains(&id) => self.support_strike(id),
+            _ if DROPS.contains(&id) => self.support_drop(id),
+            _ => {}
+        }
+    }
+
+    /// `0x4709d5`, on the base only: half the time on the first mine
+    /// hidden from the AI (the map corner if none), else on a random tile.
+    fn support_mine_detector(&mut self, id: i64, counter: bool) {
+        if !self.affordable(id) || !counter {
+            return;
+        }
+        let s = &self.map.battle.scenario;
+        let at = if self.rng.rand() % 100 < 50 {
+            s.mines
+                .iter()
+                .find(|m| m.hidden_to(AI))
+                .map_or((0, 0), |m| (m.x, m.y))
+        } else {
+            let size = (s.size as i64).max(1);
+            let x = self.rng.rand() % size;
+            (x, self.rng.rand() % size)
+        };
+        self.buy(id, at);
+    }
+
+    /// `0x4708f9`: on the mobile AI unit that lost the most armour.
+    fn support_medic(&mut self, id: i64) {
+        if !self.affordable(id) {
+            return;
+        }
+        let defs = &self.defs;
+        let mut best: Option<((i64, i64), i64)> = None;
+        for u in self.units().iter().filter(|u| mobile(defs, u)) {
+            let Some(k) = defs.unit_tech(u.kind, u.tech) else {
+                continue;
+            };
+            let lost = k.armor - u.armor.unwrap_or(k.armor);
+            if lost > best.map_or(0, |b| b.1) {
+                best = Some(((u.x, u.y), lost));
+            }
+        }
+        if let Some((at, _)) = best {
+            self.buy(id, at);
+        }
+    }
+
+    /// `0x470795`: fighters or the Gene Bomb on the hostile unit with the
+    /// most armour.
+    fn support_strike(&mut self, id: i64) {
+        if !self.affordable(id) {
+            return;
+        }
+        let defs = &self.defs;
+        let mut best: Option<((i64, i64), i64)> = None;
+        for u in self.units().iter().filter(|u| hostile(defs, u)) {
+            let armour = defs
+                .unit_tech(u.kind, u.tech)
+                .map_or(0, |k| u.armor.unwrap_or(k.armor));
+            if armour > best.map_or(0, |b| b.1) {
+                best = Some(((u.x, u.y), armour));
+            }
+        }
+        if let Some((at, _)) = best {
+            self.buy(id, at);
+        }
+    }
+
+    /// `0x47084a`: a drop on the first hostile soft land or hover unit
     /// (armour ≤ 30) from a random place in the unit list, wrapping not.
-    fn pyro_drop(&mut self) {
+    fn support_drop(&mut self, id: i64) {
+        if !self.affordable(id) {
+            return;
+        }
         let len = self.units().len() as i64;
         if len == 0 {
             return;
@@ -791,7 +932,7 @@ impl Viewer {
         });
         if let Some(u) = target {
             let at = (u.x, u.y);
-            self.launch_support(PYRO_DROP, AI, at, None);
+            self.buy(id, at);
         }
     }
 

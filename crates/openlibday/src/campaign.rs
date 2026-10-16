@@ -454,12 +454,29 @@ impl Viewer {
     /// Whether the continent lets the AI call in automated unit `id`
     /// (`AI automated available`, `0x474802`).
     pub(crate) fn ai_support_available(&self, id: i64) -> bool {
-        self.campaign_battle().is_some()
-            && self
-                .campaign
-                .as_ref()
-                .and_then(|c| c.continent())
-                .is_some_and(|c| c.ai_automated.types.contains(&id))
+        self.ai_support_types().contains(&id)
+    }
+
+    /// The continent's `AI automated available` (campaign `+0xac`); none
+    /// outside campaign battles.
+    pub(crate) fn ai_support_types(&self) -> Vec<i64> {
+        self.campaign_battle()
+            .and(self.campaign.as_ref())
+            .and_then(|c| c.continent())
+            .map(|c| c.ai_automated.types.clone())
+            .unwrap_or_default()
+    }
+
+    /// The percent chance of a stage 2 or 7 support purchase: the
+    /// continent's `AiAutoUnitChanceCall` (campaign `+0x90`), 25 on the
+    /// base; none outside campaign battles.
+    pub(crate) fn ai_support_chance(&self) -> Option<i64> {
+        let chance = self
+            .campaign_battle()
+            .and(self.campaign.as_ref())
+            .and_then(|c| c.continent())
+            .map(|c| c.ai_automated.chance)?;
+        Some(if self.defending_base() { 25 } else { chance })
     }
 
     /// Whether the battle is fought on the base (the AI moves first).

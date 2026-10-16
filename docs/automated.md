@@ -107,10 +107,9 @@ Building lays road type 1.
   which matches the skirmishes. Campaigns will need the building rule.
 - **Bridge.** The bridge is placed as road kind 1 on water or a crack. The
   exact tile choice was not traced.
-- **AI purchases.** The AI launches authored supports (stage 6), stage 3's
-  Pyro-Maniac drops and the counterattack transport ([ai.md](ai.md) §3.7,
-  §6). Stages 2 and 7 (random supports bought with the campaign's AI
-  budget) are not implemented.
+- **AI purchases.** The AI launches authored supports (stage 6), its
+  random supports (stages 2 and 7), stage 3's Pyro-Maniac drops and the
+  counterattack transport ([ai.md](ai.md) §3.7, §6).
 - **Cursors.** The support cursors come from the `cursorID` names in the
   symbol sheet and have not been checked against the original.
 

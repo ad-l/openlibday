@@ -492,12 +492,26 @@ The AI can buy supports in three ways:
     forward from `rand() % (unit count)` without wrapping. No unit, no
     drop.
   - Of the skirmishes only the Testing Ground has `ReinfRes` over 300.
-- **Dynamic support** (stages 2 and 7, campaign only):
-  - Chance: campaign `+0x90`, or 25 in a counter-attack.
-  - Picks a random available support: mine detector, medic, fighters/Gene
-    Bomb, or drops.
-  - Each support type has its own target chooser. The support's cost comes
-    out of the AI's support budget.
+- **Dynamic support** (stages 2 and 7, `0x470658`, campaign only):
+  - Chance: the continent's `AiAutoUnitChanceCall` (campaign `+0x90`), or
+    25 with `counterAttack` (on the base). Roll `rand() % 100 < chance`.
+  - Pick `rand() % n` of the continent's `AI automated available` types
+    (campaign `+0xac`).
+  - Unless `counterAttack`, the AI must own a building of the support's
+    `Prerequisite` type on the map (`0x42869c`, owner 0).
+  - Each chooser first checks the cost against the support budget and
+    takes it off once launched; nothing is spent without a target. By
+    support id (`0x470749`):
+    - 9, alien mine detector (`0x4709d5`): only with `counterAttack`.
+      If `rand() % 100 < 50`, the first mine hidden from the AI, or
+      (0, 0) when there is none; otherwise the random tile
+      (`rand() % width`, `rand() % height`).
+    - 10, medic (`0x4708f9`): the mobile AI unit with the largest
+      `full armour − armour` (over 0; the first wins ties).
+    - 11–13, fighters and Gene Bomb (`0x470795`): the hostile unit with the
+      highest current armour (over 0; the first wins ties).
+    - 14 and 19–25, drops (`0x47084a`): as for stage 3.
+    - 7, 8 and the human drops 15–18: nothing.
 
 ## 7. openlibday implementation notes
 
@@ -525,12 +539,13 @@ The AI can buy supports in three ways:
   turn change).
 - The C runtime `rand()` stream is not reproduced bit-for-bit. The AI uses
   the game's random source for the order probability rolls (each AI turn).
-- Supports: stage 3's drops play one per brain step, each target chosen
-  once the previous drop has landed; stage 6 launches the authored
-  supports one at a time before the brain runs; the counterattack
-  transport (§3.7) replaces the centre walk on the base.
-- Not emulated: the dynamic support purchases (stages 2 and 7), the
-  seven-sweep limit, the teleport
+- Supports: stage 2's purchase, then stage 3's drops, play one per brain
+  step, each target chosen once the previous support has landed (stage 3
+  counts the hostile units after stage 2's support); stage 6 launches the
+  authored supports one at a time before the brain runs, so stage 7 comes
+  after them; the counterattack transport (§3.7) replaces the centre walk
+  on the base.
+- Not emulated: the seven-sweep limit, the teleport
   single-step path, the 4000 ms time slices, and the centre walk on a stale
   grid when the unit has under 4 AP.
 - The view follows the AI: it centres on a walk's destination before the
@@ -538,4 +553,4 @@ The AI can buy supports in three ways:
   centre on their target before their animation.
 - `scripts/ai.txt` plays modern, legacy and off turns on the Testing Ground;
   `scripts/ai_supports.txt` checks the counterattack transport and the
-  campaign budget.
+  campaign budget; `scripts/ai_support_buy.txt` a stage 2 Footmen drop.

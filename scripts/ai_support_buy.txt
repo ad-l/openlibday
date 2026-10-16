@@ -1,0 +1,32 @@
+# AI support purchase (docs/ai.md section 6, stages 2 and 7): on the base
+# the AI buys one of the continent's alien supports a quarter of the time.
+# With this seed stage 2 drops Footmen (60 of the 90 budget) on the first
+# human unit with armour 30 or less, the Trooper at 22,57.
+# Run: openlibday --headless --script scripts/ai_support_buy.txt  (needs LIBDAY_ROOT)
+ai legacy
+button NewCampaign
+type Max
+button NewGameContinue
+key Return
+deploy Trooper
+tile 22 57
+deploy Trooper
+tile 23 57
+key Return
+key Y
+expect automated.ai_budget 90
+wait 2000
+idle
+seed 7
+button EndTurn
+idle 20000
+expect phase Player
+expect automated.ai_budget 30
+expect units.2.id 118
+expect units.2.kind 4
+expect units.2.x 21
+expect units.2.y 55
+expect units.5.id 121
+expect units.5.x 24
+expect units.5.y 55
+echo ai support buy test passed
