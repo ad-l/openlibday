@@ -50,6 +50,7 @@ impl Viewer {
                 self.close_report()
             }
             (Screen::Options { ask }, _) => self.menu_key(ask, key),
+            (Screen::Saves { .. }, _) => self.saves_key(key),
             (Screen::Strategic { .. }, _) => self.strategic_key(key),
             (Screen::Intelligence, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {
                 self.close_intel()
@@ -205,6 +206,8 @@ impl Viewer {
             Screen::Strategic { .. } | Screen::Intelligence => {}
             Screen::Options { ask: None } if left => self.menu_click(ox, oy),
             Screen::Options { .. } => {}
+            Screen::Saves { .. } if left => self.saves_click(ox, oy),
+            Screen::Saves { .. } => {}
             Screen::Skirmishes if left => {
                 let layout = self.layout();
                 if let Some(row) =
@@ -442,6 +445,7 @@ impl Viewer {
                     Screen::Deploy => self.deploy_scroll(-step as isize),
                     Screen::Automated => self.support_scroll(-step as isize),
                     Screen::Options { ask: None } => self.menu_scroll(-step as isize),
+                    Screen::Saves { .. } => self.saves_scroll(-step as isize),
                     Screen::Skirmishes => {
                         let last = self.flow.catalog.len().saturating_sub(SKIRMISH_ROWS);
                         self.flow.scroll = self

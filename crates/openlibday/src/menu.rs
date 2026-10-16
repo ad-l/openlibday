@@ -368,13 +368,7 @@ impl Viewer {
             Button::OptionsRestart => {
                 !self.menu.over_main && self.flow.phase == Phase::Player && !self.networked()
             }
-            Button::OptionsSave => {
-                !self.menu.over_main
-                    && !self.networked()
-                    && self.strategic.is_none()
-                    && matches!(self.flow.phase, Phase::Free | Phase::Player)
-                    && !self.flow.reinforcing
-            }
+            Button::OptionsSave => !self.menu.over_main && self.can_save(),
             Button::Menu => {
                 !self.menu.over_main
                     && matches!(
@@ -400,11 +394,8 @@ impl Viewer {
             Button::OptionsRestart => self.ask(Ask::Restart),
             Button::OptionsQuit => self.ask(Ask::Quit),
             Button::OptionsSave => {
-                self.quick_save();
-                self.close_menu();
-                if self.error.is_none() {
-                    self.flow.message = Some("The game has been saved".into());
-                }
+                self.menu.over_main = false;
+                self.open_saves(true);
             }
             Button::OptionsBack => self.close_menu(),
             Button::OptionsUp => self.menu_scroll(-1),

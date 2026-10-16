@@ -149,6 +149,13 @@ pub mod frame {
     /// Continent INTELLIGENCE dialog and its BACK.
     pub const INTEL_DIALOG: u16 = 557;
     pub const INTEL_BACK: u16 = 558;
+    /// LOAD GAME and SAVE GAME dialogs and their buttons.
+    pub const LOAD_DIALOG: u16 = 739;
+    pub const LOAD_BACK: u16 = 740;
+    pub const LOAD_LOAD: u16 = 744;
+    pub const SAVE_DIALOG: u16 = 750;
+    pub const SAVE_BACK: u16 = 751;
+    pub const SAVE_SAVE: u16 = 755;
 }
 
 /// `(first frame, last frame, width, height)` of every element used.
@@ -205,6 +212,10 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (700, 703, 53, 17),
     (710, 710, 286, 281),
     (711, 738, 256, 28),
+    (739, 739, 286, 419),
+    (740, 747, 100, 24),
+    (750, 750, 286, 419),
+    (751, 758, 100, 24),
     (765, 768, 256, 28),
     (841, 841, 364, 416),
     (842, 849, 100, 24),
@@ -471,6 +482,12 @@ pub enum Button {
     BaseMove,
     Campaign,
     BaseArmy,
+    // LOAD GAME / SAVE GAME dialog.
+    SavesBack,
+    /// LOAD or SAVE, by the dialog.
+    SavesOk,
+    SavesUp,
+    SavesDown,
 }
 
 /// Which panel set is on screen.
@@ -523,6 +540,11 @@ pub enum Screen {
     Army,
     /// INTELLIGENCE: a province's report over the greyed continent.
     Intelligence,
+    /// The LOAD GAME (over the main menu) or SAVE GAME (over the game)
+    /// dialog listing the saved games.
+    Saves {
+        saving: bool,
+    },
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -545,6 +567,7 @@ impl Screen {
                 | Screen::NewGame
                 | Screen::Sessions
                 | Screen::Lobby
+                | Screen::Saves { saving: false }
         )
     }
 }
@@ -659,6 +682,10 @@ impl Button {
             Button::BaseMove => BASE_MOVE,
             Button::Campaign => CAMPAIGN,
             Button::BaseArmy => BASE_ARMY,
+            Button::SavesBack => LOAD_BACK,
+            Button::SavesOk => LOAD_LOAD,
+            Button::SavesUp => TECH_UP,
+            Button::SavesDown => TECH_DOWN,
         }
     }
 
@@ -796,6 +823,11 @@ impl Button {
             Button::BaseMove => (70, 435),
             Button::Campaign => (11, 455),
             Button::BaseArmy => (70, 455),
+            // Relative to the LOAD GAME / SAVE GAME dialog's camouflage band.
+            Button::SavesBack => (12, 383),
+            Button::SavesOk => (174, 383),
+            Button::SavesUp => (122, 386),
+            Button::SavesDown => (145, 386),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -873,6 +905,14 @@ pub const OPTIONS_TABLE: Rect = Rect::new(14, 40, 373, 286);
 pub const OPTIONS_ROW: i32 = 22;
 /// Rows the options table shows at once.
 pub const OPTIONS_ROWS: usize = (OPTIONS_TABLE.h / OPTIONS_ROW) as usize;
+/// The black list covering the LOAD GAME / SAVE GAME dialog's ten slots.
+pub const SAVES_LIST: Rect = Rect::new(12, 36, 262, 316);
+/// Height of a saved game row.
+pub const SAVES_ROW: i32 = 52;
+/// Rows the saved games list shows at once.
+pub const SAVES_ROWS: usize = ((SAVES_LIST.h - 4) / SAVES_ROW) as usize;
+/// Width of the saved games list's scroll bar.
+pub const SAVES_TRACK: i32 = 6;
 /// Question dialog position over the map viewport.
 pub const QUESTION_AT: (i32, i32) = (50, 70);
 /// INTELLIGENCE dialog position.
@@ -1051,6 +1091,9 @@ impl Layout {
             Button::LobbySend | Button::LobbyBack | Button::LobbyStart => {
                 self.s(native).offset_by(self.lobby_dialog())
             }
+            Button::SavesBack | Button::SavesOk | Button::SavesUp | Button::SavesDown => {
+                self.s(native).offset_by(self.saves_dialog())
+            }
             _ => self.in_sidebar(native),
         }
     }
@@ -1095,6 +1138,27 @@ impl Layout {
     /// A rectangle in WAITING AREA coordinates.
     pub fn in_lobby(&self, r: Rect) -> Rect {
         self.s(r).offset_by(self.lobby_dialog())
+    }
+
+    /// The LOAD GAME / SAVE GAME dialog (both are the same size).
+    pub fn saves_dialog(&self) -> Rect {
+        self.centred(frame::LOAD_DIALOG)
+    }
+
+    /// A rectangle in LOAD GAME / SAVE GAME dialog coordinates.
+    pub fn in_saves(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.saves_dialog())
+    }
+
+    /// Row `i` (on screen) of the saved games list.
+    pub fn saves_row(&self, i: usize) -> Rect {
+        let t = SAVES_LIST;
+        self.in_saves(Rect::new(
+            t.x,
+            t.y + 2 + i as i32 * SAVES_ROW,
+            t.w - SAVES_TRACK - 2,
+            SAVES_ROW,
+        ))
     }
 
     pub fn report_dialog(&self) -> Rect {
@@ -1334,6 +1398,12 @@ impl Layout {
                 },
             ]),
             Screen::Intelligence => buttons.push(Button::IntelBack),
+            Screen::Saves { .. } => buttons.extend([
+                Button::SavesBack,
+                Button::SavesOk,
+                Button::SavesUp,
+                Button::SavesDown,
+            ]),
             Screen::BaseEditor => buttons.extend([
                 Button::BaseMap,
                 Button::BaseBuildings,
@@ -1358,6 +1428,7 @@ impl Layout {
                 | Screen::NewGame
                 | Screen::Sessions
                 | Screen::Lobby
+                | Screen::Saves { .. }
         ) {
             buttons.extend([Button::Chat, Button::Menu]);
         }

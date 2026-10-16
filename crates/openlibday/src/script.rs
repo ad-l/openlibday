@@ -78,6 +78,13 @@
 //! await PATH VALUE [S]  advance frames until the state at PATH is VALUE,
 //!                       failing after S seconds of real time (default 60);
 //!                       (how a network game waits for the other computers)
+//! savedir DIR [fresh]  keep saves in DIR (headless runs have none); fresh
+//!                       deletes DIR first
+//! save new|N            SAVE GAME as a new save or over row N of the saves
+//!                       (newest first)
+//! load N                LOAD GAME row N (newest first; with the campaign's
+//!                       own save among them)
+//! saves load|save       open LOAD GAME or SAVE GAME (state `saves`)
 //! quit                  end the program
 //! ```
 
@@ -186,6 +193,11 @@ pub enum Command {
     Connect(String),
     Say(String),
     Await(String, String, f64),
+    SaveDir(String, bool),
+    /// Save as a new save (`None`) or over save N.
+    Save(Option<usize>),
+    Load(usize),
+    Saves(bool),
     Quit,
 }
 
@@ -357,6 +369,20 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
                 None => 60.0,
             },
         ),
+        "savedir" => Command::SaveDir(
+            args.first().ok_or("missing directory")?.to_string(),
+            args.get(1) == Some(&"fresh"),
+        ),
+        "save" => Command::Save(match args.first() {
+            Some(&"new") => None,
+            _ => Some(num(args.first())?),
+        }),
+        "load" => Command::Load(num(args.first())?),
+        "saves" => Command::Saves(match args.first() {
+            Some(&"save") => true,
+            Some(&"load") => false,
+            _ => return Err("saves load|save".into()),
+        }),
         "quit" | "exit" => Command::Quit,
         _ => return Err(format!("unknown command {word}")),
     })
@@ -641,6 +667,39 @@ impl Runner<'_, '_> {
             }
             Command::TurnLimit(minutes) => viewer.set_turn_limit(*minutes),
             Command::Upnp(on) => viewer.front.router = *on,
+            Command::SaveDir(dir, fresh) => {
+                if *fresh && std::path::Path::new(dir).exists() {
+                    std::fs::remove_dir_all(dir)?;
+                }
+                std::fs::create_dir_all(dir)?;
+                viewer.saves = Some(dir.into());
+            }
+            Command::Saves(saving) => viewer.open_saves(*saving),
+            Command::Save(row) => {
+                if !viewer.can_save() {
+                    return Err("the game cannot be saved now".into());
+                }
+                viewer.open_saves(true);
+                viewer.saves_select(row.map_or(0, |n| n + 1));
+                viewer.saves_ok();
+                if row.is_some() {
+                    viewer.saves_ok();
+                }
+                if let Some(e) = viewer.error.take() {
+                    return Err(e.into());
+                }
+            }
+            Command::Load(row) => {
+                viewer.open_saves(false);
+                if *row >= viewer.saves_rows() {
+                    return Err(format!("no save {row}").into());
+                }
+                viewer.saves_select(*row);
+                viewer.saves_ok();
+                if let Some(e) = viewer.error.take() {
+                    return Err(e.into());
+                }
+            }
             Command::Discover(on) => viewer.front.discover = *on,
             Command::Say(text) => {
                 viewer.front.chat = text.clone();
@@ -1114,6 +1173,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "difficulty": viewer.front.difficulty,
     });
     state["notice"] = json!(viewer.notice);
+    state["saves"] = viewer.saves_state();
     state["online"] = viewer.net.online.as_ref().map_or(Value::Null, |o| {
         json!({
             "slot": o.slot,

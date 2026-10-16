@@ -1,0 +1,129 @@
+# Unlimited saves: SAVE GAME (MENU > SAVE) adds or overwrites saves, LOAD
+# GAME (main menu) lists them newest first with the campaign's own save.
+# Run: openlibday --headless --script scripts/saves.txt  (needs LIBDAY_ROOT)
+savedir target/saves_test fresh
+# Nothing to load yet.
+expect screen MainMenu
+ai off
+skirmish s1-2-1
+key Return
+key Return
+key Return
+expect screen Deploy
+# No saving while deploying.
+button Menu
+expect screen Options
+key Escape
+key Return
+key Y
+expect screen Battle
+expect phase Player
+# SAVE GAME: a new save at the top, then the saves.
+button Menu
+button OptionsSave
+expect screen Saves
+expect saves.selected 0
+expect saves.count 0
+screenshot target/saves_save_empty.png
+key Return
+expect screen Battle
+expect message The game has been saved
+button Menu
+button OptionsSave
+expect saves.entries.0.kind skirmish
+expect saves.entries.0.turn 1
+expect saves.entries.0.players 1
+expect saves.entries.0.thumbnail true
+# Overwriting asks first.
+key Down
+key Return
+expect screen Saves
+expect saves.confirm Overwrite(1)
+screenshot target/saves_save.png
+key Return
+expect screen Battle
+save new
+button EndTurn
+key Y
+idle
+expect turn 2
+# LOAD GAME from the main menu: the newest save first.
+button Menu
+button OptionsQuit
+key Y
+expect screen MainMenu
+button LoadCampaign
+expect screen Saves
+expect saves.count 2
+screenshot target/saves_load.png
+key Escape
+expect screen MainMenu
+load 1
+expect screen Battle
+expect phase Player
+expect turn 1
+expect message The game has been loaded
+# Deleting needs a second press.
+button Menu
+button OptionsSave
+key Down
+key Delete
+expect saves.confirm Delete(1)
+key Delete
+expect saves.count 1
+key Escape
+expect screen Battle
+# Campaign: saves between battles keep the campaign and the base.
+button Menu
+button OptionsQuit
+key Y
+button NewCampaign
+type Max
+button NewGameContinue
+key Escape
+expect screen Briefing
+key Return
+deploy Trooper
+tile 22 57
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+key Return
+expect screen Strategic
+save new
+expect screen Strategic
+button StrategicContinue
+expect screen BaseEditor
+expect credits 625
+save new
+expect screen BaseEditor
+button Menu
+button OptionsSave
+expect saves.entries.0.kind campaign
+expect saves.entries.0.name Max
+expect saves.entries.0.captured 1
+expect saves.entries.0.difficulty 4
+expect saves.entries.0.thumbnail true
+screenshot target/saves_campaign.png
+key Escape
+button Menu
+button OptionsQuit
+key Y
+button LoadCampaign
+expect saves.count 4
+expect saves.entries.0.autosave true
+# The base editor save.
+load 1
+expect screen BaseEditor
+expect credits 625
+expect campaign.name Max
+button Menu
+button OptionsQuit
+key Y
+load 2
+expect screen Strategic
+expect campaign.stage.stage strategic

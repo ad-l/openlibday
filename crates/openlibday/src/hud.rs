@@ -21,6 +21,7 @@ use crate::Viewer;
 mod base;
 mod front;
 mod options;
+mod saves;
 mod setup;
 mod strategic;
 
@@ -91,6 +92,8 @@ pub struct Gfx<'r> {
     grey: Option<(GreyKey, Texture<'r>)>,
     /// INTELLIGENCE map preview, by opening serial.
     intel: Option<(u64, Texture<'r>)>,
+    /// Saved games' pictures, by file and creation time.
+    saves: HashMap<(std::path::PathBuf, i64), Texture<'r>>,
     /// The cutscene frame shown, by (play serial, frame count).
     pub video: Option<((u64, usize), Texture<'r>)>,
 }
@@ -115,6 +118,7 @@ impl<'r> Gfx<'r> {
             provinces: HashMap::new(),
             grey: None,
             intel: None,
+            saves: HashMap::new(),
             video: None,
         }
     }
@@ -211,6 +215,12 @@ impl<'r> Gfx<'r> {
                     state
                 };
                 minimap::swatch_frame(owner) + state as u16
+            }
+            Button::SavesBack | Button::SavesOk
+                if matches!(viewer.screen, Screen::Saves { saving: true }) =>
+            {
+                // SAVE GAME's buttons follow LOAD GAME's.
+                button.frame_for(state, on) + (frame::SAVE_BACK - frame::LOAD_BACK)
             }
             _ => button.frame_for(state, on),
         };
@@ -1090,6 +1100,10 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             return Ok(());
         }
         Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
+        Screen::Saves { saving: false } => {
+            front::draw_main_menu(canvas, gfx, viewer)?;
+            return saves::draw(canvas, gfx, viewer);
+        }
         Screen::Sessions => return front::draw_sessions(canvas, gfx, viewer),
         Screen::Lobby => return front::draw_lobby(canvas, gfx, viewer),
         Screen::Tech { .. } => return setup::draw_tech(canvas, gfx, viewer),
@@ -1120,7 +1134,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             draw_battle_sidebar(canvas, gfx, viewer, scene, art)?;
             draw_report(canvas, gfx, viewer)?;
         }
-        Screen::Options { .. } => {
+        Screen::Options { .. } | Screen::Saves { .. } => {
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
                 Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
@@ -1128,7 +1142,11 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
                 Screen::BaseEditor => base::draw(canvas, gfx, viewer)?,
                 _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
             }
-            options::draw_options(canvas, gfx, viewer)?;
+            if matches!(viewer.screen, Screen::Saves { .. }) {
+                saves::draw(canvas, gfx, viewer)?;
+            } else {
+                options::draw_options(canvas, gfx, viewer)?;
+            }
         }
     }
     draw_bottom_bar(canvas, gfx, &layout)?;

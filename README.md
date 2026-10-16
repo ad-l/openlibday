@@ -232,11 +232,23 @@ lowered automatically when the window is too small for it. The bottom bar's
 MENU button opens the OPTIONS dialog: its table changes these settings at
 once and saves them (the arrows next to BACK scroll it; also the tile grid and terrain-only view, which are not
 saved), with the original's RESTART SCENARIO (surrender: the battle is
-lost), SAVE (a quick save), QUIT (both asked first) and BACK. The main menu's
+lost), SAVE (SAVE GAME, below), QUIT (both asked first) and BACK. The main menu's
 RESOLUTION opens it too, without RESTART SCENARIO and SAVE. Mouse clicks,
 the wheel, or Up/Down plus Left/Right/Space drive the table; scripts can use
 `option NAME [STEP]` and read `menu` in the state. Quick saves go to
 `saves\quick.json` in the same directory.
+
+Saves are unlimited. SAVE GAME (MENU > SAVE) and LOAD GAME (the main menu's
+LOAD CAMPAIGN) reuse the original dialogs with a scrolling list over their
+ten slots, newest first: a picture of the base (campaign) or the map, the
+campaign's name, continent, captured provinces and difficulty or the map's
+title and turn, the date and the number of players. SAVE GAME offers a new
+save first; overwriting asks for a second SAVE, and Delete (pressed twice)
+removes a save. LOAD GAME also lists the campaign's own save. Games can be
+saved during one's turn at this computer (not in network games) and, in a
+campaign, between battles (continent overview and base building). The files
+are `saves\games\*.json`; scripts use `savedir`, `save`, `load` and
+`saves` and read `saves` in the state (`scripts/saves.txt`).
 
 A save stores the battle's source scenario (a stock `.mdb`, or the original
 save's own `SCENARIO.MDB` when it is not a stock map), the turn clock,

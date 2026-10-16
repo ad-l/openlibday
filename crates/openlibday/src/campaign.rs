@@ -361,7 +361,7 @@ fn distances(size: i64, zone: &[(i64, i64)]) -> Vec<i64> {
 }
 
 impl Viewer {
-    fn campaign_save_path(&self) -> Option<PathBuf> {
+    pub(crate) fn campaign_save_path(&self) -> Option<PathBuf> {
         self.saves.as_ref().map(|d| d.join(SAVE))
     }
 

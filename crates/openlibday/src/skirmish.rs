@@ -921,7 +921,7 @@ impl Viewer {
     }
 
     /// Human `player`'s turn begins (handed to them if at this computer).
-    fn begin_player_turn(&mut self, player: i64) {
+    pub(crate) fn begin_player_turn(&mut self, player: i64) {
         self.flow.phase = Phase::Player;
         self.map.battle.clock.player = player;
         self.seats.hand_over(player);

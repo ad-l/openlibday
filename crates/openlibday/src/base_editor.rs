@@ -161,6 +161,18 @@ impl Viewer {
         self.screen = self.home();
     }
 
+    /// The base as edited so far (with a structure being moved put back),
+    /// for a saved game.
+    pub(crate) fn base_layout_now(&self) -> Option<BaseLayout> {
+        let e = self.base_editor.as_ref()?;
+        let original = e.original.as_ref()?;
+        let mut s = self.map.battle.scenario.clone();
+        if let Some((thing, _)) = &e.picked {
+            thing.clone().add(&mut s);
+        }
+        Some(BaseLayout::capture(&s, original, &self.defs))
+    }
+
     /// CAMPAIGN: keeps the base and returns to the continent overview.
     fn close_base_editor(&mut self) {
         self.base_put_back();

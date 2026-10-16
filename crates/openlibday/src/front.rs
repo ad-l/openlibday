@@ -164,7 +164,7 @@ impl Viewer {
                         .as_ref()
                         .is_none_or(|o| o.connecting.is_none())
             }
-            Button::LoadCampaign => self.campaign_saved(),
+            Button::LoadCampaign => self.any_saves(),
             Button::DifficultyLeft => self.front.difficulty > 0,
             Button::DifficultyRight => self.front.difficulty < DIFFICULTY_MAX,
             Button::NewGameContinue => !self.front.name.trim().is_empty(),
@@ -175,7 +175,7 @@ impl Viewer {
     pub(crate) fn front_activate(&mut self, button: Button) {
         match button {
             Button::NewCampaign => self.screen = Screen::NewGame,
-            Button::LoadCampaign => self.load_campaign(),
+            Button::LoadCampaign => self.open_saves(false),
             Button::MainSkirmish => {
                 if let Err(err) = self.open_selector() {
                     self.error = Some(err);

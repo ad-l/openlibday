@@ -37,6 +37,7 @@ mod moves;
 mod players;
 mod render;
 mod router;
+mod saves;
 mod script;
 mod settings;
 mod skirmish;
@@ -279,6 +280,8 @@ struct Viewer {
     fullscreen: Option<bool>,
     /// Main menu and NEW GAME dialog state.
     front: front::Front,
+    /// The LOAD GAME / SAVE GAME dialog.
+    saves_ui: saves::SavesUi,
     /// The campaign being played, if any.
     campaign: Option<campaign::Session>,
     /// The continent overview, while it is open.
@@ -575,6 +578,9 @@ impl Viewer {
             | Button::OptionsBack
             | Button::OptionsUp
             | Button::OptionsDown => self.menu_enabled(button),
+            Button::SavesBack | Button::SavesOk | Button::SavesUp | Button::SavesDown => {
+                self.saves_enabled(button)
+            }
             Button::EndTurn => self.flow.phase == Phase::Free || self.can_end_turn(),
             Button::SkirmishUp => self.flow.pick > 0,
             Button::SkirmishDown => self.flow.pick + 1 < self.flow.catalog.len(),
@@ -692,6 +698,9 @@ impl Viewer {
             | Button::OptionsBack
             | Button::OptionsUp
             | Button::OptionsDown => self.menu_activate(button),
+            Button::SavesBack | Button::SavesOk | Button::SavesUp | Button::SavesDown => {
+                self.saves_activate(button)
+            }
             Button::Yes | Button::No if matches!(self.screen, Screen::Options { .. }) => {
                 self.menu_activate(button)
             }
@@ -917,6 +926,7 @@ impl Viewer {
             menu: menu::Menu::default(),
             fullscreen: None,
             front: front::Front::default(),
+            saves_ui: saves::SavesUi::default(),
             campaign: None,
             strategic: None,
             base_editor: None,
