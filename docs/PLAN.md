@@ -135,8 +135,8 @@ Each milestone ends with something runnable and with automated tests.
 After M8: campaign (map, economy, research, alternate maps, colonies,
 counterattacks) and their save state — see [campaigns.md](campaigns.md) for
 the reverse-engineered rules, the data-driven campaign format and its
-milestones (C1 data model/importer done) — then multiplayer (lockstep over the deterministic
-simulation). Multiplayer compatibility with the original executable is not a goal.
+milestones (C1 data model/importer done) — then multiplayer (host-authoritative intents and resolved events, see
+[multiplayer.md](multiplayer.md)). Multiplayer compatibility with the original executable is not a goal.
 
 ## Research track (runs alongside M3-M7)
 
