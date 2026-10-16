@@ -7,13 +7,13 @@ executable's network protocol is not a goal.
 
 - 2–4 human players on home computers, one of them the **host**; no central
   server, no accounts.
-- The **host is authoritative**: it owns the only random number generator,
-  runs the AI, resolves every shot, drop, mine, reaction and reinforcement,
-  and decides when phases change. Clients only send requests and play back
-  what the host tells them.
-- Modes, in order: multiplayer skirmish (any scenario, humans + AI), death
-  match (`SCENS\DEATHM.ZIP`, all against all), co-op campaign (later, see
-  open questions).
+- **Co-operative only:** the humans play together against the AI, in
+  skirmishes and in the campaign. No player-versus-player (no death match)
+  for now.
+- The **host is authoritative**: it owns the rule RNG, runs the AI, orders
+  every command and decides when phases change. Clients send requests and
+  execute what the host tells them, with the host's dice.
+- The original has no fog of war, so every peer may see the whole state.
 - Single player keeps working unchanged; it becomes "a host with no clients".
 
 ## What the original did
@@ -39,60 +39,58 @@ server and a client (`CFH2ServerApp` / `CFH2ClientApp`, `CServerPhase*` /
 - starting zones merge by the number of human players (`0x44049C`, see the
   modding README).
 
-We follow the same shape: **requests up, resolved events down**.
+We follow the same shape, requests up and authority on the host, but send
+commands with the host's dice rather than resolved results (see below).
 
-## Model: host-authoritative command/event stream
+## Model: host-ordered commands with host seeds
 
-Pure lockstep (everyone simulates from the same seed and inputs) is simpler
-on the wire, but any divergence anywhere desyncs the game, and it lets every
-client predict hidden rolls. Instead:
+Every rule RNG draw happens when an action starts: a shot's result scenario,
+scatter, drop positions and damage are computed up front, and the AI's draws
+are its own decisions. So instead of shipping resolved outcomes:
 
-1. A client sends an **intent** (`Move { unit, path }`, `Shoot { unit,
-   target }`, `EndTurn`, `Deploy`, `BuySupport`, `LaunchSupport`, `Upgrade`,
-   `Chat`, ...).
+1. A client sends a **command** request (`Move { unit, steps }`,
+   `Shoot { unit, target }`, `Turn`, `Overwatch`, `EndTurn`, `Deploy`,
+   `Upgrade`, `LaunchSupport`, ...).
 2. The host validates it against its state (whose turn it is, ownership, AP,
-   reachability, money) and rejects or executes it.
-3. Execution produces an ordered list of **events** carrying every random
-   outcome already resolved (where a shot lands, the damage, which units
-   die, reaction fire, mines triggered, drop positions, ...).
-4. The host broadcasts the events. Every peer, the host included, applies
-   them through the *same* `apply(event)` code and animates them. Clients
-   never roll dice.
-5. After each batch every peer sends a **state hash**; a mismatch triggers a
-   full resync from the host's snapshot (the battle save JSON).
+   money) and rejects it, or appends it to the game's command stream with a
+   **fresh seed** drawn from its private RNG.
+3. Every peer, the host included, executes the stream in order, each command
+   once the previous one has finished playing, reseeding the rule RNG with
+   the command's seed. Nobody can predict a roll before the host has
+   accepted the command.
+4. The AI runs on the host only; its actions are commands like anyone
+   else's, so clients run the AI's commands, not the AI.
+5. After each command every peer sends a **state hash**; a mismatch makes the
+   host send a snapshot (the battle save JSON) to resynchronise.
 
-AI turns are the same thing: the AI produces intents on the host.
+This needs the simulation to be deterministic on every peer: the same
+outcome whatever the frame rate, animation speed options or window size.
 
-## Required refactor (milestone 0, useful even without networking)
+## Required refactor (MP0, useful even without networking)
 
-Today the `Viewer` mixes simulation and presentation. UI handlers mutate the
-world directly, `Shot` carries a whole result `Scenario` swapped in at a frame,
-and one `self.rng` serves both rules and cosmetics. Before any networking:
-
+- **State hash.** A stable hash of the simulation state (units, buildings,
+  terrain, mines, money, turn, phase, RNG state), never of presentation
+  state.
+- **Frame-rate independence.** Walks advance by the wall clock, a whole
+  walker's due steps at a time, so group walks (halted when one member is
+  spotted) and other overlapping animations can depend on frame timing and
+  on the speed options. Rule effects must happen in an order fixed by the
+  simulation. Test: the same script at different frame rates and speeds
+  ends with the same hash.
 - **Command layer.** Every rule-changing action goes through one
-  `Viewer::submit(Intent, player)` with a validation function. Mouse, keyboard,
-  the AI and the script runner all call it. The script runner's UI-level
-  commands stay; add simulation-level script commands for replay tests.
-- **Events out of resolution.** Split each action into *resolve* (rules +
-  RNG, host only) → `Vec<Event>` and *apply* (deterministic, all peers),
-  with animation driven from the event list. Start with the `Shot` result
-  (damage, removed units/buildings, ruins, explosions, reaction bursts),
-  then movement (interrupted moves, mines), supports (`support::execute`,
-  drops landing on occupied tiles) and turn changes (reinforcements, AP
-  regeneration, objectives, counterattacks).
-- **RNG split.** Rule RNG (host only) and a cosmetic RNG (local, never
-  affects state: smoke, scatter frames, sound variants). Audit the current
-  uses in `damage.rs`, `scatter.rs`, `support.rs`, `combat.rs`, `ai.rs`,
-  `automated.rs`, `moves.rs`, `campaign.rs`.
+  `Viewer::submit(Command)`, validated and queued until the simulation is
+  idle. Mouse, keyboard, the AI and the script runner all call it.
+- **Replay log.** Record the commands; replaying them from the same start
+  must reproduce the hash. This is the first networking test and gives
+  replays for free.
+- **Seeds.** `submit` takes an optional seed that reseeds the rule RNG
+  (unused in single player, whose rolls stay as they are). Presentation
+  never draws from the rule RNG.
 - **Players.** Replace the `PLAYER = 1` / `AI = 0` constants and
   `skirmish_players()` with a player table: slot, name, colour, controller
-  (local human / remote human / AI), team, money, tech, supports budget. The
-  UI "local player" becomes a parameter. Turn order, objectives, AI budget,
-  drop tech, zone merge and reinforcement code read from the table.
-- **State hash.** A stable hash of the simulation state (units, buildings,
-  terrain damage, money, turn, RNG position), never of presentation state.
-- **Replay log.** Record intents and events; replaying them must reproduce
-  the hash. This is the first networking test and gives replays for free.
+  (local human / remote human / AI), money, tech. The UI's "local player"
+  becomes a parameter. Turn order, objectives, drop tech, zone merge and
+  reinforcement code read from the table.
 
 Single player must pass all existing tests and scripts after each step.
 
@@ -118,37 +116,29 @@ Single player must pass all existing tests and scripts after each step.
 ## Protocol sketch
 
 ```
-Client → Host: Hello, Ready, Intent(seq, Intent), StateHash(turn, seq, hash),
+Client → Host: Hello, Ready, Request(id, Command), StateHash(seq, hash),
                Chat, ResyncRequest, Leave
 Host → Client: Welcome(slot, lobby), Lobby(state), Start(snapshot, players),
-               Events(seq, [Event]), Reject(seq, reason), Phase(..),
-               Snapshot(state), Chat, Kick
+               Command(seq, player, seed, Command), Reject(id, reason),
+               Snapshot(seq, state), Chat, Kick
 ```
 
-Events are numbered. A client that misses a message reconnects and asks for
-everything after its last sequence number, or for a snapshot.
+Commands are numbered. A client that misses a message reconnects and asks
+for everything after its last sequence number, or for a snapshot.
 
 ## Hidden information
 
-The host sends each client only what that player may know:
-
-- enemy mines (`mines.rs`) are visible only to their owner and to players who
-  detected them;
-- the AI's budget and plans;
-- enemy money and tech, if the original hides them.
-
-Movement through an unseen mine field arrives as a move event that ends with a
-mine-explosion event. Fog of war, if the original has one for multiplayer,
-gets the same filtering. The filtering lives in a single `visible_to(player,
-&Event)` function.
+None: the original has no fog of war. Mines stay hidden from players who
+have not detected them in the interface only; since the game is co-operative
+this is not a cheating concern.
 
 ## Game flow and UI
 
 - **Front menu:** enable `Button::MultiPlayer` (currently disabled in
   `front.rs`). It leads to *Host* / *Join* (LAN list plus manual address).
 - **Lobby** (host):
-  - map from the skirmish list or `DEATHM.ZIP`;
-  - slots 1–4, each human, AI or closed, with colour and team;
+  - a skirmish map, or a new or saved campaign;
+  - slots 1–4, each human or closed, with colour;
   - starting resources and the turn timer ("SET TIME");
   - chat, ready flags, Start.
   - Clients see the same screen read-only, except for their name and ready flag.
@@ -156,31 +146,30 @@ gets the same filtering. The filtering lives in a single `visible_to(player,
   player gets their starting zone, merged per human count as `0x44049C`
   does. The host starts the battle when everyone is ready or the timer runs out.
 - **Tactical turns:** sequential, one player at a time in scenario order. The
-  others watch the events animate, with input locked and the HUD showing whose
-  turn it is. Reaction fire against a waiting player is resolved by the host
-  inside the active player's events. The turn timer ends the turn
-  automatically.
-- **Aftermath:** host-decided win/loss per player and team. Death match ends
-  when one player or team is left.
+  others watch the commands play, with input locked and the HUD showing whose
+  turn it is. Reaction fire against a waiting player plays inside the active
+  player's command. The turn timer ends the turn automatically.
+- **Aftermath:** the humans win or lose together, decided on the host.
 - **Chat:** an overlay in all phases, with `CHAT.WAV`.
 
 ## Disconnects, saves, cheating
 
 - **Disconnect:** pause the game and wait N seconds for a reconnect, matched by
   name or token. After that the host may hand the slot to the AI or drop it.
-  On reconnect the client receives a snapshot and the events since.
+  On reconnect the client receives a snapshot and the commands since.
 - **Saves:** only the host saves; it reuses the battle save JSON plus the
   player table. Loading in the lobby re-binds slots to names.
 - **Host migration:** not planned. If the host leaves, the game ends with a
   save.
 - **Cheating:** clients can't change outcomes because every intent is
-  validated and the rolls stay on the host. The host can cheat, which is
+  validated and the seeds come from the host. The host can cheat, which is
   acceptable among friends. Debug and cheat keys are disabled for clients.
 
 ## Testing
 
-- Replay determinism: script a battle, record the log, replay it headless,
-  and compare the hashes.
+- Replay determinism: script a battle, record the commands, replay them
+  headless, and compare the hashes; run the same script at different frame
+  rates and speed options and compare the hashes.
 - In-process loopback: a host plus N clients over channels in one headless
   process. Script steps can act as any player
   (`as 2 click ...`), and every turn asserts that the hashes are equal.
@@ -194,26 +183,23 @@ gets the same filtering. The filtering lives in a single `visible_to(player,
 
 | # | Content | Done when |
 |---|---------|-----------|
-| MP0 | Command layer, resolve/apply events, RNG split, player table, state hash, replay log | single player unchanged; replay test passes |
+| MP0 | State hash, frame-rate independence, command layer, replay log, seeds, player table | single player unchanged; replay and frame-rate tests pass |
 | MP1 | In-process loopback host + client, 2-player hotseat-over-channels skirmish | loopback script plays a full battle with equal hashes |
 | MP2 | TCP transport, handshake, manual IP join, waiting/turn HUD, chat | two local processes finish a skirmish |
-| MP3 | Lobby UI, slots (human/AI/closed), teams, zone merge, turn timer | 3–4 players + AI from the menu |
+| MP3 | Lobby UI, slots (human/closed), zone merge, turn timer | 3–4 players against the AI from the menu |
 | MP4 | LAN discovery, UPnP/NAT-PMP, join code | internet game between two homes |
-| MP5 | Death match maps and aftermath, hidden info filtering | `DEATHM.ZIP` maps playable |
-| MP6 | Disconnect/reconnect, resync, host saves/loads | fault-injection tests pass |
-| MP7 | (optional) co-op campaign / counterattacks | to be designed |
+| MP5 | Disconnect/reconnect, resync, host saves/loads | fault-injection tests pass |
+| MP6 | Co-op campaign: shared continent, bases, counterattacks | a continent played by two players |
+| later | Player versus player (`SCENS\DEATHM.ZIP`) | not planned yet |
 
 ## Open questions
 
 - **Co-op campaign:** the original has `CMenuNewCampaignMulti` and
   `CServerModeCampaign`, and the campaign data contains "the other players'
-  bases" (`campaign.rs`). We need to find out whether it was shared co-op or
-  competitive provinces before designing MP7.
-- **Teams:** check whether the original supports alliances, or whether death
-  match is strictly free-for-all.
-- **Turn order and AI with several humans:** do all human players move before
-  the AI, or are turns interleaved in slot order?
-- **Fog of war:** does the original hide units in multiplayer?
+  bases" (`campaign.rs`). We need to find out how the continent, money and
+  research are shared before designing MP6.
+- **Turn order with several humans:** do all human players move before the
+  AI, one after the other, or at the same time?
 
 These questions can be answered by more disassembly of `CServerPhaseTactic`,
-`CServerModeDeathMatch::init_scenario` and the multiplayer menus.
+`CServerModeCampaign` and the multiplayer menus.
