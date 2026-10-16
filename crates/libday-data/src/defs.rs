@@ -114,6 +114,8 @@ pub struct UnitType {
     pub width: i64,
     pub height: i64,
     pub movement: i64,
+    /// `category`: 0 hover/air, 1 ground, 2 naval.
+    pub category: i64,
     pub armor: i64,
     pub action_points: i64,
     /// AP of one shot (`actionPointsShoot`), reserved by overwatch.
@@ -509,6 +511,7 @@ impl Definitions {
                 width: t.int(r, "SizeX")?,
                 height: t.int(r, "SizeY")?,
                 movement: t.int(r, "Movement")?,
+                category: t.int_or(r, "category", 1)?,
                 armor: t.int(r, "Armor")?,
                 action_points: t.int(r, "actionPoints")?,
                 shoot_action_points: t.int_or(r, "actionPointsShoot", 0)?,

@@ -1,0 +1,30 @@
+# AI supports (docs/ai.md section 6): on the base, an alien unit with
+# nothing to shoot is flown next to the human units by a transport (40)
+# from the continent's AI budget (AiAutoUnitRes 60, x1.5 on the base).
+# Run: openlibday --headless --script scripts/ai_supports.txt  (needs LIBDAY_ROOT)
+ai legacy
+button NewCampaign
+type Max
+button NewGameContinue
+key Return
+deploy Trooper
+tile 22 57
+deploy Trooper
+tile 23 57
+key Return
+key Y
+expect automated.ai_budget 90
+wait 2000
+idle
+# A Footman far beyond the legacy planning window has no target.
+expect units.4.id 115
+place 4 2 2
+button EndTurn
+idle 20000
+expect phase Player
+expect automated.ai_budget 50
+expect units.2.id 115
+expect units.2.x 25
+expect units.2.y 49
+expect units.2.ap 0
+echo ai supports test passed

@@ -503,6 +503,7 @@ mod tests {
             width: 1,
             height: 1,
             movement: 0,
+            category: 1,
             armor,
             action_points: 20,
             shoot_action_points: 0,

@@ -97,6 +97,8 @@ pub struct Flow {
     pub support_scroll: usize,
     pub pickup: Option<(i64, i64)>,
     pub used_once: Vec<i64>,
+    /// What the AI may still spend on supports this battle.
+    pub ai_budget: i64,
     /// Technology buildings captured by the player's units (ids).
     pub tech: BTreeSet<i64>,
 }
@@ -120,6 +122,7 @@ impl Flow {
             support_scroll: 0,
             pickup: None,
             used_once: Vec::new(),
+            ai_budget: 0,
             tech: BTreeSet::new(),
         }
     }
@@ -673,6 +676,7 @@ impl Viewer {
         self.flow.phase = Phase::Player;
         self.flow.reinforcing = false;
         self.flow.used_once.clear();
+        self.flow.ai_budget = self.ai_support_budget();
         self.flow.tech.clear();
         if let Some(setup) = &mut self.flow.setup {
             setup.deployed.clear();

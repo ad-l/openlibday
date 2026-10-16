@@ -334,9 +334,18 @@ the centre.
 ### 3.7 No target in a counter-attack: transport (`0x46d3e0`)
 
 This applies only in the campaign, with `counterAttack` set and AP > 10,
-and not for boats or submarines. The unit buys support type 7 if the
-support budget allows. It is airlifted to a random placeable tile within 10
-of the first hostile unit that has one.
+and not for boats or submarines (Movement 4 and 6). `counterAttack` is set
+by `CServerPhaseCounterAttTactic`, which plays both the first city attack
+and the counterattacks on the base. The unit buys support type 7 (the
+alien Transport) if the continent offers it (`AI automated available`)
+and the support budget allows; the cost is taken before a tile is sought.
+For each hostile unit in list order, the tiles of its footprint grown by
+10 on every side are shuffled (`0x4412f3`: each slot swapped with a
+random one) and the first where the unit can be put (`0x42cf18`) is the
+destination. The transport flies the unit there.
+
+The support budget (`brain+0x20`) is set once per battle: the continent's
+`AiAutoUnitRes`, ×1.5 (truncated) with `counterAttack`.
 
 ## 4. shoot_overwatch — opportunistic fire (`0x46f11e`)
 
@@ -475,10 +484,14 @@ The AI can buy supports in three ways:
     H_Grenadier, H_Assault Trooper, H_LAV and H_Light_Tank, compute that
     type's share in percent.
   - If `N > 30` and a type's share is over 60%, buy Shubblar Pyro-Maniac
-    drops (Drop-category support entry 19): 3, 2 or 1 drops when the AI's
-    money exceeds 1200, 700 or 300.
-  - Each drop targets the first hostile unit with armour ≤ 30 that is a
-    trooper or vehicle, starting from a random index.
+    drops (Drop-category support entry 19): 3, 2 or 1 drops when the
+    map's `ReinfRes` exceeds 1200, 700 or 300. Each drop's cost is added
+    to the budget and taken off again, so the drops are free.
+  - Each drop (`0x47084a`) targets the first hostile unit with current
+    armour ≤ 30 whose type `category` is 0 (hover) or 1 (ground), scanning
+    forward from `rand() % (unit count)` without wrapping. No unit, no
+    drop.
+  - Of the skirmishes only the Testing Ground has `ReinfRes` over 300.
 - **Dynamic support** (stages 2 and 7, campaign only):
   - Chance: campaign `+0x90`, or 25 in a counter-attack.
   - Picks a random available support: mine detector, medic, fighters/Gene
@@ -512,11 +525,17 @@ The AI can buy supports in three ways:
   turn change).
 - The C runtime `rand()` stream is not reproduced bit-for-bit. The AI uses
   the game's random source for the order probability rolls (each AI turn).
-- Not emulated: supports and transport requests (stages 2, 3, 6 and 7; need
-  automated units), the counter-attack, the seven-sweep limit, the teleport
+- Supports: stage 3's drops play one per brain step, each target chosen
+  once the previous drop has landed; stage 6 launches the authored
+  supports one at a time before the brain runs; the counterattack
+  transport (§3.7) replaces the centre walk on the base.
+- Not emulated: the dynamic support purchases (stages 2 and 7), the
+  seven-sweep limit, the teleport
   single-step path, the 4000 ms time slices, and the centre walk on a stale
   grid when the unit has under 4 AP.
 - The view follows the AI: it centres on a walk's destination before the
   unit sets off, and on a unit that fires without moving. Supports already
   centre on their target before their animation.
-- `scripts/ai.txt` plays modern, legacy and off turns on the Testing Ground.
+- `scripts/ai.txt` plays modern, legacy and off turns on the Testing Ground;
+  `scripts/ai_supports.txt` checks the counterattack transport and the
+  campaign budget.

@@ -786,6 +786,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "armed": viewer.armed_support().map(|a| a.id),
         "pickup": viewer.flow.pickup.map(|(x, y)| [x, y]),
         "legs": viewer.supports.len(),
+        "ai_budget": viewer.flow.ai_budget,
         "scripted": scenario
             .info
             .supports
@@ -854,6 +855,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    state["reinf_res"] = json!(scenario.info.reinf_res);
     state["front"] = json!({
         "name": viewer.front.name,
         "difficulty": viewer.front.difficulty,

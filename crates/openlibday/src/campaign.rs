@@ -432,6 +432,36 @@ impl Viewer {
         }
     }
 
+    /// The AI's support budget for a battle (`brain+0x20`, set by
+    /// `0x46f8b3`): the continent's `AiAutoUnitRes`, half as much again
+    /// when the base is attacked; none in skirmishes.
+    pub(crate) fn ai_support_budget(&self) -> i64 {
+        let Some(res) = self
+            .campaign_battle()
+            .and(self.campaign.as_ref())
+            .and_then(|c| c.continent())
+            .map(|c| c.ai_automated.resources)
+        else {
+            return 0;
+        };
+        if self.defending_base() {
+            (res as f64 * 1.5) as i64
+        } else {
+            res
+        }
+    }
+
+    /// Whether the continent lets the AI call in automated unit `id`
+    /// (`AI automated available`, `0x474802`).
+    pub(crate) fn ai_support_available(&self, id: i64) -> bool {
+        self.campaign_battle().is_some()
+            && self
+                .campaign
+                .as_ref()
+                .and_then(|c| c.continent())
+                .is_some_and(|c| c.ai_automated.types.contains(&id))
+    }
+
     /// Whether the battle is fought on the base (the AI moves first).
     pub(crate) fn defending_base(&self) -> bool {
         matches!(

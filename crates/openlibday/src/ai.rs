@@ -10,6 +10,7 @@ use libday_data::scenario::{Target as Goal, Unit};
 use libday_data::{Definitions, Scenario};
 use libday_view::fire::{self, Checker, Fire, Target};
 use libday_view::movement::{self, Access, DIRS, Flood, MoveGrid, Step, executable_steps};
+use libday_view::support::placeable;
 
 use crate::Viewer;
 use crate::settings::AiMode;
@@ -27,6 +28,12 @@ const WALL_CATEGORY: i64 = 7;
 const MINE_CATEGORY: i64 = 8;
 /// AP an action needs to start.
 const MIN_AP: i64 = 4;
+/// Human types stage 3 counts (`UNIT TYPE ID LOOKUP`): Trooper,
+/// Grenadier, Elite (Assault) Trooper, LAV and Light Tank.
+const HORDE_TYPES: [i64; 5] = [2, 56, 58, 8, 9];
+/// Automated units: the Shubblar Pyro-Maniac drop and the alien transport.
+const PYRO_DROP: i64 = 19;
+const TRANSPORT: i64 = 7;
 
 /// What a target record points at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +168,8 @@ pub(crate) struct Brain {
     batch: Vec<(i64, (i64, i64))>,
     /// The goto batch is walking (`0x47142f`).
     flushing: bool,
+    /// Stage 3 Pyro-Maniac drops still to launch.
+    drops: u8,
 }
 
 impl Brain {
@@ -174,6 +183,7 @@ impl Brain {
             best: Record::none(),
             batch: Vec::new(),
             flushing: false,
+            drops: 0,
         }
     }
 }
@@ -192,6 +202,24 @@ enum Issued {
 
 fn is_static(k: &UnitType) -> bool {
     matches!(k.movement, 0 | 8)
+}
+
+/// Stage 3's Pyro-Maniac drops against hostile units of types `kinds`
+/// with `money` (the map's `ReinfRes`): 3, 2 or 1 over 1200, 700 or 300
+/// when over 30 units are mostly (over 60%) of one horde type. Their cost
+/// is added to the support budget and taken off it again.
+fn drop_count(kinds: &[i64], money: i64) -> u8 {
+    let n = kinds.len();
+    let horde = HORDE_TYPES
+        .iter()
+        .any(|&t| n > 30 && kinds.iter().filter(|&&k| k == t).count() * 100 > n * 60);
+    match money {
+        _ if !horde => 0,
+        r if r > 1200 => 3,
+        r if r > 700 => 2,
+        r if r > 300 => 1,
+        _ => 0,
+    }
 }
 
 fn ap_of(defs: &Definitions, u: &Unit) -> i64 {
@@ -609,7 +637,16 @@ impl Viewer {
         match b.stage {
             0 => {
                 self.build_orders(b);
-                b.stage = 4;
+                b.drops = self.pyro_drops();
+                b.stage = 3;
+            }
+            3 => {
+                if b.drops == 0 {
+                    b.stage = 4;
+                } else {
+                    b.drops -= 1;
+                    self.pyro_drop();
+                }
             }
             4 => {
                 self.build_shooters(b);
@@ -718,6 +755,95 @@ impl Viewer {
             .filter_map(|u| Order::from_id(u.order.id).map(|o| Action::new(u.id, o)))
             .collect();
         b.orders.sort_by_key(|a| a.order.id());
+    }
+
+    /// Stage 3 (`0x46ff88`): on the first four turns, two times in three,
+    /// Pyro-Maniac drops against a horde of light human units: over 30
+    /// hostile units, over 60% of them of one type.
+    fn pyro_drops(&mut self) -> u8 {
+        if self.rng.rand() % 100 > 66 || self.map.battle.clock.turn > 4 {
+            return 0;
+        }
+        let defs = &self.defs;
+        let hostiles: Vec<i64> = self
+            .units()
+            .iter()
+            .filter(|u| hostile(defs, u))
+            .map(|u| u.kind)
+            .collect();
+        drop_count(&hostiles, self.map.battle.scenario.info.reinf_res)
+    }
+
+    /// `0x47084a`: one drop on the first hostile soft land or hover unit
+    /// (armour ≤ 30) from a random place in the unit list, wrapping not.
+    fn pyro_drop(&mut self) {
+        let len = self.units().len() as i64;
+        if len == 0 {
+            return;
+        }
+        let start = (self.rng.rand() % len) as usize;
+        let defs = &self.defs;
+        let target = self.units()[start..].iter().find(|u| {
+            hostile(defs, u)
+                && defs.unit_tech(u.kind, u.tech).is_some_and(|k| {
+                    u.armor.unwrap_or(k.armor) <= 30 && matches!(k.category, 0 | 1)
+                })
+        });
+        if let Some(u) = target {
+            let at = (u.x, u.y);
+            self.launch_support(PYRO_DROP, AI, at, None);
+        }
+    }
+
+    /// `0x46d3e0`: in a battle on the base, a unit with nothing to shoot
+    /// is flown by an alien transport next to the human units.
+    fn counter_transport(&mut self, idx: usize) {
+        let unit = self.units()[idx].clone();
+        let Some(k) = self.defs.unit_tech(unit.kind, unit.tech) else {
+            return;
+        };
+        // Boats and submarines.
+        if matches!(k.movement, 4 | 6) || self.ap(idx) < 10 {
+            return;
+        }
+        let Some(cost) = self.defs.automated.get(&TRANSPORT).map(|a| a.cost) else {
+            return;
+        };
+        if !self.ai_support_available(TRANSPORT) || cost > self.flow.ai_budget {
+            return;
+        }
+        self.flow.ai_budget -= cost;
+        let s = &self.map.battle.scenario;
+        let targets: Vec<(i64, i64, i64, i64)> = s
+            .units
+            .iter()
+            .filter(|u| hostile(&self.defs, u))
+            .map(|u| {
+                let (w, h) = self
+                    .defs
+                    .unit_tech(u.kind, u.tech)
+                    .map_or((1, 1), |k| (k.width.max(1), k.height.max(1)));
+                (u.x - 10, u.y - 10, u.x + w + 10, u.y + h + 10)
+            })
+            .collect();
+        for (x0, y0, x1, y1) in targets {
+            let mut tiles: Vec<(i64, i64)> = (x0..x1)
+                .flat_map(|x| (y0..y1).map(move |y| (x, y)))
+                .collect();
+            // `0x4412f3` shuffles the rectangle's tiles.
+            for i in 0..tiles.len() {
+                let j = (self.rng.rand() % tiles.len() as i64) as usize;
+                tiles.swap(i, j);
+            }
+            let s = &self.map.battle.scenario;
+            let dest = tiles
+                .into_iter()
+                .find(|&t| placeable(s, &self.defs, unit.kind, unit.tech, AI, t));
+            if let Some(dest) = dest {
+                self.launch_support(TRANSPORT, AI, (unit.x, unit.y), Some(dest));
+                return;
+            }
+        }
     }
 
     /// Stage 4: every unit that could fire, towers first.
@@ -939,7 +1065,13 @@ impl Viewer {
                 a.state += 1;
                 if b.best.score == SENTINEL {
                     a.state = 3;
-                    self.walk_to_centre(b.mode, a, idx, grid);
+                    if self.defending_base() {
+                        if self.ap(idx) > 10 {
+                            self.counter_transport(idx);
+                        }
+                    } else {
+                        self.walk_to_centre(b.mode, a, idx, grid);
+                    }
                 }
             }
             1 => {
@@ -1739,6 +1871,27 @@ mod tests {
             cost,
             stop,
         }
+    }
+
+    #[test]
+    fn pyro_drops_need_a_horde_and_money() {
+        let mut kinds = vec![2; 19];
+        kinds.extend([9; 12]);
+        // 31 units, 61% troopers.
+        assert_eq!(drop_count(&kinds, 1201), 3);
+        assert_eq!(drop_count(&kinds, 1200), 2);
+        assert_eq!(drop_count(&kinds, 701), 2);
+        assert_eq!(drop_count(&kinds, 301), 1);
+        assert_eq!(drop_count(&kinds, 300), 0);
+        // Exactly 60% is not enough, nor are 30 units.
+        assert_eq!(
+            drop_count(&[[2; 21].as_slice(), &[9; 14]].concat(), 5000),
+            0
+        );
+        assert_eq!(drop_count(&[56; 30], 5000), 0);
+        assert_eq!(drop_count(&[56; 31], 5000), 3);
+        // Other types do not count.
+        assert_eq!(drop_count(&[1; 40], 5000), 0);
     }
 
     #[test]
