@@ -497,9 +497,11 @@ impl Viewer {
             .collect();
         for s in self.flights.iter().chain(&self.shot) {
             let f = s.frame(self.clock.now());
+            // Simultaneous shots (reaction fire) by shooter.
+            let base = 1000 + 100 * s.unit;
             if s.projectile(f).is_some() {
                 out.push(Playing {
-                    slot: 1,
+                    slot: base + 1,
                     name: shot::animation_name(&s.image, s.owner, Anim::Projectile, 0),
                     started: s.started,
                     frame: f - s.launch,
@@ -507,7 +509,7 @@ impl Viewer {
             }
             if let Some(frame) = s.impact(f) {
                 out.push(Playing {
-                    slot: 2,
+                    slot: base + 2,
                     name: s.impact_name.clone(),
                     started: s.started,
                     frame,
@@ -515,7 +517,7 @@ impl Viewer {
             }
             for (i, e, frame) in s.explosions(f) {
                 out.push(Playing {
-                    slot: 3 + i,
+                    slot: base + 3 + i,
                     name: e.name.clone(),
                     started: s.started,
                     frame,
@@ -706,7 +708,18 @@ impl Viewer {
     /// The walking and shooting units: centre (map pixels), facing,
     /// animation frame counter and the tile whose depth each is drawn at.
     pub(crate) fn walkers(&self) -> Vec<Walker> {
-        let mut out: Vec<Walker> = self.shooter().into_iter().collect();
+        let mut out: Vec<Walker> = self
+            .shot
+            .as_ref()
+            .and_then(|s| self.shooter(s, 0))
+            .into_iter()
+            .collect();
+        // Reaction fire: the other shooters of the round.
+        for s in &self.flights {
+            if self.shot.as_ref().is_none_or(|c| c.unit != s.unit) {
+                out.extend(self.shooter(s, 10_000 + s.unit));
+            }
+        }
         out.extend(self.gunners());
         for (k, m) in self.motions.iter().enumerate() {
             let slot = if k == 0 { 0 } else { 100 + k };
@@ -715,8 +728,7 @@ impl Viewer {
         out
     }
 
-    fn shooter(&self) -> Option<Walker> {
-        let s = self.shot.as_ref()?;
+    fn shooter(&self, s: &crate::combat::Shot, slot: usize) -> Option<Walker> {
         let (anim, frame) = s.shooter(s.frame(self.clock.now()))?;
         let unit = self.map.battle.scenario.units.get(s.unit)?;
         let kind = self.defs.unit(unit.kind)?;
@@ -734,7 +746,7 @@ impl Viewer {
                 unit.y + kind.height.max(1) - 1,
             ),
             under: None,
-            slot: 0,
+            slot,
             started: s.started,
         })
     }

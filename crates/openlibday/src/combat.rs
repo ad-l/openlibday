@@ -39,8 +39,8 @@ fn mine_animation(image: &str) -> String {
 }
 
 /// Reaction fire at a unit spotted moving ([`overwatch`]): rounds in which
-/// every hostile unit that can fire at it on overwatch shoots once, while
-/// one did and it stands.
+/// every hostile unit that can fire at it on overwatch shoots once, all at
+/// the same time, while one did and it stands.
 pub struct Reaction {
     pub target: usize,
     /// Units still to consider this round, last first.
@@ -204,6 +204,13 @@ pub(crate) fn still_hostile(scenario: &Scenario, unit: usize, target: Target) ->
             .walls
             .iter()
             .any(|w| (w.x, w.y) == (x, y) && w.owner != owner)
+}
+
+/// Notes that someone fired in the reaction round.
+fn r_fired(reaction: &mut Option<Reaction>) {
+    if let Some(r) = reaction {
+        r.fired = true;
+    }
 }
 
 /// Chebyshev distance between two tiles.
@@ -684,6 +691,7 @@ impl Viewer {
             self.map.battle.scenario.ruins.extend(done);
             self.rebuild();
         }
+        self.unhide_flight_shooters(now);
         let landed = self.flights.iter().all(|f| f.result.is_none());
         let Some(s) = &self.shot else {
             if self.flights.is_empty() && self.reaction.is_some() {
@@ -796,16 +804,22 @@ impl Viewer {
         self.next_reaction();
     }
 
-    /// Starts the next reaction shot (`0x41a46b`); returns whether one is
-    /// playing, ending the reaction fire otherwise.
+    /// Starts the reaction shots of a round (`0x41a46b`) together, their
+    /// damage resolved in firing order; returns whether any is playing,
+    /// ending the reaction fire otherwise. A shot that destroys something
+    /// is the round's last to leave (the unit indices shift when it lands);
+    /// the rest of the round fires after it.
     fn next_reaction(&mut self) -> bool {
-        let units = self.map.battle.scenario.units.len();
         loop {
+            let units = self.map.battle.scenario.units.len();
             let Some(r) = &mut self.reaction else {
-                return false;
+                return !self.flights.is_empty();
             };
             let target = r.target;
             let Some(shooter) = r.queue.pop() else {
+                if !self.flights.is_empty() {
+                    return true;
+                }
                 if !r.fired || target >= units {
                     self.reaction = None;
                     return false;
@@ -814,15 +828,47 @@ impl Viewer {
                 r.queue = (0..units).rev().collect();
                 continue;
             };
-            if overwatch::reacts(&self.map.battle.scenario, &self.defs, shooter, target) {
-                self.start_shot(shooter, Target::Unit(target), false, false);
-                if self.shot.is_some() {
-                    if let Some(r) = &mut self.reaction {
-                        r.fired = true;
-                    }
-                    return true;
-                }
+            let scenario = Self::projected(&self.flights, &self.map.battle.scenario);
+            if !overwatch::reacts(scenario, &self.defs, shooter, target) {
+                continue;
             }
+            self.start_shot(shooter, Target::Unit(target), false, false);
+            let Some(s) = self.shot.take() else {
+                continue;
+            };
+            r_fired(&mut self.reaction);
+            if s.removed_units.is_empty()
+                && s.removed_buildings.is_empty()
+                && s.explosions.is_empty()
+            {
+                self.flights.push(s);
+            } else {
+                self.shot = Some(s);
+                return true;
+            }
+        }
+    }
+
+    /// Shows the units of shots in the air again once their fire
+    /// animations are over, unless another shot animates them.
+    fn unhide_flight_shooters(&mut self, now: Duration) {
+        let animating = |u: usize| {
+            self.flights
+                .iter()
+                .chain(&self.shot)
+                .any(|s| s.unit == u && s.shooter(s.frame(now)).is_some())
+        };
+        let done: Vec<usize> = self
+            .flights
+            .iter()
+            .filter(|f| f.shooter(f.frame(now)).is_none() && !animating(f.unit))
+            .map(|f| f.unit)
+            .filter(|u| self.options.hidden_units.contains(u))
+            .filter(|u| !self.motions.iter().any(|m| m.unit == *u))
+            .collect();
+        if !done.is_empty() {
+            self.options.hidden_units.retain(|u| !done.contains(u));
+            self.rebuild();
         }
     }
 
@@ -880,6 +926,14 @@ impl Viewer {
                 Some(g)
             })
             .collect();
+        // Shots of the round that already landed: their shooters may still
+        // be lowering their weapons.
+        for f in &mut self.flights {
+            match damage::remap(f.unit, &removed) {
+                Some(u) => f.unit = u,
+                None => (f.begin, f.shoot, f.end) = (0, 0, 0),
+            }
+        }
         if let Some(r) = &mut self.reaction {
             r.queue = r
                 .queue

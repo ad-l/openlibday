@@ -79,6 +79,27 @@ expect units.77.y 30
 expect units.77.ap 190
 expect units.29.ap 10
 expect sounds.-1 TLTK\P0\TLTK0I0.SMK
+# Reaction fire is simultaneous: the Light Tank and a Dreadnought beside it
+# both fire at a Main Tank spotted on its first step, their shots in the air
+# together.
+ap 29 60
+place 31 72 28
+ap 31 150
+place 77 62 30
+tile 62 30
+expect selected 77
+tile 69 29
+tile 69 29
+wait 9
+expect reaction 77
+expect flights 2
+idle
+expect reaction null
+expect flights 0
+expect units.77.name Main Tank
+ap 29 10
+place 31 84 68
+ap 31 190
 # Hostile hover (0x4519cf): AI walls, AI buildings and visible AI mines are
 # targets; hidden mines and our own mines are not.
 place 77 44 86
