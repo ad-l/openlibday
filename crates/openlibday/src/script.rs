@@ -751,6 +751,8 @@ pub fn state(viewer: &Viewer) -> Value {
     let setup = viewer.flow.setup.as_ref().map(|s| {
         json!({
             "points": s.points,
+            "units": s.units,
+            "tech": s.tech,
             "row": s.row,
             "deployed": s.deployed,
         })

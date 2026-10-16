@@ -299,7 +299,7 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | Campaign tactic, capture, credit rewards, variant swap on loss done; army selection pending |
 | C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster scattered 12–14 tiles from the zone (11 from units and towers) moving first, defence towers as player units, 150 tech on a win, campaign over on a loss |
 | C6 | Continent transitions, intro/end videos, game won/lost | |
-| C7 | Tech/research spending between battles | |
+| C7 | Tech/research spending between battles | **Done** (`openlibday::army`): the technology dialog after the first city attack (CONTINUE to the overview) and ARMY in base building (dialog over the greyed base, BACK); units from the base's buildings, `CostToNextTL` spent from the campaign's tech points, levels kept in `unit_tech` and used when deploying |
 
 ## 7. Open questions
 

@@ -482,6 +482,8 @@ pub enum Screen {
     },
     /// Base building between battles.
     BaseEditor,
+    /// ARMY in base building: the technology dialog over the greyed base.
+    Army,
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -1160,6 +1162,18 @@ impl Layout {
                     Button::TechContinue
                 });
             }
+            Screen::Army => buttons.extend([
+                Button::TechLeft,
+                Button::TechUp,
+                Button::TechDown,
+                Button::TechRight,
+                Button::AutoLeft,
+                Button::AutoUp,
+                Button::AutoDown,
+                Button::AutoRight,
+                Button::TechUpgrade,
+                Button::TechBack,
+            ]),
             Screen::Deploy => buttons.extend(DEPLOY_BUTTONS),
             Screen::Automated => buttons.extend([
                 Button::AutomatedMap,

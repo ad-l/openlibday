@@ -124,12 +124,8 @@ fn rate_of_fire(k: &UnitType) -> i64 {
     k.action_points / k.shoot_action_points.max(1)
 }
 
-pub(super) fn draw_tech(
-    canvas: &mut Canvas<Window>,
-    gfx: &mut Gfx,
-    viewer: &Viewer,
-    read_only: bool,
-) -> Result {
+pub(super) fn draw_tech(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let read_only = viewer.screen == (Screen::Tech { read_only: true });
     let layout = viewer.layout();
     let (s, fonts) = (layout.scale, &viewer.fonts);
     let px = TEXT_PX * s as f32;
@@ -138,7 +134,7 @@ pub(super) fn draw_tech(
     let (f, ex, ey) = TECH_EMBLEM;
     let e = layout.in_tech(Rect::new(ex, ey, 0, 0));
     gfx.frame(canvas, f, e.x, e.y, s)?;
-    buttons(canvas, gfx, viewer, Screen::Tech { read_only })?;
+    buttons(canvas, gfx, viewer, viewer.screen)?;
     let Some(setup) = &viewer.flow.setup else {
         return Ok(());
     };

@@ -28,7 +28,8 @@ impl Viewer {
                 Keycode::Up => self.tech_step(-Self::TECH_ROW),
                 Keycode::Down => self.tech_step(Self::TECH_ROW),
                 Keycode::Space | Keycode::U => self.upgrade(),
-                Keycode::Return | Keycode::KpEnter if !read_only => self.begin_briefing(),
+                Keycode::Return | Keycode::KpEnter if !read_only => self.tech_continue(),
+                Keycode::Escape if self.army_reward.is_some() => self.tech_continue(),
                 Keycode::Return | Keycode::KpEnter | Keycode::Escape if read_only => {
                     self.screen = Screen::Deploy
                 }
@@ -51,6 +52,15 @@ impl Viewer {
             (Screen::Options { ask }, _) => self.menu_key(ask, key),
             (Screen::Strategic { .. }, _) => self.strategic_key(key),
             (Screen::BaseEditor, Keycode::Escape) => self.base_escape(),
+            (Screen::Army, _) => match key {
+                Keycode::Left => self.tech_step(-1),
+                Keycode::Right => self.tech_step(1),
+                Keycode::Up => self.tech_step(-Self::TECH_ROW),
+                Keycode::Down => self.tech_step(Self::TECH_ROW),
+                Keycode::Space | Keycode::U => self.upgrade(),
+                Keycode::Return | Keycode::KpEnter | Keycode::Escape => self.tech_back(),
+                _ => {}
+            },
             (Screen::Skirmishes | Screen::Briefing | Screen::Confirm | Screen::Report, _) => {}
             _ => return None,
         }
@@ -186,7 +196,7 @@ impl Viewer {
                     }
                 }
             }
-            Screen::Tech { .. } if left => {
+            Screen::Tech { .. } | Screen::Army if left => {
                 if let Some(setup) = &mut self.flow.setup {
                     if let Some(i) = (0..TECH_CELLS).find(|&i| layout.tech_cell(i).contains(ox, oy))
                     {
@@ -204,7 +214,7 @@ impl Viewer {
                     }
                 }
             }
-            Screen::Skirmishes | Screen::Tech { .. } => {}
+            Screen::Skirmishes | Screen::Tech { .. } | Screen::Army => {}
             Screen::Overview | Screen::Briefing if left => {
                 let entries = self.entries().len();
                 if let Some(row) = (0..LIST_ROWS).find(|&i| layout.list_row(i).contains(ox, oy)) {

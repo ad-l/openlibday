@@ -200,8 +200,6 @@ impl Viewer {
         match button {
             Button::BaseUp => e.scroll > 0,
             Button::BaseDown => e.scroll + BASE_ROWS < self.base_list().len(),
-            // Technology is spent from the deployment screens for now.
-            Button::BaseArmy => false,
             _ => true,
         }
     }
@@ -213,6 +211,11 @@ impl Viewer {
         }
         if button == Button::Campaign {
             self.close_base_editor();
+            return;
+        }
+        if button == Button::BaseArmy {
+            self.base_put_back();
+            self.open_army();
             return;
         }
         self.base_put_back();

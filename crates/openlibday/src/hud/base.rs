@@ -24,6 +24,7 @@ pub(super) fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) 
             Button::BaseDefenses => e.defenses,
             Button::Recycle => e.mode == Mode::Recycle,
             Button::BaseMove => e.mode == Mode::Move,
+            Button::BaseArmy => viewer.screen == Screen::Army,
             Button::Chat | Button::Menu => continue,
             _ => false,
         };

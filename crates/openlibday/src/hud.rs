@@ -37,6 +37,9 @@ const BULB: [u32; 4] = [305, 306, 307, 308];
 const BULB_MS: u128 = 175;
 const BULB_OFFSET: (i32, i32) = (2, 8);
 
+/// ARMY's snapshot: opening serial and output size.
+type GreyKey = (u64, (u32, u32));
+
 pub type Result<T = ()> = std::result::Result<T, Box<dyn Error>>;
 
 pub fn texture<'r>(
@@ -84,6 +87,8 @@ pub struct Gfx<'r> {
     /// overlays by (continent, province, look).
     sea: Option<((usize, usize), Texture<'r>)>,
     provinces: HashMap<(usize, i64, u8), Texture<'r>>,
+    /// ARMY's greyed map snapshot, by opening serial and output size.
+    grey: Option<(GreyKey, Texture<'r>)>,
 }
 
 impl<'r> Gfx<'r> {
@@ -104,6 +109,7 @@ impl<'r> Gfx<'r> {
             overview: None,
             sea: None,
             provinces: HashMap::new(),
+            grey: None,
         }
     }
 
@@ -1014,6 +1020,39 @@ fn draw_report(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> R
     Ok(())
 }
 
+/// Greys the map drawn so far, as under the original's ARMY dialog. The
+/// snapshot is taken once per opening (`serial`).
+pub fn grey_out(canvas: &mut Canvas<Window>, gfx: &mut Gfx, serial: u64) -> Result {
+    let size = canvas.output_size()?;
+    let key = (serial, size);
+    if gfx.grey.as_ref().is_none_or(|(k, _)| *k != key) {
+        let mut surface = canvas
+            .read_pixels(None)?
+            .convert_format(PixelFormat::RGBA32)?;
+        let (w, h) = surface.size();
+        let pitch = surface.pitch() as usize;
+        surface.with_lock_mut(|bytes| {
+            for y in 0..h as usize {
+                for px in bytes[y * pitch..y * pitch + w as usize * 4]
+                    .as_chunks_mut::<4>()
+                    .0
+                {
+                    let g =
+                        (u32::from(px[0]) * 77 + u32::from(px[1]) * 150 + u32::from(px[2]) * 29)
+                            >> 8;
+                    px[..3].fill(g as u8);
+                }
+            }
+        });
+        let texture = gfx.creator.create_texture_from_surface(&surface)?;
+        gfx.grey = Some((key, texture));
+    }
+    if let Some((_, texture)) = &gfx.grey {
+        canvas.copy(texture, None, None)?;
+    }
+    Ok(())
+}
+
 /// Draws the whole interface over the (already drawn) map.
 pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
     let layout = viewer.layout();
@@ -1023,7 +1062,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::Skirmishes => return setup::draw_selector(canvas, gfx, viewer),
         Screen::MainMenu => return front::draw_main_menu(canvas, gfx, viewer),
         Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
-        Screen::Tech { read_only } => return setup::draw_tech(canvas, gfx, viewer, read_only),
+        Screen::Tech { .. } => return setup::draw_tech(canvas, gfx, viewer),
         Screen::Overview | Screen::Briefing => draw_overview(canvas, gfx, viewer, scene, art)?,
         Screen::Battle => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
         Screen::Deploy | Screen::Confirm => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
@@ -1031,6 +1070,10 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::Automated => setup::draw_automated_sidebar(canvas, gfx, viewer)?,
         Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
         Screen::BaseEditor => base::draw(canvas, gfx, viewer)?,
+        Screen::Army => {
+            base::draw(canvas, gfx, viewer)?;
+            setup::draw_tech(canvas, gfx, viewer)?;
+        }
         Screen::Goal => {
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,

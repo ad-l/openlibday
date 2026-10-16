@@ -311,10 +311,12 @@ impl Viewer {
         let Some(setup) = &self.flow.setup else {
             return false;
         };
-        self.screen == (Screen::Tech { read_only: false })
-            && self
-                .next_tech_cost(setup.cell)
-                .is_some_and(|c| c <= setup.points)
+        matches!(
+            self.screen,
+            Screen::Tech { read_only: false } | Screen::Army
+        ) && self
+            .next_tech_cost(setup.cell)
+            .is_some_and(|c| c <= setup.points)
     }
 
     pub(crate) fn upgrade(&mut self) {
@@ -329,6 +331,7 @@ impl Viewer {
             setup.points -= cost;
             setup.tech[cell] += 1;
         }
+        self.army_sync();
     }
 
     /// Moves the technology selection by `step` cells, scrolling the grid

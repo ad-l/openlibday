@@ -16,6 +16,7 @@
 //! it without a window, at `--size` (default 1024x768).
 
 mod ai;
+mod army;
 mod automated;
 mod base_editor;
 mod campaign;
@@ -251,6 +252,10 @@ struct Viewer {
     /// The continent overview, while it is open.
     strategic: Option<strategic::Strategic>,
     base_editor: Option<base_editor::BaseEditor>,
+    /// The technology dialog after a won campaign battle, and the
+    /// greyed map's snapshot serial for ARMY.
+    army_reward: Option<army::Then>,
+    army_view: u64,
 }
 
 impl Viewer {
@@ -629,8 +634,8 @@ impl Viewer {
             Button::AutoUp => self.auto_step(-Self::AUTO_ROW),
             Button::AutoDown => self.auto_step(Self::AUTO_ROW),
             Button::TechUpgrade => self.upgrade(),
-            Button::TechContinue => self.begin_briefing(),
-            Button::TechBack => self.screen = Screen::Deploy,
+            Button::TechContinue => self.tech_continue(),
+            Button::TechBack => self.tech_back(),
             Button::OverviewContinue => self.begin_deploy(),
             Button::DeployUp => self.deploy_scroll(-1),
             Button::DeployDown => self.deploy_scroll(1),
@@ -975,6 +980,8 @@ fn main() -> Result {
         campaign: None,
         strategic: None,
         base_editor: None,
+        army_reward: None,
+        army_view: 0,
     };
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.

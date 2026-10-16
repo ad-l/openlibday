@@ -547,7 +547,7 @@ impl Viewer {
     }
 
     /// Human automated units the owned buildings provide.
-    fn campaign_automated(&self, owned: &[i64]) -> Vec<i64> {
+    pub(crate) fn campaign_automated(&self, owned: &[i64]) -> Vec<i64> {
         self.defs
             .automated
             .iter()
@@ -885,10 +885,12 @@ impl Viewer {
             _ => state.stage = Stage::Strategic,
         }
         self.save_campaign();
-        self.resume_campaign();
-        // The overview after the first attack: CONTINUE to base building.
         if first {
-            self.strategic_victory();
+            // The earned technology first, then the overview's CONTINUE to
+            // base building.
+            self.open_army_reward(crate::army::Then::Victory);
+        } else {
+            self.resume_campaign();
         }
     }
 

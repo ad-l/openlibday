@@ -38,7 +38,15 @@ idle
 expect screen Report
 expect report.tech New technologies found : 150
 key Return
-expect campaign.tech 150
+# The earned technology is spent first (Trooper: 5 to level 2).
+expect screen Tech
+expect setup.units [2]
+expect setup.points 150
+button TechUpgrade
+expect setup.tech [1]
+expect campaign.tech 145
+expect campaign.unit_tech.2 1
+button TechContinue
 expect campaign.stage.stage strategic
 # Surviving towers are kept as tower buildings.
 expect campaign.base.buildings.1.kind 137
@@ -50,6 +58,15 @@ button StrategicContinue
 expect screen BaseEditor
 expect credits 625
 expect base_editor.list.0.0 Deploy Mk1
+# ARMY: the same dialog over the greyed base.
+button BaseArmy
+expect screen Army
+expect setup.points 145
+button TechUpgrade
+expect campaign.tech 135
+expect campaign.unit_tech.2 2
+button TechBack
+expect screen BaseEditor
 build Deploy Mk1
 # Buildings go next to the player's roads, not around the HQ.
 tile 22 64

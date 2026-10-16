@@ -385,6 +385,9 @@ pub(crate) fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer
         && !matches!(viewer.screen, Screen::Overview | Screen::Briefing)
     {
         draw_map(canvas, gfx, viewer)?;
+        if viewer.screen == Screen::Army {
+            hud::grey_out(canvas, gfx, viewer.army_view)?;
+        }
     }
     hud::draw(canvas, gfx, viewer)?;
     Ok(())
