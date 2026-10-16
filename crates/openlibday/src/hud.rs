@@ -21,6 +21,7 @@ use crate::Viewer;
 mod front;
 mod options;
 mod setup;
+mod strategic;
 
 /// Interface text size and line spacing, in original pixels.
 const TEXT_PX: f32 = 11.5;
@@ -78,6 +79,10 @@ pub struct Gfx<'r> {
     icons: HashMap<u32, Texture<'r>>,
     minimap: Option<((u64, i32), Texture<'r>)>,
     overview: Option<((u64, usize), Texture<'r>)>,
+    /// Continent overview: the (continent, sea frame) shown, and province
+    /// overlays by (continent, province, look).
+    sea: Option<((usize, usize), Texture<'r>)>,
+    provinces: HashMap<(usize, i64, u8), Texture<'r>>,
 }
 
 impl<'r> Gfx<'r> {
@@ -96,6 +101,8 @@ impl<'r> Gfx<'r> {
             icons: HashMap::new(),
             minimap: None,
             overview: None,
+            sea: None,
+            provinces: HashMap::new(),
         }
     }
 
@@ -1019,6 +1026,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::Deploy | Screen::Confirm => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
         Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
         Screen::Automated => setup::draw_automated_sidebar(canvas, gfx, viewer)?,
+        Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
         Screen::Goal => {
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
@@ -1035,6 +1043,7 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
             match viewer.home() {
                 Screen::Deploy => setup::draw_deploy_sidebar(canvas, gfx, viewer)?,
                 Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
+                Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
                 _ => draw_battle_sidebar(canvas, gfx, viewer, scene, art)?,
             }
             options::draw_options(canvas, gfx, viewer)?;

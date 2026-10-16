@@ -9,7 +9,6 @@ use libday_data::campaign::{Campaign, Continent, CounterAttackUnit, scenario_fil
 use libday_data::objective::Outcome;
 use libday_data::scenario::{Building, Deployment, Mine, Order, Scenario, Surface, Unit};
 use libday_view::movement::{self, Access};
-use libday_view::ui::Screen;
 use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
@@ -199,7 +198,6 @@ impl State {
         self.provinces.iter().find(|p| p.number == number)
     }
 
-    #[allow(dead_code, reason = "used by the continent overview")]
     pub fn province_mut(&mut self, number: i64) -> Option<&mut ProvinceState> {
         self.provinces.iter_mut().find(|p| p.number == number)
     }
@@ -211,11 +209,10 @@ impl State {
     }
 
     /// Credits for capturing a province (`0x415653`): 125 % on the easiest
-    /// difficulty down to 75 % on the hardest.
-    #[allow(dead_code, reason = "used by the continent overview")]
+    /// difficulty down to 75 % on the hardest, truncated.
     pub fn reward(&self, credits: i64) -> i64 {
         let pct = 125 - 5 * self.difficulty.clamp(0, DIFFICULTY_MAX);
-        (credits as f64 * pct as f64 / 100.0).round() as i64
+        credits * pct / 100
     }
 
     pub fn to_json(&self) -> String {
@@ -246,7 +243,6 @@ impl Session {
     }
 
     /// The scenario of province `number` that is played next.
-    #[allow(dead_code, reason = "used by the continent overview")]
     pub fn scenario_of(&self, number: i64) -> Option<String> {
         let variant = self.state.province(number)?.variant;
         let c = self.continent()?;
@@ -391,13 +387,6 @@ impl Viewer {
             Stage::Tactic { .. } | Stage::Strategic => self.open_strategic(),
             Stage::Won => self.open_main_menu(),
         }
-    }
-
-    /// The continent overview (phase 3 placeholder).
-    pub(crate) fn open_strategic(&mut self) {
-        self.flow = crate::skirmish::Flow::new();
-        self.notice = Some("continent overview".into());
-        self.screen = Screen::MainMenu;
     }
 
     /// The campaign's battle stage, while one is being fought.
@@ -624,8 +613,44 @@ impl Viewer {
         self.begin_campaign_battle(battle, units, automated);
     }
 
+    /// Attacks province `n` (`CServerPhaseTactic`): its scenario, the
+    /// player's army from the base's buildings.
+    pub(crate) fn begin_tactic(&mut self, n: i64) {
+        let Some(base) = self.load_base() else {
+            return;
+        };
+        let points = self.campaign_deploy_points(&base.scenario);
+        let owned = self.owned_buildings(&base.scenario);
+        let Some(session) = &self.campaign else {
+            return;
+        };
+        let Some(file) = session.scenario_of(n) else {
+            return;
+        };
+        let difficulty = session.state.difficulty;
+        let mut battle = match Battle::start(&self.game, &file) {
+            Ok(b) => b,
+            Err(e) => {
+                self.error = Some(format!("{file}: {e}"));
+                return;
+            }
+        };
+        battle.scenario.restore(&self.defs);
+        battle.scenario.merge_players(1);
+        battle.difficulty = difficulty;
+        battle.scenario.info.points = points;
+        let units = self.campaign_units(&owned);
+        let automated = self.campaign_automated(&owned);
+        if let Some(session) = &mut self.campaign {
+            session.state.stage = Stage::Tactic { province: n };
+        }
+        self.save_campaign();
+        self.begin_campaign_battle(battle, units, automated);
+    }
+
     /// Shows `battle` and opens its briefing with the campaign's army.
     fn begin_campaign_battle(&mut self, battle: Battle, units: Vec<i64>, automated: Vec<i64>) {
+        self.strategic = None;
         let name = battle.source.to_string();
         if let Some(i) = self.maps.iter().position(|m| m.eq_ignore_ascii_case(&name)) {
             self.index = i;
@@ -720,7 +745,7 @@ impl Viewer {
         };
         let state = &mut session.state;
         match (state.stage, outcome) {
-            (Stage::FirstAttack | Stage::CounterAttack { .. }, Some(Outcome::Won)) => {
+            (Stage::FirstAttack, Some(Outcome::Won)) => {
                 state.tech += reward;
                 if let Some(base) = base {
                     let mut now = self.map.battle.scenario.clone();
@@ -729,6 +754,16 @@ impl Viewer {
                 }
                 state.stage = Stage::Strategic;
             }
+            (Stage::CounterAttack { province }, Some(Outcome::Won)) => {
+                state.tech += reward;
+                if let Some(base) = base {
+                    let mut now = self.map.battle.scenario.clone();
+                    now.units.clear();
+                    state.base = Some(BaseLayout::capture(&now, &base));
+                }
+                self.province_won(province);
+                return;
+            }
             // Losing the base ends the campaign.
             (Stage::FirstAttack | Stage::CounterAttack { .. }, _) => {
                 self.campaign = None;
@@ -736,10 +771,78 @@ impl Viewer {
                 self.open_main_menu();
                 return;
             }
+            (Stage::Tactic { province }, Some(Outcome::Won)) => {
+                session.state.tech += reward;
+                let data = session.continent().and_then(|c| c.province(province));
+                let credits = data.map_or(0, |p| p.credits);
+                let variant = session.state.province(province).map_or(1, |p| p.variant);
+                let counter = data
+                    .and_then(|p| p.scenarios.iter().find(|s| s.variant == variant))
+                    .is_some_and(|s| s.counter_attack);
+                let state = &mut session.state;
+                let pay = state.reward(credits);
+                state.credits += pay;
+                if let Some(p) = state.province_mut(province) {
+                    p.captured = true;
+                }
+                if counter {
+                    // The province's counterattack on the base.
+                    state.stage = Stage::CounterAttack { province };
+                    self.save_campaign();
+                    self.begin_base_battle();
+                } else {
+                    self.province_won(province);
+                }
+                return;
+            }
+            // A lost province is fought on its other variant next time.
+            (Stage::Tactic { province }, _) => {
+                let variants: Vec<i64> = session
+                    .continent()
+                    .and_then(|c| c.province(province))
+                    .map(|p| p.scenarios.iter().map(|s| s.variant).collect())
+                    .unwrap_or_default();
+                let state = &mut session.state;
+                if let Some(p) = state.province_mut(province)
+                    && let Some(i) = variants.iter().position(|&v| v == p.variant)
+                {
+                    p.variant = variants[(i + 1) % variants.len()];
+                }
+                state.stage = Stage::Strategic;
+            }
             _ => state.stage = Stage::Strategic,
         }
         self.save_campaign();
         self.resume_campaign();
+    }
+
+    /// Province `n` is held: the capital completes the continent, else
+    /// the overview says "You are victorious".
+    fn province_won(&mut self, n: i64) {
+        let Some(session) = &mut self.campaign else {
+            return;
+        };
+        let capital = session.continent().is_some_and(|c| c.capital_province == n);
+        let rng = &mut self.rng;
+        let state = &mut session.state;
+        let victory = if capital {
+            let next = state.continent + 1;
+            if next < session.data.continents.len() {
+                state.enter_continent(&session.data, next, || rng.rand());
+                state.stage = Stage::Strategic;
+            } else {
+                state.stage = Stage::Won;
+            }
+            false
+        } else {
+            state.stage = Stage::Strategic;
+            true
+        };
+        self.save_campaign();
+        self.resume_campaign();
+        if victory {
+            self.strategic_victory();
+        }
     }
 }
 
@@ -807,6 +910,9 @@ mod tests {
         assert_eq!(s.reward(400), 500);
         s.difficulty = 10;
         assert_eq!(s.reward(400), 300);
+        s.difficulty = 4;
+        assert_eq!(s.reward(450), 472);
+        s.difficulty = 10;
         let json = s.to_json();
         assert_eq!(State::from_json(&json).unwrap(), s);
     }

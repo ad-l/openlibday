@@ -32,6 +32,7 @@ mod script;
 mod settings;
 mod skirmish;
 mod sound;
+mod strategic;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -246,6 +247,8 @@ struct Viewer {
     front: front::Front,
     /// The campaign being played, if any.
     campaign: Option<campaign::Session>,
+    /// The continent overview, while it is open.
+    strategic: Option<strategic::Strategic>,
 }
 
 impl Viewer {
@@ -561,6 +564,10 @@ impl Viewer {
             | Button::DifficultyRight
             | Button::NewGameBack
             | Button::NewGameContinue => self.front_enabled(button),
+            Button::Intelligence
+            | Button::Attack
+            | Button::StrategicBack
+            | Button::StrategicContinue => self.strategic_enabled(button),
             _ => true,
         }
     }
@@ -639,6 +646,10 @@ impl Viewer {
             | Button::DifficultyRight
             | Button::NewGameBack
             | Button::NewGameContinue => self.front_activate(button),
+            Button::Intelligence
+            | Button::Attack
+            | Button::StrategicBack
+            | Button::StrategicContinue => self.strategic_activate(button),
             _ => {}
         }
     }
@@ -942,6 +953,7 @@ fn main() -> Result {
         fullscreen: None,
         front: front::Front::default(),
         campaign: None,
+        strategic: None,
     };
     if args.script.is_some() {
         // Scripted runs do not depend on who runs them.

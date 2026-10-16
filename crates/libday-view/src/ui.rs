@@ -55,6 +55,11 @@ pub mod frame {
     pub const TECH_LEFT: u16 = 180;
     pub const TECH_DOWN: u16 = 184;
     pub const TECH_UP: u16 = 188;
+    /// Continent (strategic) sidebar and its buttons.
+    pub const STRATEGIC_SIDEBAR: u16 = 192;
+    pub const INTELLIGENCE: u16 = 198;
+    pub const ATTACK: u16 = 202;
+    pub const STRATEGIC_BACK: u16 = 210;
     /// Battle sidebar (already includes the OVERWATCH / AUTO FIRE labels).
     pub const SIDEBAR: u16 = 226;
     pub const MAP: u16 = 231;
@@ -135,6 +140,9 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (158, 171, 110, 17),
     (172, 172, 60, 55),
     (176, 191, 19, 17),
+    (192, 192, SIDEBAR_W, SIDEBAR_H),
+    (198, 205, 110, 17),
+    (210, 213, 110, 17),
     (226, 226, SIDEBAR_W, SIDEBAR_H),
     (231, 238, 53, 17),
     (241, 246, 53, 17),
@@ -258,6 +266,7 @@ impl UiArt {
                     | frame::DEPLOY_SIDEBAR
                     | frame::AI_SIDEBAR
                     | frame::AUTOMATED_SIDEBAR
+                    | frame::STRATEGIC_SIDEBAR
             ) {
                 hide_emblem(&mut image);
             }
@@ -398,6 +407,12 @@ pub enum Button {
     DifficultyRight,
     NewGameBack,
     NewGameContinue,
+    // Continent (strategic) sidebar.
+    Intelligence,
+    Attack,
+    StrategicBack,
+    /// After a victory, in place of BACK.
+    StrategicContinue,
 }
 
 /// Which panel set is on screen.
@@ -434,6 +449,11 @@ pub enum Screen {
     MainMenu,
     /// NEW CAMPAIGN: the player's name and the difficulty.
     NewGame,
+    /// The continent overview: choosing the province to attack; CONTINUE
+    /// replaces BACK after a victory.
+    Strategic {
+        victory: bool,
+    },
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -543,6 +563,10 @@ impl Button {
             Button::DifficultyRight => TECH_RIGHT,
             Button::NewGameBack => NEW_GAME_BACK,
             Button::NewGameContinue => NEW_GAME_CONTINUE,
+            Button::Intelligence => INTELLIGENCE,
+            Button::Attack => ATTACK,
+            Button::StrategicBack => STRATEGIC_BACK,
+            Button::StrategicContinue => TECH_CONTINUE,
         }
     }
 
@@ -652,6 +676,9 @@ impl Button {
             Button::DifficultyRight => (250, 114),
             Button::NewGameBack => (10, 184),
             Button::NewGameContinue => (170, 184),
+            Button::Intelligence => (11, 387),
+            Button::Attack => (11, 407),
+            Button::StrategicBack | Button::StrategicContinue => (11, 456),
         };
         let (w, h) = crop_of(self.frame()).unwrap_or((0, 0));
         Rect::new(x, y, w, h)
@@ -676,6 +703,11 @@ pub enum Field {
     Timer,
     /// Goal dialog text area.
     GoalText,
+    /// Continent sidebar: tech points, credits and the province text.
+    StrategicTech,
+    StrategicCredits,
+    StrategicZero,
+    StrategicText,
 }
 
 impl Field {
@@ -692,6 +724,10 @@ impl Field {
             Field::OverviewBox => Rect::new(69, 457, 61, 17),
             Field::Timer => Rect::new(5, 7, 45, 19),
             Field::GoalText => Rect::new(20, 20, 409, 172),
+            Field::StrategicTech => Rect::new(63, 26, 47, 14),
+            Field::StrategicCredits => Rect::new(63, 56, 47, 14),
+            Field::StrategicZero => Rect::new(63, 86, 47, 14),
+            Field::StrategicText => Rect::new(9, 150, 120, 232),
         }
     }
 }
@@ -1098,6 +1134,15 @@ impl Layout {
                 Button::DifficultyRight,
                 Button::NewGameBack,
                 Button::NewGameContinue,
+            ]),
+            Screen::Strategic { victory } => buttons.extend([
+                Button::Intelligence,
+                Button::Attack,
+                if victory {
+                    Button::StrategicContinue
+                } else {
+                    Button::StrategicBack
+                },
             ]),
         }
         if !matches!(

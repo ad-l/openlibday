@@ -379,7 +379,11 @@ fn draw_map(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
 pub(crate) fn render(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
-    if !viewer.screen.is_dialog() && !matches!(viewer.screen, Screen::Overview | Screen::Briefing) {
+    let home_strategic = matches!(viewer.home(), Screen::Strategic { .. });
+    if !viewer.screen.is_dialog()
+        && !home_strategic
+        && !matches!(viewer.screen, Screen::Overview | Screen::Briefing)
+    {
         draw_map(canvas, gfx, viewer)?;
     }
     hud::draw(canvas, gfx, viewer)?;

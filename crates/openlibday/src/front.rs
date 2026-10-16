@@ -38,6 +38,7 @@ impl Viewer {
     pub(crate) fn open_main_menu(&mut self) {
         self.flow = crate::skirmish::Flow::new();
         self.campaign = None;
+        self.strategic = None;
         self.screen = Screen::MainMenu;
     }
 

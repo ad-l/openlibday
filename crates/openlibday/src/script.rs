@@ -19,6 +19,7 @@
 //! hover X Y             move the mouse over map tile (X, Y)
 //! inspect X Y         hold the right button on map tile (X, Y)
 //! button NAME           click an interface button (EndTurn, TechContinue...)
+//! province N            click province N on the continent overview
 //! skirmish NAME|N       pick a skirmish by file, title or list number
 //!                       (opening the selector if it is not shown)
 //! deploy NAME           pick a unit type in the deployment list
@@ -102,6 +103,7 @@ pub enum Command {
     Reactions(bool),
     Ai(Option<crate::settings::AiMode>),
     Button(String),
+    Province(i64),
     Option(String, i32),
     Skirmish(String),
     Deploy(String),
@@ -217,6 +219,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             y: num(args.get(1))?,
         },
         "button" => Command::Button(text()?),
+        "province" => Command::Province(num(args.first())?),
         "option" => Command::Option(
             args.first().ok_or("missing option")?.to_string(),
             match args.get(1) {
@@ -366,6 +369,16 @@ impl Runner<'_, '_> {
                 let r = layout.button(button);
                 let centre = ((r.x + r.w / 2) as f32, (r.y + r.h / 2) as f32);
                 click(viewer, centre, false);
+            }
+            Command::Province(n) => {
+                let st = viewer.strategic.as_ref().ok_or("no continent overview")?;
+                let (mx, my) = st
+                    .map
+                    .inside(*n)
+                    .ok_or_else(|| format!("no province {n}"))?;
+                let (x0, y0, s) = viewer.strategic_origin().ok_or("no continent overview")?;
+                let at = ((x0 + mx * s + s / 2) as f32, (y0 + my * s + s / 2) as f32);
+                click(viewer, at, false);
             }
             Command::Option(name, step) => {
                 let item = crate::menu::ITEMS
@@ -833,6 +846,10 @@ pub fn state(viewer: &Viewer) -> Value {
     state["campaign"] = viewer.campaign.as_ref().map_or(Value::Null, |c| {
         serde_json::to_value(&c.state).unwrap_or(Value::Null)
     });
+    state["strategic"] = viewer.strategic.as_ref().map_or(
+        Value::Null,
+        |st| json!({ "selected": st.selected, "text": st.text, "victory": st.victory }),
+    );
     state["selection"] = json!(viewer.selection());
     state["grouping"] = json!(viewer.grouping);
     state["walking"] = json!(viewer.motions.iter().map(|m| m.unit).collect::<Vec<_>>());

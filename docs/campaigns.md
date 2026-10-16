@@ -99,7 +99,7 @@ difficulty or `rand()` gate was found on this path.
 
 * `0x42D6C5(province, 1)` marks the province captured.
 * Every campaign player receives
-  `round(Province.Credits × pct(difficulty) × 0.01)` added to
+  `trunc(Province.Credits × pct(difficulty) × 0.01)` added to
   campaign-player `+0x8` (`0x415653`). `pct` interpolates between two
   game-settings percentages (`0x42A7D1`: `lo + (hi - lo) × d / 10`). Each
   player gets the full amount; nothing is split.
@@ -274,9 +274,9 @@ Phase = NewContinent | Strategic | Tactic { province, variant }
 | # | Scope | Status |
 |---|---|---|
 | C1 | Data model, original importer, JSON format, `libday campaign-info`/`campaign-export`, tests | **Done** |
-| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu, NEW GAME dialog (name, difficulty 0–10), campaign state and saves (`openlibday::campaign`, `saves/campaign.json`), LOAD CAMPAIGN done; continent screen pending |
+| C2 | Campaign state machine and saves (`libday-sim::campaign`), new-campaign menu entry, continent/province screen (COLANMS animation, previews, adjacency, captured state) | Main menu, NEW GAME dialog (name, difficulty 0–10), campaign state and saves (`openlibday::campaign`, `saves/campaign.json`), LOAD CAMPAIGN done; continent screen done (`openlibday::strategic`, `libday_view::continent`): animated `COLANMS\Cn.SMK` sea, selected/captured province overlays, province text and credits, adjacency ("Province is too far."), INTELLIGENCE (hint with a Satellite Uplink), ATTACK, "You are victorious" + CONTINUE |
 | C3 | Base-building mode on the base map (buildings, towers, roads, walls, mines; costs, refunds) | |
-| C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | |
+| C4 | Attack flow: army selection/deployment points, campaign tactic, results screen, rewards, variant swap on loss | Campaign tactic, capture, credit rewards, variant swap on loss done; army selection pending |
 | C5 | Counterattack: COUNTERA video, roster as AI reinforcements, AI-first turn, 0-AP rule, persistence of base damage | First base attack done (`scripts/campaign.txt`): base map with the other HQs removed, troopers deployed in a radius-3 zone around the HQ, Counter Attack roster 11–14 tiles away moving first, 150 tech on a win, campaign over on a loss |
 | C6 | Continent transitions, intro/end videos, game won/lost | |
 | C7 | Tech/research spending between battles | |

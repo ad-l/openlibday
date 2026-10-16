@@ -128,6 +128,9 @@ impl Flow {
 impl Viewer {
     /// The screen a closed overview or goal dialog returns to.
     pub(crate) fn home(&self) -> Screen {
+        if let Some(screen) = self.strategic_screen() {
+            return screen;
+        }
         match self.flow.phase {
             Phase::Deploy => Screen::Deploy,
             Phase::Player if self.flow.reinforcing => Screen::Deploy,

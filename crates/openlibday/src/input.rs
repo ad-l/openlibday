@@ -49,6 +49,7 @@ impl Viewer {
                 self.close_report()
             }
             (Screen::Options { ask }, _) => self.menu_key(ask, key),
+            (Screen::Strategic { .. }, _) => self.strategic_key(key),
             (Screen::Skirmishes | Screen::Briefing | Screen::Confirm | Screen::Report, _) => {}
             _ => return None,
         }
@@ -169,6 +170,8 @@ impl Viewer {
             Screen::Goal | Screen::Confirm | Screen::Report | Screen::MainMenu => {}
             Screen::NewGame if left => self.front_click(ox, oy),
             Screen::NewGame => {}
+            Screen::Strategic { .. } if left => self.strategic_click(ox, oy),
+            Screen::Strategic { .. } => {}
             Screen::Options { ask: None } if left => self.menu_click(ox, oy),
             Screen::Options { .. } => {}
             Screen::Skirmishes if left => {

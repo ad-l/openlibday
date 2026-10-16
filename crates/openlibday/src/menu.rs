@@ -342,11 +342,17 @@ impl Viewer {
         match button {
             Button::OptionsRestart => self.flow.phase == Phase::Player,
             Button::OptionsSave => {
-                matches!(self.flow.phase, Phase::Free | Phase::Player) && !self.flow.reinforcing
+                self.strategic.is_none()
+                    && matches!(self.flow.phase, Phase::Free | Phase::Player)
+                    && !self.flow.reinforcing
             }
             Button::Menu => matches!(
                 self.screen,
-                Screen::Battle | Screen::Deploy | Screen::AiTurn | Screen::Options { ask: None }
+                Screen::Battle
+                    | Screen::Deploy
+                    | Screen::AiTurn
+                    | Screen::Strategic { .. }
+                    | Screen::Options { ask: None }
             ),
             _ => true,
         }

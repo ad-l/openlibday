@@ -1,6 +1,7 @@
 # Campaign: NEW GAME starts the alien attack on the player's base (s1-1-1,
 # HQ only): troopers deploy around the HQ, the aliens move first, and a win
-# grants 150 tech points and moves on to the continent overview.
+# grants 150 tech points and moves on to the continent overview, where
+# provinces next to captured ones are attacked.
 # Run: openlibday --headless --script scripts/campaign.txt  (needs LIBDAY_ROOT)
 button NewCampaign
 type Max
@@ -34,6 +35,66 @@ key Return
 expect campaign.tech 150
 expect campaign.stage.stage strategic
 expect campaign.base.buildings.3.kind 137
+# The continent overview: Milos pays 450 credits, 472 at difficulty 4.
+expect screen Strategic
+expect strategic.text.0 Choose the province you wish to attack.
+province 3
+expect strategic.selected 3
+expect strategic.text.0 Milos
+expect strategic.text.-1 Credits: 472
+# The starting base has a Satellite Uplink, so INTELLIGENCE gives the hint.
+button Intelligence
+expect strategic.text.0 HINT: Bring a unit next to the tech center to gain technology. LAVs are useful to complete the mission. Click once on a unit to show the firing path, a second click will confirm the firing order.
+# The capital is not next to the base.
+province 7
+button Attack
+expect strategic.text.0 Province is too far.
+expect screen Strategic
+province 3
+button Attack
+expect screen Briefing
+expect campaign.stage.stage tactic
+expect campaign.stage.province 3
+key Return
+key Return
+key Y
+wait 2000
+idle
+win
+wait 500
+idle
+expect screen Report
+key Return
+expect campaign.provinces.2.captured true
+expect campaign.credits 1097
+expect screen Strategic
+expect strategic.victory true
+expect strategic.text.0 You are victorious. Hit the continue button.
+button StrategicContinue
+expect strategic.victory false
+# A lost province battle returns to the overview; the province is fought
+# on its other scenario next time.
+province 4
+button Attack
+expect map s1-4-1.mdb
+key Return
+key Return
+key Y
+wait 2000
+idle
+lose
+wait 500
+idle
+key Return
+expect screen Strategic
+expect campaign.stage.stage strategic
+expect campaign.provinces.3.captured false
+expect campaign.provinces.3.variant 2
+# The OPTIONS menu opens over the overview; QUIT leaves for the main menu.
+key Escape
+button OptionsQuit
+key Y
+expect screen MainMenu
 # Losing the base battle ends the campaign.
 button MainSkirmish
 button SkirmishBack
