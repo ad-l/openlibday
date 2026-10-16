@@ -631,7 +631,9 @@ impl Viewer {
                     && k.cost > 0
                     && k.movement != 0
                     && k.has_weapon
-                    && owned.contains(&k.prerequisite)
+                    && owned
+                        .iter()
+                        .any(|&o| libday_view::base::satisfies(o, k.prerequisite))
             })
             .map(|((id, _), _)| *id)
             .collect()
@@ -642,7 +644,12 @@ impl Viewer {
         self.defs
             .automated
             .iter()
-            .filter(|(_, k)| k.race == 0 && owned.contains(&k.prerequisite))
+            .filter(|(_, k)| {
+                k.race == 0
+                    && owned
+                        .iter()
+                        .any(|&o| libday_view::base::satisfies(o, k.prerequisite))
+            })
             .map(|(id, _)| *id)
             .collect()
     }

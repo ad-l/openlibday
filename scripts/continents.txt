@@ -127,6 +127,16 @@ expect screen BaseEditor
 expect map s2-1-1.mdb
 expect buildings.0.kind 130
 expect buildings.-1.kind 130
+# Deploy Mk2 stands for Deploy Mk1: Barracks and Uplink follow it.
+credits 1000
+build Paved Road
+tile 39 42
+tile 39 46
+build Deploy Mk2
+tile 40 43
+expect message Deploy Mk2 has been built for 300 credits
+build Barracks
+build Uplink
 button Campaign
 # Without a Satellite Uplink INTELLIGENCE only names the province.
 province 5

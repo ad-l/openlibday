@@ -153,8 +153,17 @@ pub fn is_tower(defs: &Definitions, kind: i64) -> bool {
         .is_some_and(|b| b.transform_into.is_some())
 }
 
-fn ready(prerequisite: i64, owned: &[i64]) -> bool {
-    prerequisite == NONE || owned.contains(&prerequisite)
+/// Whether owning a `kind` building meets a `prerequisite`: each deployment
+/// centre Mk also stands for the lower ones, as later continents only offer
+/// their own Mk while Barracks and Uplink still require Deploy Mk1.
+pub fn satisfies(kind: i64, prerequisite: i64) -> bool {
+    let mk = |k| DEPLOY_CENTRES.iter().position(|&d| d == k);
+    kind == prerequisite || matches!((mk(kind), mk(prerequisite)), (Some(a), Some(b)) if a >= b)
+}
+
+/// Whether the `owned` building types meet a `prerequisite`.
+pub fn ready(prerequisite: i64, owned: &[i64]) -> bool {
+    prerequisite == NONE || owned.iter().any(|&k| satisfies(k, prerequisite))
 }
 
 /// The BUILDINGS list (`defenses` false) or the DEFENSES list: of the
@@ -491,6 +500,16 @@ mod tests {
             offered(&d, &available, &[], true),
             [Item::Road(0), Item::Road(1)]
         );
+    }
+
+    #[test]
+    fn higher_deploy_centres_stand_for_lower_ones() {
+        assert!(satisfies(173, 131));
+        assert!(satisfies(175, 174));
+        assert!(!satisfies(131, 173));
+        assert!(!satisfies(130, 131));
+        assert!(ready(131, &[HQ, 174]));
+        assert!(!ready(173, &[HQ, 131]));
     }
 
     #[test]

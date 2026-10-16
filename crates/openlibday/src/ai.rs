@@ -838,7 +838,7 @@ impl Viewer {
             .scenario
             .buildings
             .iter()
-            .any(|b| b.owner == AI && b.kind == a.prerequisite);
+            .any(|b| b.owner == AI && libday_view::base::satisfies(b.kind, a.prerequisite));
         if !owned && !counter {
             return;
         }
