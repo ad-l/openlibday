@@ -46,7 +46,7 @@ impl Viewer {
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
             // Not implemented (no multiplayer, cutscenes or mode switch).
-            Button::MultiPlayer | Button::Intro | Button::Resolution => false,
+            Button::MultiPlayer | Button::Intro => false,
             Button::LoadCampaign => self.campaign_saved(),
             Button::DifficultyLeft => self.front.difficulty > 0,
             Button::DifficultyRight => self.front.difficulty < DIFFICULTY_MAX,
@@ -64,6 +64,7 @@ impl Viewer {
                     self.error = Some(err);
                 }
             }
+            Button::Resolution => self.open_menu(),
             Button::Quit => self.quit = true,
             Button::DifficultyLeft => self.difficulty_step(-1),
             Button::DifficultyRight => self.difficulty_step(1),

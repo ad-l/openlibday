@@ -31,4 +31,13 @@ expect screen MainMenu
 button NewCampaign
 button NewGameBack
 expect screen MainMenu
+# RESOLUTION opens the OPTIONS dialog over the menu; BACK and Escape return.
+button Resolution
+expect screen Options
+screenshot target/main_options.png
+button OptionsBack
+expect screen MainMenu
+button Resolution
+key Escape
+expect screen MainMenu
 echo main menu test passed

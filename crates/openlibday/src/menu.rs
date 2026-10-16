@@ -88,6 +88,9 @@ pub struct Menu {
     /// Index into [`ITEMS`].
     pub focus: Option<usize>,
     pub question: String,
+    /// Opened from the main menu's RESOLUTION: no battle to restart or
+    /// save, BACK returns to the main menu and QUIT leaves the game.
+    pub over_main: bool,
 }
 
 /// Steps `current` (an index into `n` choices) by `step`, clamped.
@@ -226,12 +229,19 @@ impl Viewer {
     }
 
     pub(crate) fn open_menu(&mut self) {
-        self.menu = Menu::default();
+        self.menu = Menu {
+            over_main: self.screen == Screen::MainMenu,
+            ..Menu::default()
+        };
         self.screen = Screen::Options { ask: None };
     }
 
     pub(crate) fn close_menu(&mut self) {
-        self.screen = self.home();
+        self.screen = if self.menu.over_main {
+            Screen::MainMenu
+        } else {
+            self.home()
+        };
     }
 
     /// Scrolls the table by `rows`.
@@ -331,6 +341,7 @@ impl Viewer {
                 self.end_battle(Outcome::Lost);
             }
             // As in the original, quitting leaves for the main menu.
+            Ask::Quit if self.menu.over_main => self.quit = true,
             Ask::Quit => {
                 self.close_menu();
                 self.open_main_menu();
@@ -340,21 +351,25 @@ impl Viewer {
 
     pub(crate) fn menu_enabled(&self, button: Button) -> bool {
         match button {
-            Button::OptionsRestart => self.flow.phase == Phase::Player,
+            Button::OptionsRestart => !self.menu.over_main && self.flow.phase == Phase::Player,
             Button::OptionsSave => {
-                self.strategic.is_none()
+                !self.menu.over_main
+                    && self.strategic.is_none()
                     && matches!(self.flow.phase, Phase::Free | Phase::Player)
                     && !self.flow.reinforcing
             }
-            Button::Menu => matches!(
-                self.screen,
-                Screen::Battle
-                    | Screen::Deploy
-                    | Screen::AiTurn
-                    | Screen::Strategic { .. }
-                    | Screen::BaseEditor
-                    | Screen::Options { ask: None }
-            ),
+            Button::Menu => {
+                !self.menu.over_main
+                    && matches!(
+                        self.screen,
+                        Screen::Battle
+                            | Screen::Deploy
+                            | Screen::AiTurn
+                            | Screen::Strategic { .. }
+                            | Screen::BaseEditor
+                            | Screen::Options { ask: None }
+                    )
+            }
             _ => true,
         }
     }

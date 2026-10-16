@@ -1077,6 +1077,15 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     match viewer.screen {
         Screen::Skirmishes => return setup::draw_selector(canvas, gfx, viewer),
         Screen::MainMenu => return front::draw_main_menu(canvas, gfx, viewer),
+        // RESOLUTION: the OPTIONS dialog over the main menu.
+        Screen::Options { ask } if viewer.menu.over_main => {
+            front::draw_main_menu(canvas, gfx, viewer)?;
+            options::draw_options(canvas, gfx, viewer)?;
+            if ask.is_some() {
+                options::draw_question(canvas, gfx, viewer)?;
+            }
+            return Ok(());
+        }
         Screen::NewGame => return front::draw_new_game(canvas, gfx, viewer),
         Screen::Tech { .. } => return setup::draw_tech(canvas, gfx, viewer),
         Screen::Overview | Screen::Briefing => draw_overview(canvas, gfx, viewer, scene, art)?,
