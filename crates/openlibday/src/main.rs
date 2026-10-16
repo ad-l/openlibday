@@ -45,7 +45,6 @@ use clock::Clock;
 use hud::{Gfx, Result};
 use skirmish::{Flow, Phase};
 
-const ZOOMS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
 const HELP: &str = "PgUp/PgDn map  wheel/+/- zoom  drag/arrows pan  Home recentre  \
                     G grid  D zones  U units  T terrain  [ ] reinforcements  \
                     M map overview  O goal  I interface scale  F5 quick save  F9 quick load  \
@@ -372,11 +371,12 @@ impl Viewer {
 
     /// Zooms one step, keeping the map point under output pixel `(px, py)` fixed.
     fn zoom_step(&mut self, step: i32, (px, py): (f32, f32)) {
-        let current = ZOOMS
+        let zooms = settings::ZOOMS.map(|z| z as f32 / 100.0);
+        let current = zooms
             .iter()
             .position(|&z| z >= self.zoom - 1e-3)
-            .unwrap_or(ZOOMS.len() - 1) as i32;
-        let next = ZOOMS[(current + step).clamp(0, ZOOMS.len() as i32 - 1) as usize];
+            .unwrap_or(zooms.len() - 1) as i32;
+        let next = zooms[(current + step).clamp(0, zooms.len() as i32 - 1) as usize];
         let (mx, my) = self.to_map(px, py);
         self.zoom = next;
         self.camera = (mx - px / next, my - py / next);
@@ -838,7 +838,7 @@ fn main() -> Result {
         options: Options::default(),
         show_units: true,
         grid: false,
-        zoom: density,
+        zoom: density * settings.zoom as f32 / 100.0,
         camera: (0.0, 0.0),
         output: (pw as f32, ph as f32),
         density,

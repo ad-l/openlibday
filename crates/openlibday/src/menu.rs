@@ -17,18 +17,20 @@ pub enum Item {
     Scale,
     Fullscreen,
     Scroll,
+    Zoom,
     Grid,
     TerrainOnly,
     Volume,
     Ai,
 }
 
-pub const ITEMS: [Item; 11] = [
+pub const ITEMS: [Item; 12] = [
     Item::Heading("INTERFACE"),
     Item::Scale,
     Item::Fullscreen,
     Item::Scroll,
     Item::Heading("MAP VIEW"),
+    Item::Zoom,
     Item::Grid,
     Item::TerrainOnly,
     Item::Heading("SOUND"),
@@ -55,6 +57,7 @@ impl Item {
             Item::Scale => "Interface scale",
             Item::Fullscreen => "Fullscreen",
             Item::Scroll => "Scroll speed",
+            Item::Zoom => "Default zoom",
             Item::Grid => "Tile grid",
             Item::TerrainOnly => "Terrain only",
             Item::Volume => "Volume",
@@ -117,6 +120,13 @@ impl Viewer {
                 let i = i.unwrap_or(0);
                 choice(self.settings.scroll.name().to_uppercase(), i, 3)
             }
+            Item::Zoom => {
+                let i = settings::ZOOMS
+                    .iter()
+                    .position(|&z| z == self.settings.zoom);
+                let i = i.unwrap_or(0);
+                choice(format!("{}%", self.settings.zoom), i, settings::ZOOMS.len())
+            }
             Item::Grid => Value::Check(self.grid),
             Item::TerrainOnly => Value::Check(self.options.terrain_only),
             Item::Volume => {
@@ -157,6 +167,11 @@ impl Viewer {
                 let all = ScrollSpeed::ALL;
                 let i = all.iter().position(|&m| m == self.settings.scroll);
                 self.settings.scroll = all[stepped(i.unwrap_or(1), all.len(), step)];
+            }
+            Item::Zoom => {
+                let all = settings::ZOOMS;
+                let i = all.iter().position(|&z| z == self.settings.zoom);
+                self.settings.zoom = all[stepped(i.unwrap_or(0), all.len(), step)];
             }
             Item::Grid => {
                 self.grid ^= true;

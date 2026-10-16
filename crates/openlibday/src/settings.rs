@@ -13,12 +13,17 @@ use libday_formats::Ini;
 pub const FILE_NAME: &str = "openlibday.ini";
 /// Largest interface scale.
 pub const MAX_SCALE: i32 = 4;
+/// Map zoom levels in percent, from the wheel and +/- keys.
+pub const ZOOMS: [u32; 9] = [25, 50, 75, 100, 150, 200, 300, 400, 600];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub scale: i32,
     /// How far the arrow keys scroll the map.
     pub scroll: ScrollSpeed,
+    /// Map zoom at start-up, in percent of the original map pixels (one of
+    /// [`ZOOMS`]).
+    pub zoom: u32,
     /// `0` means fit to the screen.
     pub width: u32,
     pub height: u32,
@@ -96,6 +101,7 @@ impl Default for Settings {
         Self {
             scale: 2,
             scroll: ScrollSpeed::Normal,
+            zoom: 200,
             width: 0,
             height: 0,
             fullscreen: false,
@@ -129,6 +135,13 @@ impl Settings {
         read("interface", "scroll", &mut |v| {
             ScrollSpeed::parse(v).map(|m| settings.scroll = m).is_some()
         });
+        read("interface", "zoom", &mut |v| {
+            v.parse()
+                .ok()
+                .filter(|z| ZOOMS.contains(z))
+                .map(|z| settings.zoom = z)
+                .is_some()
+        });
         read("window", "width", &mut |v| {
             v.parse().map(|w| settings.width = w).is_ok()
         });
@@ -161,6 +174,9 @@ impl Settings {
 scale = {scale}
 ; How far the arrow keys scroll the map: slow, normal or fast.
 scroll = {scroll}
+; Map zoom at start-up, in percent: 25, 50, 75, 100, 150, 200, 300, 400 or
+; 600. The mouse wheel and +/- change the zoom in game.
+zoom = {zoom}
 
 [window]
 ; Initial window size in screen pixels; 0 fits the window to the screen.
@@ -180,6 +196,7 @@ mode = {ai}
 ",
             scale = self.scale,
             scroll = self.scroll.name(),
+            zoom = self.zoom,
             width = self.width,
             height = self.height,
             fullscreen = self.fullscreen,
@@ -252,6 +269,7 @@ mod tests {
         let s = Settings {
             scale: 3,
             scroll: ScrollSpeed::Fast,
+            zoom: 300,
             width: 1600,
             height: 900,
             fullscreen: true,
@@ -264,13 +282,14 @@ mod tests {
     #[test]
     fn values_and_invalid_values() {
         let (s, warnings) = Settings::parse(
-            "[Interface]\nScale = 1\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n[ai]\nmode = Legacy\n",
+            "[Interface]\nScale = 1\nzoom = 150\n[window]\nwidth=1600\nheight = x\nfullscreen = yes\n[ai]\nmode = Legacy\n",
         );
         assert_eq!(
             s,
             Settings {
                 scale: 1,
                 scroll: ScrollSpeed::Normal,
+                zoom: 150,
                 width: 1600,
                 height: 0,
                 fullscreen: true,
@@ -279,7 +298,7 @@ mod tests {
             }
         );
         assert_eq!(warnings.len(), 1);
-        let (s, warnings) = Settings::parse("[interface]\nscale = 9\n");
-        assert_eq!((s.scale, warnings.len()), (2, 1));
+        let (s, warnings) = Settings::parse("[interface]\nscale = 9\nzoom = 120\n");
+        assert_eq!((s.scale, s.zoom, warnings.len()), (2, 200, 2));
     }
 }

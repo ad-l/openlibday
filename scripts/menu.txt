@@ -24,6 +24,13 @@ expect menu.focus Scale
 key Down
 key Down
 key Down
+expect menu.focus Zoom
+expect menu.values.Zoom 200%
+key Left
+expect menu.values.Zoom 150%
+key Right
+expect menu.values.Zoom 200%
+key Down
 expect menu.focus Grid
 key Space
 expect menu.values.Grid true
@@ -46,10 +53,10 @@ option Ai
 expect menu.values.Ai LEGACY
 screenshot target/menu.png
 # Clicks: a row toggles its check box; a selector's left end steps down.
-click 200 227
+click 200 249
 expect menu.values.TerrainOnly true
 expect menu.focus TerrainOnly
-click 407 227
+click 407 249
 expect menu.values.TerrainOnly false
 click 303 161
 expect menu.scroll_speed normal

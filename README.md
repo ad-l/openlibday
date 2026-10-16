@@ -184,7 +184,7 @@ cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
 ```
 
 Options (interface scale, default 2x; initial window size; fullscreen;
-arrow-key scroll speed; sound volume; AI mode, `modern` by default or `legacy` for the original's
+arrow-key scroll speed; start-up map zoom, 200% by default; sound volume; AI mode, `modern` by default or `legacy` for the original's
 quirks, see [docs/ai.md](docs/ai.md)) are
 read from `openlibday.ini` in the user preferences directory
 (`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
