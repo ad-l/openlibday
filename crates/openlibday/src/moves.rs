@@ -110,6 +110,35 @@ impl Motion {
             elapsed,
         )
     }
+
+    /// Clock time of the walk's next rule event: the end of its landing,
+    /// or when step `done` is walked (all its positions shown). Walks are
+    /// advanced in the order of these times, whatever the frame rate.
+    fn next_event(&self) -> Duration {
+        if let Some(l) = &self.landing {
+            return l.started + Duration::from_millis(l.frames as u64 * WALK_POSITION_MS);
+        }
+        let p = self
+            .positions
+            .iter()
+            .position(|&(_, s)| s > self.done)
+            .unwrap_or(self.positions.len());
+        self.started + position_due(self.speed, self.lead, self.walk, p)
+    }
+}
+
+/// How long into a walk position `p` is first shown: the inverse of
+/// [`shown_position`].
+fn position_due(speed: MoveSpeed, lead: usize, walk: usize, p: usize) -> Duration {
+    let tick = WALK_POSITION_MS;
+    let halves = match speed {
+        MoveSpeed::Instant => return Duration::ZERO,
+        MoveSpeed::Normal => return Duration::from_millis(p as u64 * tick),
+        MoveSpeed::Fast if p <= lead => 2 * p,
+        MoveSpeed::Fast if p <= lead + walk => p + lead,
+        MoveSpeed::Fast => 2 * p - walk,
+    };
+    Duration::from_millis((halves as u64 * tick).div_ceil(2))
 }
 
 /// Index of the queued position shown `elapsed` into a walk of `len`
@@ -539,14 +568,33 @@ impl Viewer {
     /// Advances the walking units, then the shots, then what the walks
     /// ended in, one at a time; returns whether anything is busy.
     fn advance(&mut self) -> bool {
-        // A walk ending reshuffles the list: go over it again.
-        'walks: loop {
-            for k in 0..self.motions.len() {
-                if !self.advance_motion(k) {
-                    continue 'walks;
-                }
+        // Walk events (a step walked, a landing over) are taken in the order
+        // they fall due, earliest walk first on a tie, so where walks stop
+        // (a group halted, a blast) does not depend on the frame rate.
+        let now = self.clock.now();
+        while let Some((due, k)) = self
+            .motions
+            .iter()
+            .enumerate()
+            .map(|(k, m)| (m.next_event(), k))
+            .min()
+            .filter(|&(due, _)| due <= now)
+        {
+            let landed = |v: &Self| v.motions.get(k).is_some_and(|m| m.landing.is_some());
+            let before = (
+                self.motions.len(),
+                self.motions.get(k).map(|m| m.done),
+                landed(self),
+            );
+            self.advance_motion(k, due);
+            if (
+                self.motions.len(),
+                self.motions.get(k).map(|m| m.done),
+                landed(self),
+            ) == before
+            {
+                break;
             }
-            break;
         }
         if !self.motions.is_empty() || self.tick_shot() {
             return true;
@@ -581,11 +629,12 @@ impl Viewer {
         self.next_volley()
     }
 
-    /// Advances walk `k`; returns whether it is still walking.
-    fn advance_motion(&mut self, k: usize) -> bool {
+    /// Advances walk `k` to clock time `at`; returns whether it is still
+    /// walking.
+    fn advance_motion(&mut self, k: usize, at: Duration) -> bool {
         let m = &self.motions[k];
         if let Some(l) = &m.landing {
-            let ms = self.clock.since(l.started).as_millis();
+            let ms = at.saturating_sub(l.started).as_millis();
             if ms >= (l.frames as u128) * u128::from(WALK_POSITION_MS) {
                 let (ap, end) = (l.ap, l.end);
                 self.stop(k, ap, end);
@@ -593,7 +642,7 @@ impl Viewer {
             }
             return true;
         }
-        let shown = m.shown(self.clock.since(m.started));
+        let shown = m.shown(at.saturating_sub(m.started));
         // Steps whose positions have all been shown are walked.
         let walked = m.positions.get(shown).map_or(m.steps.len(), |&(_, s)| s);
         while self.motions[k].done < walked {
@@ -622,7 +671,7 @@ impl Viewer {
             // under reaction fire, before mines are looked at.
             let scenario = &self.map.battle.scenario;
             if self.reactions && overwatch::spotted(scenario, &self.defs, i) {
-                return self.cut_short(k, ap, End::Spotted, to, step.facing);
+                return self.cut_short(k, ap, End::Spotted, to, step.facing, at);
             }
             // A detector stops on sighting a hidden mine; else an armed
             // mine on the tile may go off. Either ends the walk there.
@@ -642,7 +691,7 @@ impl Viewer {
                 None => None,
             };
             if let Some(end) = end {
-                return self.cut_short(k, ap, end, to, step.facing);
+                return self.cut_short(k, ap, end, to, step.facing, at);
             }
             if let Some(facing) = next {
                 self.map.battle.scenario.units[i].facing = facing;
@@ -662,8 +711,8 @@ impl Viewer {
         end: End,
         at: (i64, i64),
         facing: u8,
+        now: Duration,
     ) -> bool {
-        let now = self.clock.now();
         let m = &mut self.motions[k];
         let frames = m.positions.len().saturating_sub(m.lead + m.walk);
         if frames > 0 && m.done < m.steps.len() && m.speed != MoveSpeed::Instant {

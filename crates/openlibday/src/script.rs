@@ -37,6 +37,7 @@
 //!                       picks the array element with that id, `-1` the
 //!                       last) is VALUE
 //! echo TEXT             print TEXT
+//! hash                  print the simulation state hash (`hash` in `state`)
 //! type TEXT             type TEXT on the keyboard (the NEW GAME name)
 //! seed N                reseed the game's rand() (scripts start at 1)
 //! mine KIND OWNER X Y [seen]  lay an armed mine of type KIND, hidden from
@@ -122,6 +123,7 @@ pub enum Command {
     State(Option<PathBuf>),
     Expect(String, String),
     Echo(String),
+    Hash,
     /// Text typed on the keyboard (the NEW GAME dialog's name).
     Type(String),
     Seed(u32),
@@ -254,6 +256,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
             Command::Expect(path.into(), value.trim().into())
         }
         "echo" => Command::Echo(rest.into()),
+        "hash" => Command::Hash,
         "type" => Command::Type(text()?),
         "seed" => Command::Seed(num(args.first())?),
         "mine" => Command::Mine {
@@ -500,6 +503,7 @@ impl Runner<'_, '_> {
                 }
             }
             Command::Echo(text) => println!("{text}"),
+            Command::Hash => println!("hash {:016x}", viewer.state_hash()),
             Command::Type(text) => viewer.text_input(text),
             Command::Seed(seed) => viewer.rng = libday_view::scatter::Rand::new(*seed),
             &Command::Mine {
@@ -859,6 +863,7 @@ pub fn state(viewer: &Viewer) -> Value {
         "menu": menu_state(viewer),
     });
     state["automated"] = automated;
+    state["hash"] = json!(format!("{:016x}", viewer.state_hash()));
     state["reinf_res"] = json!(scenario.info.reinf_res);
     state["hidden"] = json!(viewer.options.hidden_units.len());
     state["front"] = json!({

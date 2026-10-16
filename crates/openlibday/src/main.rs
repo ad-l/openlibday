@@ -36,6 +36,7 @@ mod settings;
 mod skirmish;
 mod sound;
 mod strategic;
+mod sync;
 
 use std::path::PathBuf;
 use std::time::Duration;
