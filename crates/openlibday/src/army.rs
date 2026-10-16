@@ -1,17 +1,10 @@
 //! ARMY: spending the campaign's technology points on unit levels, in base
-//! building and after the first city attack.
+//! building (campaign battles have no technology dialog).
 
 use libday_view::ui::Screen;
 
 use crate::Viewer;
 use crate::skirmish::Setup;
-
-/// Where CONTINUE goes from the technology dialog after a won battle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Then {
-    /// The continent overview's "You are victorious" (first city attack).
-    Victory,
-}
 
 impl Viewer {
     /// The technology grid for the units the base's buildings provide, at
@@ -51,19 +44,9 @@ impl Viewer {
         self.screen = Screen::Army;
     }
 
-    /// The technology dialog after a won campaign battle.
-    pub(crate) fn open_army_reward(&mut self, then: Then) {
-        let Some(setup) = self.army_setup() else {
-            return;
-        };
-        self.flow.setup = Some(setup);
-        self.army_reward = Some(then);
-        self.screen = Screen::Tech { read_only: false };
-    }
-
     /// Writes the dialog's levels and points back to the campaign.
     pub(crate) fn army_sync(&mut self) {
-        if self.screen != Screen::Army && self.army_reward.is_none() {
+        if self.screen != Screen::Army {
             return;
         }
         let (Some(setup), Some(session)) = (&self.flow.setup, &mut self.campaign) else {
@@ -89,19 +72,8 @@ impl Viewer {
         }
     }
 
-    /// CONTINUE: to the battle's briefing, or on with the campaign.
+    /// CONTINUE: to the battle's briefing.
     pub(crate) fn tech_continue(&mut self) {
-        let Some(then) = self.army_reward.take() else {
-            self.begin_briefing();
-            return;
-        };
-        self.flow.setup = None;
-        self.save_campaign();
-        match then {
-            Then::Victory => {
-                self.resume_campaign();
-                self.strategic_victory();
-            }
-        }
+        self.begin_briefing();
     }
 }

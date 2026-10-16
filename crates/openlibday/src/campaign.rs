@@ -886,9 +886,10 @@ impl Viewer {
         }
         self.save_campaign();
         if first {
-            // The earned technology first, then the overview's CONTINUE to
-            // base building.
-            self.open_army_reward(crate::army::Then::Victory);
+            // The overview's "You are victorious", CONTINUE to base building;
+            // technology is spent there with ARMY.
+            self.resume_campaign();
+            self.strategic_victory();
         } else {
             self.resume_campaign();
         }

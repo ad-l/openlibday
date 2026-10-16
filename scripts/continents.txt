@@ -19,11 +19,12 @@ win
 wait 500
 idle
 key Return
-button TechUpgrade
 expect campaign.base.buildings.2.x 19
 expect campaign.base.buildings.-1.x 19
-button TechContinue
 button StrategicContinue
+button BaseArmy
+button TechUpgrade
+button TechBack
 button Campaign
 expect campaign.tech 145
 # Canuck's maps both carry a counterattack: after the province battle, its

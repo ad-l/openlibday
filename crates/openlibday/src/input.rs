@@ -29,7 +29,6 @@ impl Viewer {
                 Keycode::Down => self.tech_step(Self::TECH_ROW),
                 Keycode::Space | Keycode::U => self.upgrade(),
                 Keycode::Return | Keycode::KpEnter if !read_only => self.tech_continue(),
-                Keycode::Escape if self.army_reward.is_some() => self.tech_continue(),
                 Keycode::Return | Keycode::KpEnter | Keycode::Escape if read_only => {
                     self.screen = Screen::Deploy
                 }
@@ -51,6 +50,10 @@ impl Viewer {
             }
             (Screen::Options { ask }, _) => self.menu_key(ask, key),
             (Screen::Strategic { .. }, _) => self.strategic_key(key),
+            (Screen::Intelligence, Keycode::Return | Keycode::KpEnter | Keycode::Escape) => {
+                self.close_intel()
+            }
+            (Screen::Intelligence, _) => {}
             (Screen::BaseEditor, Keycode::Escape) => self.base_escape(),
             (Screen::Army, _) => match key {
                 Keycode::Left => self.tech_step(-1),
@@ -182,7 +185,7 @@ impl Viewer {
             Screen::NewGame if left => self.front_click(ox, oy),
             Screen::NewGame => {}
             Screen::Strategic { .. } if left => self.strategic_click(ox, oy),
-            Screen::Strategic { .. } => {}
+            Screen::Strategic { .. } | Screen::Intelligence => {}
             Screen::Options { ask: None } if left => self.menu_click(ox, oy),
             Screen::Options { .. } => {}
             Screen::Skirmishes if left => {

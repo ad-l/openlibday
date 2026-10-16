@@ -3,8 +3,10 @@
 
 use std::time::Duration;
 
-use libday_data::Dir;
+use libday_data::{Battle, Dir};
+use libday_view::Image;
 use libday_view::continent::ContinentMap;
+use libday_view::minimap;
 use libday_view::ui::{Button, Screen};
 
 use crate::Viewer;
@@ -27,7 +29,20 @@ pub struct Strategic {
     pub victory: bool,
     /// Clock time when the screen opened (the sea's animation start).
     pub started: Duration,
+    /// The INTELLIGENCE dialog, while it is open.
+    pub intel: Option<Intel>,
 }
+
+/// The INTELLIGENCE dialog's province.
+pub struct Intel {
+    pub province: i64,
+    /// With a Satellite Uplink: the objective, hint and map preview.
+    pub uplink: bool,
+    pub preview: Option<Image>,
+}
+
+/// Side of the INTELLIGENCE map preview, in original pixels.
+const PREVIEW: usize = 200;
 
 impl Viewer {
     pub(crate) fn string(&self, id: u32, fallback: &str) -> String {
@@ -75,6 +90,7 @@ impl Viewer {
             text: vec![self.string(CHOOSE, "Choose the province you wish to attack.")],
             victory: false,
             started: self.clock.now(),
+            intel: None,
         });
         self.screen = self.home();
     }
@@ -86,6 +102,7 @@ impl Viewer {
             st.victory = true;
             st.text = vec![text];
         }
+        self.effect(crate::sound::Effect::Province);
         self.screen = self.home();
     }
 
@@ -113,8 +130,22 @@ impl Viewer {
     }
 
     /// Selects province `n` and describes it.
+    /// A captured province ignores the click (`0x443d4f`); another plays
+    /// `selprov`, and one out of reach is only named, "Province is too far.".
     pub(crate) fn select_province(&mut self, n: Option<i64>) {
-        let text = match n.and_then(|n| self.province_text(n)) {
+        if let Some(n) = n {
+            if self.captured(n) {
+                return;
+            }
+            self.effect(crate::sound::Effect::Selprov);
+        }
+        let text = match n.and_then(|n| {
+            if self.attackable(n) {
+                self.province_text(n)
+            } else {
+                self.too_far_text(n)
+            }
+        }) {
             Some(text) => text,
             None => vec![self.string(CHOOSE, "Choose the province you wish to attack.")],
         };
@@ -122,6 +153,23 @@ impl Viewer {
             st.selected = n;
             st.text = text;
         }
+    }
+
+    fn captured(&self, n: i64) -> bool {
+        self.campaign
+            .as_ref()
+            .and_then(|s| s.state.province(n))
+            .is_some_and(|p| p.captured)
+    }
+
+    /// An unreachable province: its name and "Province is too far.".
+    fn too_far_text(&self, n: i64) -> Option<Vec<String>> {
+        let session = self.campaign.as_ref()?;
+        let p = session.continent()?.province(n)?;
+        Some(vec![
+            p.name.en.clone(),
+            self.string(TOO_FAR, "Province is too far."),
+        ])
     }
 
     /// Name, story and objective, and the credits capturing it pays.
@@ -198,7 +246,8 @@ impl Viewer {
         self.begin_tactic(n);
     }
 
-    /// INTELLIGENCE: the province's hint, with a Satellite Uplink.
+    /// INTELLIGENCE: the province's report over the greyed continent; the
+    /// objective, hint and map need a Satellite Uplink.
     fn intelligence(&mut self, n: i64) {
         let uplink = self.campaign.as_ref().is_some_and(|c| {
             c.state
@@ -206,19 +255,54 @@ impl Viewer {
                 .as_ref()
                 .is_some_and(|b| b.buildings.iter().any(|b| b.kind == UPLINK))
         });
-        let text = if uplink {
-            self.campaign
-                .as_ref()
-                .and_then(|c| c.continent()?.province(n))
-                .map(|p| p.objective.en.clone())
-                .unwrap_or_default()
-        } else {
-            self.string(
+        let preview = if uplink { self.intel_preview(n) } else { None };
+        let Some(st) = &mut self.strategic else {
+            return;
+        };
+        st.intel = Some(Intel {
+            province: n,
+            uplink,
+            preview,
+        });
+        self.army_view += 1;
+        self.screen = Screen::Intelligence;
+    }
+
+    /// The map of the province's next scenario, fitted in the preview box.
+    fn intel_preview(&self, n: i64) -> Option<Image> {
+        let file = self.campaign.as_ref()?.scenario_of(n)?;
+        let battle = Battle::start(&self.game, &file).ok()?;
+        let scene = self.scene_of(&battle.scenario);
+        let cell = (2 * PREVIEW).div_ceil(scene.size.max(1)).max(2);
+        let picture = minimap::top_down(&scene, &self.art, cell);
+        Some(minimap::downscale(&picture, PREVIEW, PREVIEW))
+    }
+
+    /// The INTELLIGENCE dialog's text: no uplink, or the objective and hint.
+    pub(crate) fn intel_text(&self, intel: &Intel) -> Vec<String> {
+        if !intel.uplink {
+            return vec![self.string(
                 NEED_UPLINK,
                 "You must build a Satellite Uplink to see more information.",
-            )
+            )];
+        }
+        let Some(p) = self
+            .campaign
+            .as_ref()
+            .and_then(|c| c.continent()?.province(intel.province))
+        else {
+            return Vec::new();
         };
-        self.strategic_message(text);
+        let goal: Vec<&str> = p.description.en.split("##").skip(1).take(2).collect();
+        vec![goal.join("\n"), p.objective.en.clone()]
+    }
+
+    /// BACK of the INTELLIGENCE dialog.
+    pub(crate) fn close_intel(&mut self) {
+        if let Some(st) = &mut self.strategic {
+            st.intel = None;
+        }
+        self.screen = self.home();
     }
 
     /// BACK / CONTINUE lead to base building.

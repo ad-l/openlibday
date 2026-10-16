@@ -865,6 +865,16 @@ pub fn state(viewer: &Viewer) -> Value {
         Value::Null,
         |st| json!({ "selected": st.selected, "text": st.text, "victory": st.victory }),
     );
+    if let Some(st) = &viewer.strategic {
+        state["strategic"]["intel"] = st.intel.as_ref().map_or(Value::Null, |intel| {
+            json!({
+                "province": intel.province,
+                "uplink": intel.uplink,
+                "preview": intel.preview.as_ref().map(|i| [i.width, i.height]),
+                "text": viewer.intel_text(intel),
+            })
+        });
+    }
     // `roads.N` / `walls.N`: `[kind, x, y, owner]`.
     let surfaces = |list: &[libday_data::scenario::Surface]| {
         list.iter()

@@ -5,7 +5,7 @@ use libday_view::ui::{self, Button, Field, Rect, Screen, State, frame};
 use sdl3::render::{Canvas, FRect};
 use sdl3::video::Window;
 
-use super::{Gfx, LINE, Result, TEXT_PX, WHITE, draw_sidebar, fill, frect, texture};
+use super::{Gfx, LINE, Result, TEXT_PX, WHITE, draw_sidebar, fill, frect, grey_out, texture};
 use crate::Viewer;
 
 pub(super) fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
@@ -57,6 +57,9 @@ pub(super) fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) 
             }
         }
     }
+    if viewer.screen == Screen::Intelligence {
+        grey_out(canvas, gfx, viewer.army_view)?;
+    }
     draw_sidebar(canvas, gfx, &layout, frame::STRATEGIC_SIDEBAR)?;
     let screen = Screen::Strategic {
         victory: st.victory,
@@ -93,4 +96,88 @@ pub(super) fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) 
         }
     }
     Ok(())
+}
+
+/// The INTELLIGENCE dialog: map preview, province title and name, then the
+/// objective and hint (or the need for a Satellite Uplink).
+pub(super) fn draw_intel(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Result {
+    let Some(intel) = viewer.strategic.as_ref().and_then(|st| st.intel.as_ref()) else {
+        return Ok(());
+    };
+    let Some(p) = viewer
+        .campaign
+        .as_ref()
+        .and_then(|c| c.continent()?.province(intel.province))
+    else {
+        return Ok(());
+    };
+    let layout = viewer.layout();
+    let (s, fonts) = (layout.scale, &viewer.fonts);
+    let px = TEXT_PX * s as f32;
+    let line = LINE * s;
+    let d = layout.intel_dialog();
+    gfx.frame(canvas, frame::INTEL_DIALOG, d.x, d.y, s)?;
+    if let Some(image) = &intel.preview {
+        if gfx
+            .intel
+            .as_ref()
+            .is_none_or(|(k, _)| *k != viewer.army_view)
+        {
+            gfx.intel = texture(gfx.creator, image).map(|t| (viewer.army_view, t));
+        }
+        if let Some((_, t)) = &gfx.intel {
+            let b = layout.in_intel(ui::INTEL_MAP);
+            let (w, h) = (image.width as i32 * s, image.height as i32 * s);
+            let r = Rect::new(b.x + (b.w - w) / 2, b.y + (b.h - h) / 2, w, h);
+            canvas.copy(t, None, frect(r))?;
+        }
+    }
+    let t = layout.in_intel(ui::INTEL_TEXT);
+    let title = Rect::new(t.x, t.y, t.w, line);
+    gfx.text_in(canvas, fonts, &p.title.en, px, WHITE, title, 0.5, 0)?;
+    let mut y = t.y + 30 * s;
+    gfx.text(canvas, fonts, &p.name.en, px, WHITE, t.x, y)?;
+    let text = viewer.intel_text(intel);
+    if intel.uplink {
+        y += 30 * s;
+        for block in &text {
+            for paragraph in block.split('\n') {
+                for l in ui::wrap(paragraph, t.w as f32, |x| fonts.measure(x, px, false)) {
+                    if y + line > t.bottom() {
+                        break;
+                    }
+                    gfx.text(canvas, fonts, &l, px, WHITE, t.x, y)?;
+                    y += line;
+                }
+            }
+            y += 20 * s;
+        }
+    } else {
+        y += 60 * s;
+        let left = t.x - 200 * s;
+        let w = t.right() - left;
+        for paragraph in &text {
+            for l in ui::wrap(paragraph, w as f32, |x| fonts.measure(x, px, false)) {
+                gfx.text_in(
+                    canvas,
+                    fonts,
+                    &l,
+                    px,
+                    WHITE,
+                    Rect::new(left, y, w, line),
+                    0.5,
+                    0,
+                )?;
+                y += line;
+            }
+        }
+    }
+    gfx.button(
+        canvas,
+        viewer,
+        &layout,
+        Button::IntelBack,
+        State::Normal,
+        false,
+    )
 }

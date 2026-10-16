@@ -530,6 +530,7 @@ impl Viewer {
         } else {
             self.base_message(BUILT, "%1 has been built", &name, 0);
         }
+        self.effect(crate::sound::Effect::Build);
         self.rebuild();
     }
 
@@ -619,6 +620,7 @@ impl Viewer {
         let name = thing.item().name(&self.defs);
         thing.add(&mut self.map.battle.scenario);
         self.base_message(MOVED, "%1 has been moved", &name, 0);
+        self.effect(crate::sound::Effect::Click);
         self.rebuild();
     }
 
@@ -656,6 +658,7 @@ impl Viewer {
         *self.credits_mut() += refund;
         let name = item.name(&self.defs);
         self.base_message(RECYCLED, "%1 has been recycled", &name, 0);
+        self.effect(crate::sound::Effect::Cashin);
         self.rebuild();
     }
 
@@ -707,7 +710,7 @@ impl Viewer {
         }
     }
 
-    fn scene_of(&self, s: &Scenario) -> Scene {
+    pub(crate) fn scene_of(&self, s: &Scenario) -> Scene {
         libday_view::build(s, &self.defs, &self.art, &self.options)
     }
 }

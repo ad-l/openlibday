@@ -136,6 +136,9 @@ pub mod frame {
     pub const NEW_GAME: u16 = 939;
     pub const NEW_GAME_BACK: u16 = 940;
     pub const NEW_GAME_CONTINUE: u16 = 944;
+    /// Continent INTELLIGENCE dialog and its BACK.
+    pub const INTEL_DIALOG: u16 = 557;
+    pub const INTEL_BACK: u16 = 558;
 }
 
 /// `(first frame, last frame, width, height)` of every element used.
@@ -180,6 +183,8 @@ const CROPS: &[(u16, u16, i32, i32)] = &[
     (507, 507, SIDEBAR_W, SIDEBAR_H),
     (512, 515, 110, 17),
     (520, 535, 53, 17),
+    (557, 557, 513, 311),
+    (558, 561, 110, 17),
     (633, 633, 449, 268),
     (634, 637, 110, 17),
     (638, 643, 19, 19),
@@ -429,6 +434,8 @@ pub enum Button {
     StrategicBack,
     /// After a victory, in place of BACK.
     StrategicContinue,
+    /// BACK of the INTELLIGENCE dialog.
+    IntelBack,
     // Base editor sidebar.
     BaseMap,
     BaseBuildings,
@@ -484,6 +491,8 @@ pub enum Screen {
     BaseEditor,
     /// ARMY in base building: the technology dialog over the greyed base.
     Army,
+    /// INTELLIGENCE: a province's report over the greyed continent.
+    Intelligence,
 }
 
 /// A question the OPTIONS dialog asks before acting.
@@ -597,6 +606,7 @@ impl Button {
             Button::Attack => ATTACK,
             Button::StrategicBack => STRATEGIC_BACK,
             Button::StrategicContinue => TECH_CONTINUE,
+            Button::IntelBack => INTEL_BACK,
             Button::BaseMap => BASE_MAP,
             Button::BaseBuildings => BASE_BUILDINGS,
             Button::BaseDefenses => BASE_DEFENSES,
@@ -722,6 +732,7 @@ impl Button {
             Button::Intelligence => (11, 387),
             Button::Attack => (11, 407),
             Button::StrategicBack | Button::StrategicContinue => (11, 456),
+            Button::IntelBack => (364, 250),
             Button::BaseMap => (11, 171),
             Button::BaseBuildings => (12, 198),
             Button::BaseDefenses => (12, 222),
@@ -810,6 +821,12 @@ pub const OPTIONS_ROW: i32 = 22;
 pub const OPTIONS_ROWS: usize = (OPTIONS_TABLE.h / OPTIONS_ROW) as usize;
 /// Question dialog position over the map viewport.
 pub const QUESTION_AT: (i32, i32) = (50, 70);
+/// INTELLIGENCE dialog position.
+pub const INTEL_AT: (i32, i32) = (40, 40);
+/// INTELLIGENCE dialog's map preview box, relative to the dialog.
+pub const INTEL_MAP: Rect = Rect::new(10, 10, 200, 200);
+/// INTELLIGENCE dialog's text area, relative to the dialog.
+pub const INTEL_TEXT: Rect = Rect::new(220, 20, 273, 261);
 /// Question dialog text area, relative to the dialog.
 pub const QUESTION_TEXT: Rect = Rect::new(8, 8, 238, 104);
 /// Skirmish list `(x, y, w, h)`, relative to the dialog.
@@ -951,6 +968,7 @@ impl Layout {
             | Button::TechContinue
             | Button::TechBack => self.s(native).offset_by(self.tech_dialog()),
             Button::Yes | Button::No => self.s(native).offset_by(self.question_dialog()),
+            Button::IntelBack => self.s(native).offset_by(self.intel_dialog()),
             Button::SkirmishUp
             | Button::SkirmishDown
             | Button::SkirmishBack
@@ -1032,6 +1050,17 @@ impl Layout {
 
     pub fn tech_dialog(&self) -> Rect {
         self.centred(frame::TECH_DIALOG)
+    }
+
+    /// The continent INTELLIGENCE dialog, at a fixed position.
+    pub fn intel_dialog(&self) -> Rect {
+        let (w, h) = crop_of(frame::INTEL_DIALOG).unwrap_or((0, 0));
+        self.s(Rect::new(INTEL_AT.0, INTEL_AT.1, w, h))
+    }
+
+    /// A rectangle in INTELLIGENCE dialog coordinates.
+    pub fn in_intel(&self, r: Rect) -> Rect {
+        self.s(r).offset_by(self.intel_dialog())
     }
 
     pub fn question_dialog(&self) -> Rect {
@@ -1216,6 +1245,7 @@ impl Layout {
                     Button::StrategicBack
                 },
             ]),
+            Screen::Intelligence => buttons.push(Button::IntelBack),
             Screen::BaseEditor => buttons.extend([
                 Button::BaseMap,
                 Button::BaseBuildings,

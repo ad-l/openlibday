@@ -89,6 +89,8 @@ pub struct Gfx<'r> {
     provinces: HashMap<(usize, i64, u8), Texture<'r>>,
     /// ARMY's greyed map snapshot, by opening serial and output size.
     grey: Option<(GreyKey, Texture<'r>)>,
+    /// INTELLIGENCE map preview, by opening serial.
+    intel: Option<(u64, Texture<'r>)>,
 }
 
 impl<'r> Gfx<'r> {
@@ -110,6 +112,7 @@ impl<'r> Gfx<'r> {
             sea: None,
             provinces: HashMap::new(),
             grey: None,
+            intel: None,
         }
     }
 
@@ -422,6 +425,16 @@ impl Viewer {
     pub(crate) fn animating(&self) -> bool {
         self.overview_shown() && (self.entry.is_some() || self.has_tech())
             || self.flow.ai_until.is_some()
+            || self.sea_animating()
+    }
+
+    /// Whether the province map's sea animates on screen.
+    pub(crate) fn sea_animating(&self) -> bool {
+        matches!(self.screen, Screen::Strategic { .. })
+            && self
+                .strategic
+                .as_ref()
+                .is_some_and(|st| st.map.sea_frames() > 0)
     }
 
     /// Whether the map holds a technology building (its overview bulb blinks).
@@ -1069,6 +1082,10 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
         Screen::AiTurn => setup::draw_ai_sidebar(canvas, gfx, viewer)?,
         Screen::Automated => setup::draw_automated_sidebar(canvas, gfx, viewer)?,
         Screen::Strategic { .. } => strategic::draw(canvas, gfx, viewer)?,
+        Screen::Intelligence => {
+            strategic::draw(canvas, gfx, viewer)?;
+            strategic::draw_intel(canvas, gfx, viewer)?;
+        }
         Screen::BaseEditor => base::draw(canvas, gfx, viewer)?,
         Screen::Army => {
             base::draw(canvas, gfx, viewer)?;

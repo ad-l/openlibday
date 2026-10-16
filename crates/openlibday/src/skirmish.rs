@@ -331,6 +331,7 @@ impl Viewer {
             setup.points -= cost;
             setup.tech[cell] += 1;
         }
+        self.effect(Effect::Cashout);
         self.army_sync();
     }
 

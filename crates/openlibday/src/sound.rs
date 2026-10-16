@@ -92,6 +92,18 @@ pub enum Effect {
     Invalid,
     /// A technology building is captured (`tech`, `0x46ac4d`).
     Tech,
+    /// A base structure is built (`build`, with string 403/406).
+    Build,
+    /// A base structure is recycled (`cashin`, with string 404).
+    Cashin,
+    /// A base structure is moved (`click`, with string 405).
+    Click,
+    /// A technology level is bought (`cashout`, `0x45cdd9`).
+    Cashout,
+    /// An uncaptured province is selected (`selprov`, `0x443df5`).
+    Selprov,
+    /// A province is won (`province`, `0x44427d`).
+    Province,
 }
 
 impl Effect {
@@ -102,6 +114,12 @@ impl Effect {
             Effect::Recall => "RECALL.WAV",
             Effect::Invalid => "INVALIDE.WAV",
             Effect::Tech => "TECH.WAV",
+            Effect::Build => "BUILD.WAV",
+            Effect::Cashin => "CASHIN.WAV",
+            Effect::Click => "CLICK.WAV",
+            Effect::Cashout => "CASHOUT.WAV",
+            Effect::Selprov => "SELPROV.WAV",
+            Effect::Province => "PROVINCE.WAV",
         }
     }
 }

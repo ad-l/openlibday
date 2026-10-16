@@ -252,9 +252,7 @@ struct Viewer {
     /// The continent overview, while it is open.
     strategic: Option<strategic::Strategic>,
     base_editor: Option<base_editor::BaseEditor>,
-    /// The technology dialog after a won campaign battle, and the
-    /// greyed map's snapshot serial for ARMY.
-    army_reward: Option<army::Then>,
+    /// The greyed map's snapshot serial for ARMY.
     army_view: u64,
 }
 
@@ -666,6 +664,7 @@ impl Viewer {
             | Button::Attack
             | Button::StrategicBack
             | Button::StrategicContinue => self.strategic_activate(button),
+            Button::IntelBack => self.close_intel(),
             Button::BaseMap
             | Button::BaseBuildings
             | Button::BaseDefenses
@@ -980,7 +979,6 @@ fn main() -> Result {
         campaign: None,
         strategic: None,
         base_editor: None,
-        army_reward: None,
         army_view: 0,
     };
     if args.script.is_some() {
@@ -1021,6 +1019,12 @@ fn main() -> Result {
         dirty |= viewer.battle_tick();
         let wait = if moving || viewer.flow.ai_until.is_some() {
             15
+        } else if viewer.sea_animating() {
+            // The sea's frame time (`frame_micros`), without drifting.
+            viewer
+                .strategic
+                .as_ref()
+                .map_or(100, |st| (st.map.frame_micros / 1000).clamp(15, 100))
         } else if viewer.animating() {
             100
         } else {

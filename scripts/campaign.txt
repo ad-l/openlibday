@@ -38,15 +38,8 @@ idle
 expect screen Report
 expect report.tech New technologies found : 150
 key Return
-# The earned technology is spent first (Trooper: 5 to level 2).
-expect screen Tech
-expect setup.units [2]
-expect setup.points 150
-button TechUpgrade
-expect setup.tech [1]
-expect campaign.tech 145
-expect campaign.unit_tech.2 1
-button TechContinue
+# No technology dialog in the campaign: points are spent with ARMY.
+expect campaign.tech 150
 expect campaign.stage.stage strategic
 # Surviving towers are kept as tower buildings.
 expect campaign.base.buildings.1.kind 137
@@ -58,10 +51,16 @@ button StrategicContinue
 expect screen BaseEditor
 expect credits 625
 expect base_editor.list.0.0 Deploy Mk1
-# ARMY: the same dialog over the greyed base.
+# ARMY: the technology dialog over the greyed base (Trooper: 5 to level
+# 2, then 10 to level 3).
 button BaseArmy
 expect screen Army
-expect setup.points 145
+expect setup.units [2]
+expect setup.points 150
+button TechUpgrade
+expect setup.tech [1]
+expect campaign.tech 145
+expect campaign.unit_tech.2 1
 button TechUpgrade
 expect campaign.tech 135
 expect campaign.unit_tech.2 2
@@ -117,9 +116,21 @@ province 3
 expect strategic.selected 3
 expect strategic.text.0 Milos
 expect strategic.text.-1 Credits: 472
-# The starting base has a Satellite Uplink, so INTELLIGENCE gives the hint.
+# The starting base has a Satellite Uplink, so the INTELLIGENCE dialog
+# shows the objective, the hint and the map.
 button Intelligence
-expect strategic.text.0 HINT: Bring a unit next to the tech center to gain technology. LAVs are useful to complete the mission. Click once on a unit to show the firing path, a second click will confirm the firing order.
+expect screen Intelligence
+expect strategic.intel.province 3
+expect strategic.intel.uplink true
+expect strategic.intel.preview [200,200]
+expect strategic.intel.text.1 HINT: Bring a unit next to the tech center to gain technology. LAVs are useful to complete the mission. Click once on a unit to show the firing path, a second click will confirm the firing order.
+expect strategic.text.0 Milos
+button IntelBack
+expect screen Strategic
+expect strategic.intel null
+button Intelligence
+key Escape
+expect screen Strategic
 # The capital is not next to the base.
 province 7
 button Attack
