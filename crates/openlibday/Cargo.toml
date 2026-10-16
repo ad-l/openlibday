@@ -19,5 +19,9 @@ natpmp = { version = "0.5", default-features = false }
 netdev = "0.31"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
+[features]
+# A Windows build without a console window (the release download).
+gui = []
+
 [lints]
 workspace = true

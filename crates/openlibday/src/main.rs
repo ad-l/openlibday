@@ -15,6 +15,8 @@
 //! and `FILE` a list of commands to run (see `script.rs`); `--headless` runs
 //! it without a window, at `--size` (default 1024x768).
 
+#![cfg_attr(all(windows, feature = "gui"), windows_subsystem = "windows")]
+
 mod ai;
 mod army;
 mod automated;
@@ -996,8 +998,22 @@ fn main() -> Result {
         None => None,
     };
     let game = match args.root {
-        Some(root) => GameData::open(root)?,
-        None => GameData::from_env()?,
+        Some(root) => GameData::open(root),
+        None => GameData::from_env(),
+    };
+    let game = match game {
+        Ok(game) => game,
+        Err(e) => {
+            if args.script.is_none() {
+                let _ = sdl3::messagebox::show_simple_message_box(
+                    sdl3::messagebox::MessageBoxFlag::ERROR,
+                    "openlibday",
+                    &e.to_string(),
+                    None,
+                );
+            }
+            return Err(e.into());
+        }
     };
     let defs = game.definitions()?;
     let art = Art::load(&game, &defs)?;

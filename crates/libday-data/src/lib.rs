@@ -1,7 +1,8 @@
 //! Locates an original Liberation Day installation and resolves its files.
 //!
 //! Game data is never bundled with openlibday. The installation root is
-//! taken from an explicit path or the `LIBDAY_ROOT` environment variable.
+//! taken from an explicit path, the `LIBDAY_ROOT` environment variable, or
+//! else the current directory.
 //! `EXE\LIBDAY.INI` `[Installation]` paths are honoured when they exist;
 //! otherwise the standard directory names under the root are used, so a
 //! copied installation keeps working. File lookups are case-insensitive so
@@ -33,7 +34,9 @@ pub const ROOT_ENV: &str = "LIBDAY_ROOT";
 pub enum DataError {
     #[error("no game data configured; set {ROOT_ENV} to the Liberation Day install directory")]
     NotConfigured,
-    #[error("{0} is not a Liberation Day installation (missing IMGS or GLOBALS)")]
+    #[error(
+        "{0} is not a Liberation Day installation (missing IMGS or GLOBALS): place openlibday in the game's directory, or set {ROOT_ENV} to it"
+    )]
     NotAnInstall(PathBuf),
     #[error("missing game file {0}")]
     Missing(PathBuf),
@@ -114,11 +117,12 @@ pub fn find_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
 }
 
 impl GameData {
-    /// Uses `LIBDAY_ROOT`.
+    /// Uses `LIBDAY_ROOT`, or the current directory when it is not set
+    /// (openlibday placed in the game's own directory).
     pub fn from_env() -> Result<Self, DataError> {
         match std::env::var_os(ROOT_ENV) {
             Some(root) if !root.is_empty() => Self::open(root),
-            _ => Err(DataError::NotConfigured),
+            _ => Self::open("."),
         }
     }
 

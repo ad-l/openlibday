@@ -1,123 +1,53 @@
 # openlibday
 
-An open-source reimplementation of the engine for **Liberation Day** (1998),
-the turn-based isometric tactics game. openlibday aims to play the original
-game using data from a legally owned installation, on Windows, Linux and mobile.
+An open-source reimplementation of the engine of **Liberation Day** (1998),
+the turn-based isometric tactics game, for modern Windows (Linux to
+follow).
 
-openlibday contains **no original game assets or executable code**. You need an
-existing Liberation Day installation; the engine reads its databases, artwork,
-animation, video and sound files at runtime.
+openlibday contains **no original game assets or code**: it plays the game
+from the data of a Liberation Day installation you own.
 
-## Status
+What it plays:
 
-Milestone M2 (map viewer) complete: every skirmish map renders natively
-(terrain, roads/bridges, walls, mines, buildings, units, reinforcements and
-deployment zones) with exact draw-order parity against the Python map editor.
-The battle interface is in place: right-hand sidebar (minimap, unit
-selector, action buttons) and bottom bar, drawn from the original
-`INTERF\1024X768.SMK` art and resizable with the window. The minimap, MAP
-overview (units in player colours, per-player unit lists that blink on the
-map) and GOAL dialog work; the other buttons are not wired up yet.
-Units move: a click previews the cheapest path in action points (dots,
-crossed beyond the unit's AP), a second click walks it with the original
-walk animations; overwatch keeps a shot's AP in reserve. The mouse cursor
-shows the order: move, fire (range and line of sight as the original
-checks them), move closer, or not enough AP.
-Combat has begun: clicking an enemy locks it as the target (red arrow), with
-a path to the cheapest tile the unit can shoot from when it cannot hit it
-from where it stands; a second click moves there, turns to the target and
-keeps shooting while the target stands and the AP lasts, back to back with
-the weapon kept raised (the fire animation loops, lowered after the last
-shot only). The FIRE button
-arms a single shot instead: any tile can then be targeted (friendly units,
-buildings and bare ground included), and once fired the mode switches off.
-Each shot plays the original raise/fire/lower, projectile (arced, for units
-that have one and are not adjacent) and impact animations, charging the
-shot's AP. Towers and the OutPost turn their fire animation to the target
-too, and units drawn in one colour set only use it whoever owns them (the
-original swaps the AI's colour for player 1's, `0x43650b`). Shots miss as in the original: beyond adjacent tiles the
-shooter's `HitShortRange`/`HitMediumRange`/`HitLongRange` chance (bands from
-the `Ranges` table, 3 and 6 tiles) is rolled with the game's `rand()`, and a
-miss lands on a random neighbouring tile on the map, whoever stands there.
-A unit of the side whose turn it is (the target of reaction fire) scales
-the chance by its `Jammer` percentage. Damage follows the original: one
-roll of `damageBase + 1 + rand() % damageRandom`, spread over the
-`DamageArea` square with falloff by distance. Units and walls lose armour
-(paralysing weapons drain AP instead), destructible buildings lose armour
-and switch to their damaged sprites at a third, mines go off with their
-explosion, paved roads
-and bridges break (dirt roads never do; a bridge takes the unit on it down
-with it) and bare ground and forest burn, while water, mountains and pits
-do not. Destroyed units and buildings play their explosions and leave
-their wrecks (`ruinImageID`, or random `B?RUI` rubble over a building's
-footprint).
-Mines follow the original's moves: enemy mines are hidden until found. A
-unit walking onto an armed mine that affects it stops there and the mine
-explodes (`MINE\*.SMK`) with the mine type's damage, revealing the mines on
-the tiles around it; ground units and troopers set off any mine, grav units
-only grav mines, boats none. Mine detectors (`MineDetectionRange`) stop as
-soon as a hidden mine comes within range and reveal it.
-Overwatch and reaction fire follow the original's move order (`0x419e07`):
-the walk is checked tile by tile from where the unit stands, and it is
-spotted on a tile when a hostile unit whose type `canOverwatch`, with a
-shot's AP left, has a clear shot at it there (stealth units, `Jammer` 0,
-never are). The walk ends on that tile (before its mines are looked at; a
-unit spotted where it stands does not move) and every such unit fires once,
-in unit order, in rounds while one did and the target stands (`0x41a46b`).
-There is no overwatch accuracy penalty: the moving unit, of the side whose
-turn it is, evades by its `Jammer`. Only moves trigger it, and the per-unit
-OVERWATCH toggle only keeps a shot's AP in reserve. As a convenience the
-original lacks, holding the right button on an enemy ready to fire on
-overwatch highlights the tiles it covers (in range and line of sight) in red.
-Animations play their sound (the Smacker audio track of each walk, shot,
-impact and explosion animation, one chunk per shown frame; an animation cut
-short, like a walk that stops, cuts its sound with a short fade). Sounds are mixed
-in software (any number at once, each resampled from its own rate) into one
-SDL3 audio stream. Interface effects come from `SOUNDS\*.WAV`: selecting a
-unit, deploying, recalling and refused deployments (with the original
-messages).
-Cutscenes (`VIDEO\*.SMK`) play where the original plays them: the
-introduction at start-up and from the main menu's INTRO button, the
-continent intro when a campaign starts and on each new continent, the
-counterattack video, and the won/lost endings. They are drawn at 200%
-(times the interface density, or as large as fits), centred and
-letterboxed, with their soundtrack; Escape or a click skips them.
-Battles save and load as versioned JSON (`F5`/`F9` quick save/load), and
-battle saves of the original game (`SAVEGAME\savegame.NN`) can be opened or
-converted.
-Skirmish mode is playable end to end at a basic level: skirmish selector,
-technology point allocation, briefing, deployment in the starting zones
-(budget, place/recall units), then alternating turns where the player moves
-units and the AI passes its turn.
-**Testing Ground** (generated by `tools/modding/make_testing_ground.py`) is a
-96x96 skirmish for scripted tests: three of every unit for player 1, every
-alien unit and building for the AI, roads, built and unbuilt bridges, water,
-minefields, walls and props. Its openlibday-only `TechPoints` = 0 skips the
-technology screen (the original game ignores that column), and its 0
-deployment points list it first: the skirmish list is sorted by `One Off
-Deployment`, as the original's query is.
-DBI sprites, Jet 3 databases, ZIP archives and PE string tables decode natively. The first goal is playable
-stand-alone skirmishes; campaign (story mode) and multiplayer will follow.
+- the campaign, with base building, counterattacks and the continent
+  map;
+- skirmishes, on every original map;
+- co-operative multiplayer for 2–4 players against the computer
+  (skirmishes and campaigns), over the local network or the internet;
+- unlimited saves;
+- any window size, with interface scaling and map zoom.
 
-See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap.
-Implementation: Rust + SDL3. License: MIT (code only; no game data included).
-The bundled Liberation Sans font (`crates/libday-view/assets/fonts`) is under
-the SIL Open Font License 1.1.
+## Installation (Windows)
+
+1. Install Liberation Day from the original CD (or copy an existing
+   installation). openlibday needs its game directory, the one holding
+   `IMGS`, `GLOBALS`, `SCENS` and so on (for example `C:\libday`). The
+   original game does not need to run.
+2. Download `openlibday-VERSION-windows-x64.zip` from the
+   [releases](https://github.com/ad-l/openlibday/releases).
+3. Extract `openlibday.exe` into that game directory, next to `IMGS`
+   (for example `C:\libday\openlibday.exe`).
+4. Double-click `openlibday.exe`.
+
+openlibday looks for the game data in the directory it is started from.
+To keep it elsewhere, set the `LIBDAY_ROOT` environment variable to the
+game directory, or start it with `openlibday --root C:\libday`.
+
+Settings are in the in-game OPTIONS (main menu RESOLUTION, or MENU in
+battle) and are saved, with saved games, in `%APPDATA%\openlibday\`.
 
 ## Multiplayer
 
-Co-operative skirmishes and campaigns for 2–4 humans against the AI,
-without a central server. In a co-op campaign (choose Campaign in the
-waiting area) everyone shares the continent and the base, builds and
-researches with their own credits and technology, and the host picks
-the provinces to invade. One player hosts (MULTI PLAYER, enter a name, HOST); the others
-JOIN with the host's address. Games on the local network are listed in
-the SESSIONS dialog: click one, then JOIN. Everyone needs the same
-openlibday build and game data.
+One player hosts (MULTI PLAYER, enter a name, HOST); the others JOIN with
+the host's address, or pick the game from the list when it is on the same
+network. In the waiting area the host chooses a skirmish or a campaign,
+the difficulty and a turn time limit, and can LOAD a multiplayer campaign
+saved earlier (with the same players). Everyone needs the same openlibday
+version and game data.
 
-Over the internet, hosting asks the router to open TCP port 41530 (UPnP
-or NAT-PMP) and the waiting area shows the address to give the others
-(WAN, with COPY). If the router does not do it (the chat says so):
+Over the internet, hosting asks the router to open TCP port 41530 (UPnP or
+NAT-PMP), and the waiting area shows the address to give the others (WAN,
+with Copy). If the router does not do it (the chat says so):
 
 - forward TCP port 41530 on the host's router to the host's LAN address
   (shown in the waiting area), and give the others the host's public IP;
@@ -125,165 +55,50 @@ or NAT-PMP) and the waiting area shows the address to give the others
 - or put everyone on a virtual network such as Tailscale or ZeroTier and
   use the host's address there.
 
-A WAN address the chat flags as behind another router (carrier-grade
-NAT, common with mobile and some fibre providers) cannot be reached from
-outside: use IPv6 or a virtual network then. From the command
-line: `openlibday --host --name Alice` or `openlibday --join 192.168.1.20
---name Bob` (`--port N` to change the port). See
+A WAN address the chat flags as behind another router (carrier-grade NAT)
+cannot be reached from outside: use IPv6 or a virtual network then. See
 [docs/multiplayer.md](docs/multiplayer.md).
 
-## Building and running
+## Building from source
 
 Requires stable Rust (1.88+), CMake and a C compiler (MSVC Build Tools on
 Windows); SDL3 is built from source and linked statically.
 
 ```powershell
-$env:LIBDAY_ROOT = 'F:\libday'      # your Liberation Day install directory
-cargo test --workspace              # data-gated tests skip without LIBDAY_ROOT
-cargo run -p openlibday             # skirmish mode: selector, tech, deployment, turns
-cargo run -p openlibday -- s3-4-1   # map viewer on a specific map (file name, with or without .mdb)
-cargo run -p openlibday -- --load 1          # original save SAVEGAME\savegame.01 (or a .json/dir path)
-cargo run -p libday-tools -- skirmishes
-cargo run -p libday-tools -- save-list       # original savegame slots (battle or campaign-only)
-cargo run -p libday-tools -- save-info 1     # summary of a slot number, directory or .json save
-cargo run -p libday-tools -- save-import 1 battle.json
-cargo run -p libday-tools -- map-render s1-2-1 -o map.png --grid
-cargo run -p libday-tools -- map-scene s1-2-1 --deployment   # draw list as JSON
-cargo run -p libday-tools -- dbi-list TERRAINS.DBI
-cargo run -p libday-tools -- dbi-export UB.DBI out\ub
-cargo run -p libday-tools -- smk-audio 'ANMSUNIT\ANMSUNIT.FF!HART\P1\HART1T7.SMK' shot.wav
+$env:LIBDAY_ROOT = 'C:\libday'     # the game directory, for running from the source tree
+cargo run --release -p openlibday
+cargo test --workspace             # tests needing game data skip without LIBDAY_ROOT
+cargo build --release -p openlibday --features gui   # no console window (the release build)
 ```
 
-Map viewer controls: mouse wheel or `+`/`-` zoom (anchored on the cursor),
-drag with any button or arrow keys to pan, `Home` recentre, `PgUp`/`PgDn`
-previous/next skirmish, `G` grid, `D` deployment zones, `U` units, `T` terrain
-only, `[`/`]` show reinforcements up to an arrival turn, `M` MAP overview,
-`O` GOAL dialog, `I` cycle interface scale, `F5` quick save, `F9` quick
-load, `Esc` back to battle or quit.
-Click a unit to select it (click it again to turn it clockwise); with a unit selected, click a tile to preview
-its path and click it again (or double click) to move; click an enemy to
-target it and again to attack. The OVERWATCH box
-toggles the reserve. Hold the right button on a unit to show its AR, AP,
-range, overwatch, owner and capability icons in the minimap well (and, for an
-enemy ready to fire on overwatch, the tiles it covers). Click the minimap to move the view. The title
-bar shows the hovered tile's terrain, building and unit. Set
-`OPENLIBDAY_TRACE_EVENTS=1` to log SDL events to stderr.
-
-### Scripted and headless runs
-
-`openlibday --script FILE` replays a script of input and checks on a virtual
-clock (time only advances per scripted frame, so runs are deterministic),
-then continues interactively; add `--headless` to render offscreen and exit
-at the end of the script, and `--size WxH` for its resolution (default
-1024x768). Commands, one per line (`#` comments): `fps N`, `wait FRAMES`,
-`idle [MAX]` (until movement, shots and the AI turn finish), `key NAME`, `click X Y
-[right]`, `move X Y`, `tile X Y [right]` / `hover X Y` (map tiles; recentres
-as needed), `button NAME` (HUD button, e.g. `EndTurn`), `skirmish NAME|N`,
-`deploy UNIT`, `centre X Y`, `zoom F`, `screenshot FILE.png`, `record DIR N`
-(N frames as `DIR\frameNNNN.png`), `state [FILE]` (JSON dump of the screen,
-phase, turn, selection, hover cursor and fire check code, path preview,
-motion, target lock, shot timeline, deploy zone, every unit and the latest
-animation and interface sounds started),
-`expect PATH VALUE` (dotted path into that JSON; `units.id=5.ap`,
-`units.-1.x`), `seed N` (reseed `rand()`; scripts start at 1),
-`mine KIND OWNER X Y` (lay an armed mine hidden from all but its owner),
-`inspect X Y` (hold the right button on a tile), `place I X Y` (move unit
-I there), `reactions on|off` (whether overwatch spots moving units),
-`ai off|legacy|modern` (how the computer player plays), `win` / `lose`
-(end the battle with that outcome, like the original's cheats), `kill ID`
-(remove a unit or building as if destroyed by the other side),
-`support NAME|ID` (open AUTOMATED UNITS and arm a support, aimed with `tile`),
-`grant ID` / `credits N` (cheats: offer a support, set the credits), `echo TEXT`,
-`quit`. The state also holds the `outcome`, `objective`, battle `report` and
-each player's `totals` (units destroyed, units lost, buildings destroyed,
-buildings lost) and `rank`. A failed `expect` or command exits with
-an error naming the line. [scripts/smoke.txt](scripts/smoke.txt) plays a
-skirmish from selection to turn 2,
-[scripts/combat.txt](scripts/combat.txt) two attacks and
-[scripts/mines.txt](scripts/mines.txt) a mine going off and a mine detector,
-[scripts/objectives.txt](scripts/objectives.txt) reinforcements, win and
-loss conditions and the battle report,
-[scripts/menu.txt](scripts/menu.txt) the OPTIONS dialog,
-[scripts/move_speed.txt](scripts/move_speed.txt) the unit move speeds,
-[scripts/reinforce.txt](scripts/reinforce.txt) buying reinforcements,
-[scripts/automated.txt](scripts/automated.txt) automated units (transport,
-mine detector, bomber),
-[scripts/testing_ground.txt](scripts/testing_ground.txt) loads the generated
-**Testing Ground** sandbox, [scripts/ai.txt](scripts/ai.txt) plays AI
-turns on it and [scripts/anti_air.txt](scripts/anti_air.txt) checks AA
-gunners and their red range on inspect; all are run by
-`cargo test` when `LIBDAY_ROOT` is set (the last three only once
-`tools/modding/make_testing_ground.py --install` has run):
-
-```powershell
-cargo run --release -p openlibday -- --headless --script scripts\smoke.txt
-```
-
-Options (interface scale, default 2x; initial window size; fullscreen;
-arrow-key scroll speed; start-up map zoom, 200% by default; unit move
-animations, `normal` by default, `fast` (the walk between the start and end
-animations at double speed) or `instant` (none: the unit appears at its
-destination); the red overwatch zone shown when inspecting an enemy, on
-by default; sound volume; whether the introduction video plays at start-up, on by
-default; AI mode, `modern` by default or `legacy` for the original's
-quirks, see [docs/ai.md](docs/ai.md)) are
-read from `openlibday.ini` in the user preferences directory
-(`%APPDATA%\openlibday\` on Windows, `~/.local/share/openlibday/` on Linux),
-or the file given with `--options FILE`. A commented default is created on
-first run; `openlibday --help` prints its location. The interface scale is
-lowered automatically when the window is too small for it. The bottom bar's
-MENU button opens the OPTIONS dialog: its table changes these settings at
-once and saves them (the arrows next to BACK scroll it; also the tile grid and terrain-only view, which are not
-saved), with the original's RESTART SCENARIO (surrender: the battle is
-lost), SAVE (SAVE GAME, below), QUIT (both asked first) and BACK. The main menu's
-RESOLUTION opens it too, without RESTART SCENARIO and SAVE. Mouse clicks,
-the wheel, or Up/Down plus Left/Right/Space drive the table; scripts can use
-`option NAME [STEP]` and read `menu` in the state. Quick saves go to
-`saves\quick.json` in the same directory.
-
-Saves are unlimited. SAVE GAME (MENU > SAVE) and LOAD GAME (the main menu's
-LOAD CAMPAIGN) reuse the original dialogs with a scrolling list over their
-ten slots, newest first: a picture of the base (campaign) or the map, the
-campaign's name, continent, captured provinces and difficulty or the map's
-title and turn, the date and the number of players. SAVE GAME offers a new
-save first; overwriting asks for a second SAVE, and Delete (pressed twice)
-removes a save. LOAD GAME also lists the campaign's own save. Games can be
-saved during one's turn at this computer (not in network games) and, in a
-campaign, between battles (continent overview and base building). The files
-are `saves\games\*.json`; scripts use `savedir`, `save`, `load` and
-`saves` and read `saves` in the state (`scripts/saves.txt`).
-
-A save stores the battle's source scenario (a stock `.mdb`, or the original
-save's own `SCENARIO.MDB` when it is not a stock map), the turn clock,
-difficulty, per-player deploy points and kill/loss tallies, every unit,
-building, wall, road, mine, ruin and surface with its current state, and the
-terrain cells that differ from the source (destroyed tiles). See
-"Savegames" in [tools/modding/README.md](tools/modding/README.md).
+`openlibday --help` lists the command-line options. `--script FILE
+[--headless]` replays a test script (see `scripts/` and
+`crates/openlibday/src/script.rs`); `cargo test` runs them when
+`LIBDAY_ROOT` is set.
 
 | Crate | Purpose |
 |---|---|
-| `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, CP1252, FF containers, Smacker video and audio; DBI/FF/Smacker encoders for modding |
-| `libday-data` | Locates an installation (`LIBDAY_ROOT`, `LIBDAY.INI`), case-insensitive lookup, databases, scenarios inside `SCENS\*.ZIP`, UI strings; typed GLOBAL.MDB definitions, scenario loader, skirmish catalog |
-| `libday-view` | Renderer-independent map scene (isometric projection, draw order, sprite choice) and a software compositor |
-| `libday-sim` | Deterministic headless simulation: movement rules and AP pathfinding (`path`), fire checks and line of sight (`fire`) |
-| `libday-tools` | `libday` CLI for inspecting/exporting data |
-| `openlibday` | SDL3 application |
-| `tools/modding` | Python/Tk map and scenario editor and unit/building asset editor (see its README) |
+| `libday-formats` | Decoders: DBI sprites, INI, Jet 3 (Access 97), ZIP, PE string tables, Smacker video and audio; encoders for modding |
+| `libday-data` | Locates an installation, databases, scenarios, typed game definitions, campaigns and savegames |
+| `libday-view` | Renderer-independent map scene, interface layout, combat and support rules |
+| `libday-sim` | Movement rules and AP pathfinding, fire checks and line of sight |
+| `libday-tools` | `libday` command-line tool for inspecting and exporting data |
+| `openlibday` | The SDL3 game |
 
-## Modding tools
+## Documentation
 
-`tools/modding` holds the map/scenario editor and the unit/building asset editor
-(game data per tech level, sprites, Smacker animations). They need Python 3.10+
-with Tk (standard Windows installer) and a built `libday` CLI (`cargo build`);
-point them at your install with `LIBDAY_ROOT`. Launch `Map Editor.cmd` or
-`Asset Editor.cmd`, and see [tools/modding/README.md](tools/modding/README.md).
-The map editor writes scenario databases through 32-bit Windows Jet, so it is
-Windows-only for now.
+- [docs/PLAN.md](docs/PLAN.md): architecture and roadmap;
+- [docs/campaigns.md](docs/campaigns.md), [docs/ai.md](docs/ai.md),
+  [docs/objectives.md](docs/objectives.md), [docs/tech.md](docs/tech.md),
+  [docs/automated.md](docs/automated.md),
+  [docs/multiplayer.md](docs/multiplayer.md): how the engine reproduces
+  the original;
+- [tools/modding/README.md](tools/modding/README.md): the map/scenario and
+  asset editors (Python/Tk, Windows) and the reverse-engineering
+  knowledge base, including file formats and savegames.
 
-## Knowledge base
+## License
 
-Reverse-engineering notes, file formats and observed native behavior are in
-[tools/modding/README.md](tools/modding/README.md) ("Engine reconstruction
-knowledge base"). Findings that the engine relies on are summarized in
-`docs/` as they are implemented; [docs/ai.md](docs/ai.md) documents the
-computer player.
+The code is under the MIT license ([LICENSE](LICENSE)). No game data is
+included. The bundled Liberation Sans font
+(`crates/libday-view/assets/fonts`) is under the SIL Open Font License 1.1.
