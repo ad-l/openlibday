@@ -337,7 +337,7 @@ fn anti_air(
             let k = defs.unit_tech(u.kind, u.tech)?;
             let ap = u.action_points.unwrap_or(k.action_points);
             let r = k.range;
-            (u.owner != player
+            (libday_data::objective::hostile(u.owner, player)
                 && u.arrival == 0
                 && k.anti_air
                 && k.can_overwatch

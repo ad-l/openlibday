@@ -339,10 +339,11 @@ impl Viewer {
     pub(crate) fn inspect(&mut self, i: usize) {
         self.info = Some(libday_view::inspect::Target::Unit(i));
         let scenario = &self.map.battle.scenario;
-        let enemy = scenario
-            .units
-            .get(i)
-            .is_some_and(|u| self.options.viewer.is_none_or(|v| u.owner != v));
+        let enemy = scenario.units.get(i).is_some_and(|u| {
+            self.options
+                .viewer
+                .is_none_or(|v| libday_data::objective::hostile(u.owner, v))
+        });
         let mut tiles = libday_view::support::anti_air_zone(scenario, &self.defs, i);
         if enemy && self.settings.overwatch_zone {
             tiles.extend(libday_view::overwatch::zone(scenario, &self.defs, i));

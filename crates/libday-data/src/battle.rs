@@ -227,7 +227,7 @@ impl Battle {
             .collect();
         for (kind, owner) in units {
             *self.record_mut(owner).units_lost.entry(kind).or_default() += 1;
-            if owner != attacker {
+            if crate::objective::hostile(owner, attacker) {
                 *self
                     .record_mut(attacker)
                     .units_destroyed
@@ -241,7 +241,7 @@ impl Battle {
                 .buildings_lost
                 .entry(kind)
                 .or_default() += 1;
-            if owner != attacker {
+            if crate::objective::hostile(owner, attacker) {
                 *self
                     .record_mut(attacker)
                     .buildings_destroyed

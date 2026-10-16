@@ -40,13 +40,13 @@ pub fn ready(scenario: &Scenario, defs: &Definitions, unit: usize) -> bool {
 }
 
 /// Whether unit `shooter` would fire on overwatch at unit `target`: it is
-/// hostile (another owner), [`ready`], and has a clear shot.
+/// hostile (the AI against a human), [`ready`], and has a clear shot.
 pub fn reacts(scenario: &Scenario, defs: &Definitions, shooter: usize, target: usize) -> bool {
     let (Some(s), Some(t)) = (scenario.units.get(shooter), scenario.units.get(target)) else {
         return false;
     };
     shooter != target
-        && s.owner != t.owner
+        && libday_data::objective::hostile(s.owner, t.owner)
         && t.arrival == 0
         && ready(scenario, defs, shooter)
         && matches!(

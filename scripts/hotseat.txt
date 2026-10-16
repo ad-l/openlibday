@@ -36,4 +36,8 @@ idle 6000
 expect player 1
 expect local 1
 expect turn 2
+# The humans are allies: player 2's trooper is no target for player 1.
+tile 44 18
+hover 13 21
+expect cursor null
 state target/hotseat.json

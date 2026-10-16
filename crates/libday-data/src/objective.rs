@@ -20,6 +20,12 @@ use crate::scenario::{Objective, Scenario};
 /// The AI's player slot.
 pub const AI: i64 = 0;
 
+/// Whether players `a` and `b` are enemies: the humans fight together
+/// against the AI, so only the AI and a human are.
+pub fn hostile(a: i64, b: i64) -> bool {
+    (a == AI) != (b == AI)
+}
+
 /// `ObjectifId` values.
 pub mod kind {
     pub const DESTROY: i64 = 0;
@@ -230,6 +236,12 @@ mod tests {
     use super::*;
     use crate::defs::{BuildingType, UnitType};
     use crate::scenario::{Building, Mine, Order, ScenarioInfo, Surface, Unit};
+
+    #[test]
+    fn humans_are_allies() {
+        assert!(hostile(AI, 1) && hostile(3, AI));
+        assert!(!hostile(1, 2) && !hostile(4, 1) && !hostile(2, 2) && !hostile(AI, AI));
+    }
 
     fn defs() -> Definitions {
         let mut d = Definitions::default();

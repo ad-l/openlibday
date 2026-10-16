@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use libday_data::objective::hostile;
 use libday_data::scenario::{Ruin, Scenario, facing_toward};
 use libday_view::damage::{self, Destroyed};
 use libday_view::fire::{self, Checker, Fire, Target};
@@ -212,11 +213,11 @@ pub(crate) fn still_hostile(scenario: &Scenario, unit: usize, target: Target) ->
     scenario
         .mines
         .iter()
-        .any(|m| (m.x, m.y) == (x, y) && m.owner != owner)
+        .any(|m| (m.x, m.y) == (x, y) && hostile(m.owner, owner))
         || scenario
             .walls
             .iter()
-            .any(|w| (w.x, w.y) == (x, y) && w.owner != owner)
+            .any(|w| (w.x, w.y) == (x, y) && hostile(w.owner, owner))
 }
 
 /// Notes that someone fired in the reaction round.
@@ -309,7 +310,7 @@ impl Viewer {
         let scenario = &self.map.battle.scenario;
         let owner = scenario.units[sel].owner;
         if let Some(u) = self.unit_at(x, y) {
-            return (scenario.units[u].owner != owner && !self.controllable(u))
+            return (hostile(scenario.units[u].owner, owner) && !self.controllable(u))
                 .then_some(Target::Unit(u));
         }
         if let Some(b) = self.building_at(x, y) {
@@ -319,7 +320,7 @@ impl Viewer {
                 .buildings
                 .get(&b2.kind)
                 .is_some_and(|t| t.destructible);
-            return (b2.owner != owner && destructible).then_some(Target::Building(b));
+            return (hostile(b2.owner, owner) && destructible).then_some(Target::Building(b));
         }
         if self.options.terrain_only {
             return None;
@@ -327,11 +328,11 @@ impl Viewer {
         let mine = scenario
             .mines
             .iter()
-            .any(|m| (m.x, m.y) == (x, y) && m.owner != owner && !m.hidden_to(owner));
+            .any(|m| (m.x, m.y) == (x, y) && hostile(m.owner, owner) && !m.hidden_to(owner));
         let wall = scenario
             .walls
             .iter()
-            .any(|w| (w.x, w.y) == (x, y) && w.owner != owner);
+            .any(|w| (w.x, w.y) == (x, y) && hostile(w.owner, owner));
         (mine || wall).then_some(Target::Tile(x, y))
     }
 
@@ -487,7 +488,7 @@ impl Viewer {
         let evader = self
             .unit_at(aim.0, aim.1)
             .map(|v| &scenario.units[v])
-            .filter(|v| v.owner == side)
+            .filter(|v| !hostile(v.owner, side))
             .and_then(|v| self.defs.unit_tech(v.kind, v.tech));
         let lands = scatter::land(
             &mut self.rng,

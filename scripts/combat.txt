@@ -129,12 +129,12 @@ expect sounds.-1 BJPF\P0\BJPF0E0.SMK
 # once it has blown up instead of shooting at the bare ground.
 button EndTurn
 idle 3000
-mine 0 2 32 22 seen
+mine 0 0 32 22 seen
 centre 32 22
 inspect 32 22
 expect inspect.kind mine
 expect inspect.lines.0 Mine
-expect inspect.lines.3 Player 2
+expect inspect.lines.3 Alien
 tile 35 25
 tile 32 22
 expect lock.target Tile(32, 22)
