@@ -161,6 +161,9 @@ impl Viewer {
     }
 
     fn data_digest(&self) -> String {
+        if let Some(fake) = &self.front.fake_digest {
+            return fake.clone();
+        }
         let dirs = [Dir::Globals, Dir::Scenarios, Dir::Colonies].map(|d| self.game.dir(d));
         link::data_digest(&dirs.iter().map(|p| p.as_path()).collect::<Vec<_>>())
     }
@@ -628,8 +631,6 @@ impl Viewer {
         };
         let refusal = if version != link::PROTOCOL {
             Some("The host runs another version of openlibday")
-        } else if data != online.digest {
-            Some("The host's game data differ from yours")
         } else if online.started {
             Some("The game has already started")
         } else if self.net.peers.len() + 1 >= MAX_HUMANS {
@@ -643,6 +644,7 @@ impl Viewer {
             });
             return;
         }
+        let differs = data != online.digest;
         let slot = (2..=MAX_HUMANS as i64)
             .find(|s| !self.net.peers.iter().any(|p| p.slot == *s))
             .unwrap_or(MAX_HUMANS as i64);
@@ -657,6 +659,15 @@ impl Viewer {
         }
         self.renumber();
         self.post(None, format!("{name} joined"));
+        // Other languages and mods are welcome, but games may go out of step.
+        if differs {
+            self.post(
+                None,
+                format!(
+                    "Warning: {name}'s game data differ from the host's (another language or a mod?); the game may go out of step"
+                ),
+            );
+        }
     }
 
     /// Slots 2 onwards in joining order with no gaps (telling clients

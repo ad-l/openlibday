@@ -12,6 +12,7 @@ expect screen Lobby
 await online.peers 1
 expect online.names.2 Bob
 await online.chat.-1 hi
+expect online.chat.-2 Warning: Bob's game data differ from the host's (another language or a mod?); the game may go out of step
 say hello
 skirmish Opportunity Knocks
 key Return

@@ -18,7 +18,8 @@ use crate::command::{Command, Entry};
 #[serde(tag = "msg", rename_all = "snake_case")]
 pub enum ToHost {
     /// The client's first message: the protocol it speaks, a digest of its
-    /// game data ([`data_digest`]) and its player's name.
+    /// game data ([`data_digest`]; a different one only brings a warning)
+    /// and its player's name.
     Hello {
         version: u32,
         data: String,

@@ -194,6 +194,7 @@ pub enum Command {
     Upnp(bool),
     Sessions,
     Discover(bool),
+    Digest(String),
     Connect(String),
     Say(String),
     Await(String, String, f64),
@@ -370,6 +371,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         "turnlimit" => Command::TurnLimit(num(args.first())?),
         "upnp" => Command::Upnp(switch(args.first())?),
         "discover" => Command::Discover(switch(args.first())?),
+        "digest" => Command::Digest(text()?),
         "await" => Command::Await(
             args.first().ok_or("missing path")?.to_string(),
             args.get(1).ok_or("missing value")?.to_string(),
@@ -720,6 +722,7 @@ impl Runner<'_, '_> {
                 }
             }
             Command::Discover(on) => viewer.front.discover = *on,
+            Command::Digest(fake) => viewer.front.fake_digest = Some(fake.clone()),
             Command::Say(text) => {
                 viewer.front.chat = text.clone();
                 viewer.send_chat();

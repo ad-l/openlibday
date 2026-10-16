@@ -43,7 +43,8 @@ the host's address, or pick the game from the list when it is on the same
 network. In the waiting area the host chooses a skirmish or a campaign,
 the difficulty and a turn time limit, and can LOAD a multiplayer campaign
 saved earlier (with the same players). Everyone needs the same openlibday
-version and game data.
+version; the game data may differ (another language or a mod), but the
+waiting area then warns that the game may go out of step.
 
 Over the internet, hosting asks the router to open TCP port 41530 (UPnP or
 NAT-PMP), and the waiting area shows the address to give the others (WAN,

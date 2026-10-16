@@ -3,6 +3,8 @@
 # Run after starting the host: openlibday --headless --script scripts/tcp_client.txt
 ai modern
 name Bob
+# Stands in for another language or a mod: the host only warns.
+digest modded
 # Finds the host on the local network and joins it from the list.
 discover on
 sessions

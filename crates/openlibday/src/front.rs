@@ -112,6 +112,9 @@ pub struct Front {
     /// scripted runs unless the script turns them on).
     pub router: bool,
     pub discover: bool,
+    /// Scripts stand in for another language or a mod with a made-up
+    /// data digest.
+    pub fake_digest: Option<String>,
     /// SESSIONS: the games found on the local network.
     pub search: Option<crate::discovery::Search>,
 }
@@ -133,6 +136,7 @@ impl Default for Front {
             clipboard: None,
             router: true,
             discover: true,
+            fake_digest: None,
             search: None,
         }
     }

@@ -150,9 +150,10 @@ Single player must pass all existing tests and scripts after each step.
   and wins the battle with the copies in step throughout.
 - MP2, `link.rs` + `lobby.rs`: the same messages as length-prefixed JSON
   over TCP (default port 41530). A client sends `Hello { version, digest,
-  name }`; the host refuses a different build, different game data (a
-  digest of the data files), a started game or a full one (4 humans), and
-  otherwise answers `Welcome { slot, names }`, the lowest free slot.
+  name }`; the host refuses a different build, a started game or a full
+  one (4 humans), and otherwise answers `Welcome { slot, names }`, the
+  lowest free slot. Different game data (a digest of the data files:
+  another language or a mod) only bring a warning in the chat.
   `Roster` updates the names; slots are renumbered without gaps while in
   the waiting area. MULTI PLAYER opens SESSIONS (name, host address, HOST /
   JOIN); both lead to the WAITING AREA (players, game information, chat).
@@ -202,7 +203,9 @@ Single player must pass all existing tests and scripts after each step.
     script commands `upnp on|off`, `discover on|off`, `sessions` (open
     SESSIONS) and `sleep MS` (real time, for network threads); state
     `online.lan`, `online.wan`, `online.wan_note` and `games`. The TCP
-    scripts find the host by discovery and join it from the list.
+    scripts find the host by discovery and join it from the list; the
+    client's `digest TEXT` fakes another game data digest so the host
+    warns.
 - MP6, co-op campaign (protocol 5):
   - START in Campaign mode makes a new campaign for everyone in the
     waiting area at the chosen difficulty and sends it with
