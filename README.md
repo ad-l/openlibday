@@ -4,7 +4,7 @@ An open-source reimplementation of the engine of **Liberation Day** (1998),
 the turn-based isometric tactics game, for modern platforms.
 
 openlibday contains **no original game assets or code**.
-You can buy the game on [https://www.gog.com/en/game/fallen_haven_liberation_day](GOG) or find it on many [https://www.myabandonware.com/game/liberation-day-dqg](Abandonware) sites.
+You can buy the game on [GOG](https://www.gog.com/en/game/fallen_haven_liberation_day) or find it on many [Abandonware](https://www.myabandonware.com/game/liberation-day-dqg) sites.
 
 Most of the game engine has been ported except for PvP modes.
 
