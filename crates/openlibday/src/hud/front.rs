@@ -9,17 +9,19 @@ use sdl3::video::Window;
 
 use super::{Gfx, LINE, Result, TEXT_PX, WHITE, fill, frect};
 use crate::Viewer;
-use crate::front::{DIFFICULTY_MAX, NAME_BOX, SESSION_ADDRESS, SESSION_NAME, SLIDER};
-use crate::lobby::Chat;
+use crate::front::{
+    DIFFICULTY_MAX, InfoRow, NAME_BOX, SESSION_ADDRESS, SESSION_NAME, SLIDER, info_address,
+    info_arrows, info_copy, info_row, info_rows, info_value,
+};
+use crate::lobby::{Chat, Mode, Setting};
 
 /// Labels and notes in the dialogs' khaki.
 const KHAKI: [u8; 3] = [214, 196, 132];
 const GREY: [u8; 3] = [160, 160, 160];
-/// SESSIONS: its black area; WAITING AREA: players, game information,
-/// chat and chat line boxes (dialog coordinates).
+/// SESSIONS: its black area; WAITING AREA: players, chat and chat line
+/// boxes (dialog coordinates).
 const SESSIONS_AREA: Rect = Rect::new(14, 40, 336, 217);
 const LOBBY_PLAYERS: Rect = Rect::new(17, 70, 255, 123);
-const LOBBY_INFO: Rect = Rect::new(289, 70, 256, 123);
 const LOBBY_CHAT: Rect = Rect::new(17, 224, 527, 129);
 const LOBBY_LINE: Rect = Rect::new(15, 390, 427, 26);
 /// How long chat lines stay over the battle.
@@ -253,24 +255,66 @@ pub(super) fn draw_lobby(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Vi
         gfx.text_in(canvas, fonts, &text, px, WHITE, r, 0.0, 0)?;
     }
 
-    // Game information.
-    let info = layout.in_lobby(LOBBY_INFO);
-    let inner = Rect::new(info.x + 6 * s, info.y, info.w - 12 * s, info.h);
-    let text = if let Some(listener) = &online.listener {
-        let lan = crate::link::lan_address().map_or_else(String::new, |a| {
-            format!(" Your address on this network is {a}.")
-        });
-        format!(
-            "You are hosting on port {}.{lan} Players outside your network need that port forwarded to this computer. Press START to choose the skirmish once everyone has joined.",
-            listener.port
-        )
-    } else {
-        format!(
-            "Connected to {}. The host chooses the skirmish.",
-            viewer.front.address.trim()
-        )
-    };
-    paragraph(canvas, gfx, viewer, &text, KHAKI, inner, info.y + 6 * s, s)?;
+    // Game information: the addresses to give the others, then the
+    // settings (the host steps them with the arrows).
+    let campaign = online.settings.mode == Mode::Campaign;
+    let (lan, wan) = viewer.game_addresses();
+    for (i, row) in info_rows(campaign).into_iter().enumerate() {
+        let r = layout.in_lobby(info_row(i));
+        let value = layout.in_lobby(info_value(i));
+        let label = Rect::new(r.x, r.y, value.x - r.x, r.h);
+        let name = match row {
+            InfoRow::Lan => "LAN",
+            InfoRow::Wan => "WAN",
+            InfoRow::Setting(Setting::Mode) => "Mode",
+            InfoRow::Setting(Setting::Difficulty) => "Difficulty",
+            InfoRow::Setting(Setting::TurnLimit) => "Turn limit",
+        };
+        gfx.text_in(canvas, fonts, name, px, KHAKI, label, 0.0, 0)?;
+        match row {
+            InfoRow::Lan | InfoRow::Wan => {
+                let address = if row == InfoRow::Lan { &lan } else { &wan };
+                let field = layout.in_lobby(info_address(i));
+                draw_box(canvas, field, s, false)?;
+                let (text, rgb) = if address.is_empty() {
+                    ("Not available yet", GREY)
+                } else {
+                    (address.as_str(), WHITE)
+                };
+                gfx.text_in(canvas, fonts, text, px, rgb, field, 0.0, 4 * s)?;
+                let copy = layout.in_lobby(info_copy(i));
+                draw_box(canvas, copy, s, !address.is_empty())?;
+                let rgb = if address.is_empty() { GREY } else { KHAKI };
+                gfx.text_in(canvas, fonts, "Copy", px, rgb, copy, 0.5, 0)?;
+            }
+            InfoRow::Setting(setting) => {
+                let settings = &online.settings;
+                let text = match setting {
+                    Setting::Mode => match settings.mode {
+                        Mode::Skirmish => "Skirmish".to_owned(),
+                        Mode::Campaign => "Campaign (soon)".to_owned(),
+                    },
+                    Setting::Difficulty => {
+                        format!("{} of {DIFFICULTY_MAX}", settings.difficulty)
+                    }
+                    Setting::TurnLimit => match settings.turn_minutes {
+                        0 => "Unlimited".to_owned(),
+                        m => format!("{m} min"),
+                    },
+                };
+                draw_box(canvas, value, s, false)?;
+                if online.is_host() {
+                    let (left, right) = info_arrows(i);
+                    for (arrow, glyph) in [(left, "<"), (right, ">")] {
+                        let a = layout.in_lobby(arrow);
+                        draw_box(canvas, a, s, true)?;
+                        gfx.text_in(canvas, fonts, glyph, px, KHAKI, a, 0.5, 0)?;
+                    }
+                }
+                gfx.text_in(canvas, fonts, &text, px, WHITE, value, 0.5, 0)?;
+            }
+        }
+    }
 
     // Chat, newest at the bottom.
     let chat = layout.in_lobby(LOBBY_CHAT);

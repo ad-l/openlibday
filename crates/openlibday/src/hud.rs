@@ -1135,10 +1135,18 @@ pub fn draw(canvas: &mut Canvas<Window>, gfx: &mut Gfx, viewer: &Viewer) -> Resu
     for button in [Button::Chat, Button::Menu] {
         gfx.button(canvas, viewer, &layout, button, State::Normal, false)?;
     }
-    let secs = viewer.clock.since(viewer.started).as_secs();
+    // The turn's time left under a turn limit (red in its last half
+    // minute), otherwise its time so far.
+    let (secs, rgb) = match viewer.turn_left() {
+        Some(left) => {
+            let secs = left.as_millis().div_ceil(1000) as u64;
+            (secs, if secs <= 30 { [255, 80, 64] } else { WHITE })
+        }
+        None => (viewer.clock.since(viewer.started).as_secs(), WHITE),
+    };
     let timer = format!("{:02}:{:02}", secs / 60 % 100, secs % 60);
     let r = layout.field(Field::Timer);
-    gfx.text_in(canvas, fonts, &timer, TEXT_PX * s as f32, WHITE, r, 0.5, 0)?;
+    gfx.text_in(canvas, fonts, &timer, TEXT_PX * s as f32, rgb, r, 0.5, 0)?;
     if let Some(message) = &viewer.flow.message {
         let bar = layout.bottom_bar();
         let r = Rect::new(bar.x + 62 * s, r.y, r.x - bar.x - 70 * s, r.h);

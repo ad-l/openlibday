@@ -44,6 +44,14 @@ button EndTurn
 await turn 3 120
 await player 1
 idle
+# Turn 3: a one-minute limit ends Bob's turn for him.
+button EndTurn
+turnlimit 1
+await player 2
+expect online.turn_minutes 1
+await turn 4 120
+await player 1
+idle
 win
 wait 1
 expect phase Over

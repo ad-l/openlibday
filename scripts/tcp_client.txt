@@ -33,6 +33,9 @@ idle
 await units.id=101.x 14
 button EndTurn
 await turn 3 120
+await player 2
+expect online.turn_minutes 1
+await turn 4 120
 await player 1
 win
 wait 1

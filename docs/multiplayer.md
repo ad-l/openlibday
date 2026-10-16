@@ -166,6 +166,16 @@ Single player must pass all existing tests and scripts after each step.
   commands `name`, `host`, `connect`, `say` and `await PATH VALUE`.
   `scripts/tcp_host.txt` + `tcp_client.txt` (the `tcp_scripts` test) play
   a skirmish between two processes and compare state hashes.
+- Waiting-area game information: the host's LAN address (`IP:port`) and
+  a WAN address (empty until UPnP), each with a COPY button; game mode
+  (Skirmish / Campaign; campaign is not playable yet, START stays
+  disabled), difficulty (campaign only) and turn limit (1–20 min or
+  unlimited). Only the host's arrows change them; `Settings` messages keep
+  the clients in step (protocol 3). With a limit, the bottom bar counts
+  down the human turn (red in the last 30 s), otherwise it shows the time
+  elapsed; when it runs out the host finishes reinforcing or ends the turn
+  for that player through the command log. Script command `turnlimit N`;
+  `scripts/lobby_settings.txt` and turn 3 of the TCP scripts test them.
 
 ## Transport
 

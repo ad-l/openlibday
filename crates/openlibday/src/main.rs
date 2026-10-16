@@ -1212,6 +1212,11 @@ fn main() -> Result {
             canvas.window_mut().set_fullscreen(on)?;
             dirty = true;
         }
+        if let Some(text) = viewer.front.clipboard.take()
+            && let Err(e) = video.clipboard().set_clipboard_text(&text)
+        {
+            eprintln!("clipboard: {e}");
+        }
         // Messages from other players may change anything shown.
         dirty |= viewer.online();
         // Typing goes to the NEW GAME dialog's name box, the network

@@ -13,7 +13,7 @@ pub const INTRO_VIDEO: &str = "FH2Intro";
 
 pub const DIFFICULTY_MAX: u8 = 10;
 /// The original's default difficulty.
-const DIFFICULTY_DEFAULT: u8 = 4;
+pub const DIFFICULTY_DEFAULT: u8 = 4;
 /// Longest player name.
 const NAME_MAX: usize = 20;
 /// Name box and slider track in NEW GAME dialog coordinates.
@@ -22,6 +22,58 @@ pub const SLIDER: Rect = Rect::new(39, 114, 210, 17);
 /// SESSIONS name and address boxes in dialog coordinates.
 pub const SESSION_NAME: Rect = Rect::new(120, 80, 220, 22);
 pub const SESSION_ADDRESS: Rect = Rect::new(120, 112, 220, 22);
+/// A row of the WAITING AREA's game information: its rectangle (dialog
+/// coordinates), labels left of [`INFO_VALUE_X`].
+pub fn info_row(row: usize) -> Rect {
+    Rect::new(295, 76 + row as i32 * 22, 244, 18)
+}
+pub const INFO_VALUE_X: i32 = 359;
+const INFO_RIGHT: i32 = 539;
+const INFO_ARROW: i32 = 18;
+const INFO_COPY: i32 = 44;
+
+/// What a row of the game information shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InfoRow {
+    Lan,
+    Wan,
+    Setting(crate::lobby::Setting),
+}
+
+/// The game information's rows: the addresses, then the settings (the
+/// difficulty only for a campaign).
+pub fn info_rows(campaign: bool) -> Vec<InfoRow> {
+    use crate::lobby::Setting;
+    let mut rows = vec![InfoRow::Lan, InfoRow::Wan, InfoRow::Setting(Setting::Mode)];
+    if campaign {
+        rows.push(InfoRow::Setting(Setting::Difficulty));
+    }
+    rows.push(InfoRow::Setting(Setting::TurnLimit));
+    rows
+}
+
+/// A row's value area, and in it an address's box and COPY button or a
+/// setting's arrows.
+pub fn info_value(row: usize) -> Rect {
+    let r = info_row(row);
+    Rect::new(INFO_VALUE_X, r.y, INFO_RIGHT - INFO_VALUE_X, r.h)
+}
+pub fn info_address(row: usize) -> Rect {
+    let v = info_value(row);
+    Rect::new(v.x, v.y, v.w - INFO_COPY - 4, v.h)
+}
+pub fn info_copy(row: usize) -> Rect {
+    let v = info_value(row);
+    Rect::new(v.right() - INFO_COPY, v.y, INFO_COPY, v.h)
+}
+pub fn info_arrows(row: usize) -> (Rect, Rect) {
+    let v = info_value(row);
+    (
+        Rect::new(v.x, v.y, INFO_ARROW, v.h),
+        Rect::new(v.right() - INFO_ARROW, v.y, INFO_ARROW, v.h),
+    )
+}
+
 /// Longest typed host address and chat line.
 const ADDRESS_MAX: usize = 64;
 const CHAT_MAX: usize = 120;
@@ -40,6 +92,8 @@ pub struct Front {
     /// The chat line being typed, and whether the battle's chat is open.
     pub chat: String,
     pub chatting: bool,
+    /// Text for the clipboard (the main loop puts it there).
+    pub clipboard: Option<String>,
 }
 
 impl Default for Front {
@@ -56,6 +110,7 @@ impl Default for Front {
             status: None,
             chat: String::new(),
             chatting: false,
+            clipboard: None,
         }
     }
 }
@@ -72,7 +127,11 @@ impl Viewer {
 
     pub(crate) fn front_enabled(&self, button: Button) -> bool {
         match button {
-            Button::LobbyStart => self.net.online.as_ref().is_some_and(|o| o.is_host()),
+            Button::LobbyStart => self
+                .net
+                .online
+                .as_ref()
+                .is_some_and(|o| o.is_host() && o.settings.mode == crate::lobby::Mode::Skirmish),
             Button::LobbySend => !self.front.chat.trim().is_empty(),
             Button::HostGame | Button::JoinGame => {
                 !self.front.name.trim().is_empty()
@@ -229,9 +288,58 @@ impl Viewer {
         }
     }
 
-    /// A click on the NEW GAME slider track sets the difficulty.
+    /// The game addresses shown in the waiting area: on the local
+    /// network (or, for a client, the host's as typed) and on the internet.
+    pub(crate) fn game_addresses(&self) -> (String, String) {
+        let lan = match &self.net.online {
+            Some(o) if o.is_host() => o.lan.clone().unwrap_or_default(),
+            _ => self.front.address.trim().to_owned(),
+        };
+        (lan, String::new())
+    }
+
+    /// A click in the waiting area's game information: COPY an address,
+    /// or (the host) an arrow of a setting.
+    fn lobby_click(&mut self, x: i32, y: i32) {
+        let Some(online) = &self.net.online else {
+            return;
+        };
+        let campaign = online.settings.mode == crate::lobby::Mode::Campaign;
+        let host = online.is_host();
+        let layout = self.layout();
+        for (i, row) in info_rows(campaign).into_iter().enumerate() {
+            match row {
+                InfoRow::Lan | InfoRow::Wan => {
+                    if layout.in_lobby(info_copy(i)).contains(x, y) {
+                        let (lan, wan) = self.game_addresses();
+                        self.copy_text(if row == InfoRow::Lan { lan } else { wan });
+                        return;
+                    }
+                }
+                InfoRow::Setting(setting) if host => {
+                    let (left, right) = info_arrows(i);
+                    if layout.in_lobby(left).contains(x, y) {
+                        self.change_setting(setting, -1);
+                        return;
+                    }
+                    if layout.in_lobby(right).contains(x, y) {
+                        self.change_setting(setting, 1);
+                        return;
+                    }
+                }
+                InfoRow::Setting(_) => {}
+            }
+        }
+    }
+
+    /// A click on the NEW GAME slider track sets the difficulty; in the
+    /// network dialogs, on a field or the game information.
     pub(crate) fn front_click(&mut self, x: i32, y: i32) {
         let layout = self.layout();
+        if self.screen == Screen::Lobby {
+            self.lobby_click(x, y);
+            return;
+        }
         if self.screen == Screen::Sessions {
             if layout.in_sessions(SESSION_NAME).contains(x, y) {
                 self.front.focus_address = false;

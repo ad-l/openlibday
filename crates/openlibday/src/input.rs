@@ -199,7 +199,7 @@ impl Viewer {
         }
         match self.screen {
             Screen::Goal | Screen::Confirm | Screen::Report | Screen::MainMenu => {}
-            Screen::NewGame | Screen::Sessions if left => self.front_click(ox, oy),
+            Screen::NewGame | Screen::Sessions | Screen::Lobby if left => self.front_click(ox, oy),
             Screen::NewGame | Screen::Sessions | Screen::Lobby => {}
             Screen::Strategic { .. } if left => self.strategic_click(ox, oy),
             Screen::Strategic { .. } | Screen::Intelligence => {}

@@ -68,6 +68,7 @@
 //! host [PORT]           host a network game (default port 41530)
 //! connect ADDRESS       join the network game at ADDRESS[:PORT]
 //! say TEXT              send a chat line in a network game
+//! turnlimit MINUTES     the host's turn limit (0: none)
 //! await PATH VALUE [S]  advance frames until the state at PATH is VALUE,
 //!                       failing after S seconds of real time (default 60);
 //!                       (how a network game waits for the other computers)
@@ -171,6 +172,7 @@ pub enum Command {
     Synced,
     Name(String),
     Host(u16),
+    TurnLimit(u8),
     Connect(String),
     Say(String),
     Await(String, String, f64),
@@ -325,6 +327,7 @@ fn parse_line(line: &str) -> std::result::Result<Command, String> {
         }),
         "connect" => Command::Connect(text()?),
         "say" => Command::Say(text()?),
+        "turnlimit" => Command::TurnLimit(num(args.first())?),
         "await" => Command::Await(
             args.first().ok_or("missing path")?.to_string(),
             args.get(1).ok_or("missing value")?.to_string(),
@@ -607,6 +610,7 @@ impl Runner<'_, '_> {
                 viewer.open_sessions();
                 viewer.join_game();
             }
+            Command::TurnLimit(minutes) => viewer.set_turn_limit(*minutes),
             Command::Say(text) => {
                 viewer.front.chat = text.clone();
                 viewer.send_chat();
@@ -1091,6 +1095,10 @@ pub fn state(viewer: &Viewer) -> Value {
             "status": viewer.front.status,
             "fault": viewer.net.fault,
             "commands": viewer.net.log.len(),
+            "mode": format!("{:?}", o.settings.mode),
+            "difficulty": o.settings.difficulty,
+            "turn_minutes": o.settings.turn_minutes,
+            "turn_left": viewer.turn_left().map(|d| d.as_secs()),
         })
     });
     state["video"] = json!(viewer.cutscene.as_ref().map(|c| &c.name));

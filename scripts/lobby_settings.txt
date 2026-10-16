@@ -1,0 +1,16 @@
+# Waiting area game settings: the host's arrows and Copy button.
+name Alice
+host 41533
+expect screen Lobby
+expect online.mode Skirmish
+click 761 277
+expect online.mode Campaign
+click 761 299
+click 761 299
+expect online.difficulty 6
+click 748 233
+click 599 277
+expect online.mode Skirmish
+click 599 299
+expect online.turn_minutes 0
+quit

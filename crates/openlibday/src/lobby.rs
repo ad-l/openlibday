@@ -6,7 +6,9 @@
 //! with why it may not join. In the waiting area the host picks the
 //! skirmish; once the battle is over everyone returns there. A client that
 //! leaves mid-battle keeps its seat: the host deploys and ends its turns
-//! for it, so the others play on.
+//! for it, so the others play on. The host also chooses the game's
+//! [`Settings`]; with a turn limit it ends a human's turn once their time
+//! is up.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -15,6 +17,7 @@ use std::time::Duration;
 use libday_data::Dir;
 use libday_view::scatter::Rand;
 use libday_view::ui::Screen;
+use serde::{Deserialize, Serialize};
 
 use crate::Viewer;
 use crate::command::{Command, Net};
@@ -29,6 +32,45 @@ const NAME_MAX: usize = 20;
 const CHAT_MAX: usize = 120;
 /// Chat lines kept.
 const CHAT_LINES: usize = 100;
+
+/// Longest turn limit, in minutes.
+pub const TURN_MINUTES_MAX: u8 = 20;
+
+/// What kind of game the waiting area starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Mode {
+    #[default]
+    Skirmish,
+    Campaign,
+}
+
+/// What the host chooses in the waiting area; every client gets a copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Settings {
+    pub mode: Mode,
+    /// The campaign's difficulty, 0 to [`crate::front::DIFFICULTY_MAX`].
+    pub difficulty: u8,
+    /// How long a human's turn may last, in minutes; 0: no limit.
+    pub turn_minutes: u8,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Skirmish,
+            difficulty: crate::front::DIFFICULTY_DEFAULT,
+            turn_minutes: 0,
+        }
+    }
+}
+
+/// A setting the host changes with the arrows of the waiting area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    Mode,
+    Difficulty,
+    TurnLimit,
+}
 
 /// A chat line: from a slot, or a notice from the game.
 #[derive(Clone, Debug)]
@@ -58,6 +100,9 @@ pub struct Online {
     pub started: bool,
     /// [`link::data_digest`] of this copy's game data.
     pub digest: String,
+    pub settings: Settings,
+    /// On a host: its address on the local network and port.
+    pub lan: Option<String>,
 }
 
 impl Online {
@@ -135,6 +180,7 @@ impl Viewer {
             listener: Some(listener),
             slot: 1,
             digest: self.data_digest(),
+            lan: link::lan_address().map(|a| format!("{a}:{port}")),
             ..Online::default()
         };
         online.names.insert(1, self.my_name(1));
@@ -182,6 +228,81 @@ impl Viewer {
             self.renumber();
         }
         self.screen = Screen::Lobby;
+    }
+
+    /// The host steps `setting` (in the waiting area) and tells everyone.
+    pub(crate) fn change_setting(&mut self, setting: Setting, step: i8) {
+        let Some(online) = &mut self.net.online else {
+            return;
+        };
+        if !online.is_host() || online.started {
+            return;
+        }
+        let s = &mut online.settings;
+        match setting {
+            Setting::Mode => {
+                s.mode = match s.mode {
+                    Mode::Skirmish => Mode::Campaign,
+                    Mode::Campaign => Mode::Skirmish,
+                };
+            }
+            Setting::Difficulty => {
+                s.difficulty = s
+                    .difficulty
+                    .saturating_add_signed(step)
+                    .min(crate::front::DIFFICULTY_MAX);
+            }
+            Setting::TurnLimit => {
+                s.turn_minutes = s
+                    .turn_minutes
+                    .saturating_add_signed(step)
+                    .min(TURN_MINUTES_MAX);
+            }
+        }
+        self.send_settings();
+    }
+
+    /// The host sets the turn limit (`minutes`, 0 for none) at any time.
+    pub(crate) fn set_turn_limit(&mut self, minutes: u8) {
+        if let Some(online) = &mut self.net.online
+            && online.is_host()
+        {
+            online.settings.turn_minutes = minutes.min(TURN_MINUTES_MAX);
+            self.send_settings();
+        }
+    }
+
+    fn send_settings(&self) {
+        let Some(online) = &self.net.online else {
+            return;
+        };
+        let message = ToClient::Settings {
+            settings: online.settings,
+        };
+        for peer in &self.net.peers {
+            peer.link.send(&message);
+        }
+    }
+
+    /// Time left in the turn of the human playing now, in a network game
+    /// with a turn limit.
+    pub(crate) fn turn_left(&self) -> Option<Duration> {
+        let minutes = self.net.online.as_ref()?.settings.turn_minutes;
+        let player = self.map.battle.clock.player;
+        if minutes == 0 || self.flow.phase != Phase::Player || !self.seats.human(player) {
+            return None;
+        }
+        let limit = Duration::from_secs(u64::from(minutes) * 60);
+        Some(limit.saturating_sub(self.clock.since(self.started)))
+    }
+
+    /// Copies `text` to the clipboard.
+    pub(crate) fn copy_text(&mut self, text: String) {
+        if text.is_empty() {
+            return;
+        }
+        self.chat_line(None, format!("Copied {text}"));
+        self.front.clipboard = Some(text);
     }
 
     /// START (host): the skirmish selector, whose choice starts everyone.
@@ -368,6 +489,7 @@ impl Viewer {
             peer.link.send(&roster);
         }
         self.seats = Players::online(self.net.peers.len() + 1, 1);
+        self.send_settings();
     }
 
     /// The host lost the client playing `slot`.
@@ -426,6 +548,11 @@ impl Viewer {
                 }
             }
             ToClient::Chat { slot, text } => self.chat_line(slot, text),
+            ToClient::Settings { settings } => {
+                if let Some(online) = &mut self.net.online {
+                    online.settings = settings;
+                }
+            }
         }
     }
 
@@ -454,8 +581,21 @@ impl Viewer {
     }
 
     /// What the host does for a player gone mid-battle, when it is up to
-    /// them: deploy as they are, or end their turn.
-    pub(crate) fn stand_in(&self) -> Option<(i64, Command)> {
+    /// them: deploy as they are, or end their turn; and for a player whose
+    /// time is up: end their turn.
+    pub(crate) fn stand_in(&mut self) -> Option<(i64, Command)> {
+        let online = self.net.online.as_ref()?;
+        let player = self.map.battle.clock.player;
+        if online.is_host() && self.turn_left() == Some(Duration::ZERO) {
+            if self.flow.reinforcing {
+                return Some((player, Command::FinishReinforce));
+            }
+            if self.motions.is_empty() {
+                let name = self.player_name(player);
+                self.post(None, format!("{name}'s time is up"));
+                return Some((player, Command::EndTurn));
+            }
+        }
         let online = self.net.online.as_ref()?;
         online.left.iter().find_map(|&slot| match self.flow.phase {
             Phase::Deploy if self.deploying(slot) => Some((slot, Command::Ready)),
